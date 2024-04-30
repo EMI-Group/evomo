@@ -85,6 +85,7 @@ class MoBrax(Problem):
     #         cond_func, body_func, init_val
     #     )
     #     return total_reward, state
+    @jit_method
     def evaluate(self, state, weights):
         batch_size = tree_leaves(weights)[0].shape[0]
         # print(obs_sha)

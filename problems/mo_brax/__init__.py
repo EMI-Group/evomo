@@ -9,6 +9,8 @@ from problems.mo_brax import (
     mo_walker2d,
     mo_humanoidstandup,
     mo_ant,
+    mo_pusher,
+    mo_reacher,
 )
 
 register_environment("mo_halfcheetah", mo_half_cheetah.MoHalfcheetah)
@@ -22,3 +24,5 @@ register_environment(
 register_environment("mo_walker2d", mo_walker2d.MoWalker2d)
 register_environment("mo_humanoidstandup", mo_humanoidstandup.MoHumanoidStandup)
 register_environment("mo_ant", mo_ant.MoAnt)
+register_environment("mo_pusher", mo_pusher.MoPusher)
+register_environment("mo_reacher", mo_reacher.MoReacher)

@@ -9,6 +9,8 @@ from .mo_brax import (
     mo_humanoidstandup,
     mo_inverted_double_pendulum,
     mo_walker2d,
+    mo_reacher,
+    mo_pusher,
 )
 
 from .obs_new import Obs_Normalizer
