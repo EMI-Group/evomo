@@ -15,6 +15,7 @@ from evox.operators.sampling import UniformSampling
 from evox.utils import pairwise_euclidean_dist
 from jax.experimental.host_callback import id_print
 
+
 @jit_class
 class AggregationFunction:
     def __init__(self, function_name):
@@ -35,7 +36,9 @@ class AggregationFunction:
         norm_w = jnp.linalg.norm(w, axis=1)
         f = f - z
         d1 = jnp.sum(f * w, axis=1) / norm_w
-        d2 = jnp.linalg.norm(f - (d1[:, jnp.newaxis] * w / norm_w[:, jnp.newaxis]), axis=1)
+        d2 = jnp.linalg.norm(
+            f - (d1[:, jnp.newaxis] * w / norm_w[:, jnp.newaxis]), axis=1
+        )
         return d1 + 5 * d2
 
     def tchebycheff(self, f, w, z, *args):
@@ -53,6 +56,7 @@ class AggregationFunction:
     def __call__(self, *args, **kwargs):
         return self.function(*args, **kwargs)
 
+
 @jit_class
 class PMOEAD(Algorithm):
     """Parallel MOEA/D algorithm
@@ -66,7 +70,8 @@ class PMOEAD(Algorithm):
         ub,
         n_objs,
         pop_size,
-        func_name='pbi',
+        func_name="pbi",
+        uniform_init=True,
         mutation_op=None,
         crossover_op=None,
     ):
@@ -77,6 +82,7 @@ class PMOEAD(Algorithm):
         self.pop_size = pop_size
         self.func_name = func_name
         self.n_neighbor = 0
+        self.uniform_init = uniform_init
 
         self.mutation = mutation_op
         self.crossover = crossover_op
@@ -93,12 +99,15 @@ class PMOEAD(Algorithm):
         w, _ = self.sample(subkey2)
         self.pop_size = w.shape[0]
         self.n_neighbor = int(math.ceil(self.pop_size / 10))
-
-        population = (
-            jax.random.uniform(subkey1, shape=(self.pop_size, self.dim))
-            * (self.ub - self.lb)
-            + self.lb
-        )
+        initializer = jax.nn.initializers.glorot_normal()
+        if self.uniform_init:
+            population = (
+                jax.random.uniform(subkey1, shape=(self.pop_size, self.dim))
+                * (self.ub - self.lb)
+                + self.lb
+            )
+        else:
+            population = initializer(subkey1, (self.pop_size, self.dim))
 
         neighbors = pairwise_euclidean_dist(w, w)
         neighbors = jnp.argsort(neighbors, axis=1)
@@ -135,9 +144,7 @@ class PMOEAD(Algorithm):
         next_generation = self.mutation(mut_key, crossovered)
         next_generation = jnp.clip(next_generation, self.lb, self.ub)
 
-        return next_generation, state.update(
-            next_generation=next_generation, key=key
-        )
+        return next_generation, state.update(next_generation=next_generation, key=key)
 
     def tell(self, state, fitness):
         population = state.population
@@ -159,14 +166,25 @@ class PMOEAD(Algorithm):
 
             update_condition = (f_old > f_new)[:, jnp.newaxis]
             updated_population = population.at[indices].set(
-                jnp.where(update_condition, jnp.tile(off_pop, (jnp.shape(indices)[0], 1)), population[indices]))
+                jnp.where(
+                    update_condition,
+                    jnp.tile(off_pop, (jnp.shape(indices)[0], 1)),
+                    population[indices],
+                )
+            )
             updated_pop_obj = pop_obj.at[indices].set(
-                jnp.where(update_condition, jnp.tile(off_obj, (jnp.shape(indices)[0], 1)), pop_obj[indices]))
+                jnp.where(
+                    update_condition,
+                    jnp.tile(off_obj, (jnp.shape(indices)[0], 1)),
+                    pop_obj[indices],
+                )
+            )
 
             return (updated_population, updated_pop_obj), None
 
-        (population, pop_obj), _ = jax.lax.scan(scan_body, (population, pop_obj), (offspring, obj, neighbor))
-
+        (population, pop_obj), _ = jax.lax.scan(
+            scan_body, (population, pop_obj), (offspring, obj, neighbor)
+        )
 
         state = state.update(population=population, fitness=pop_obj, z=z)
         return state

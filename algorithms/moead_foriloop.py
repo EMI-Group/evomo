@@ -16,6 +16,7 @@ from evox.operators.sampling import UniformSampling
 from evox.utils import pairwise_euclidean_dist
 from jax.experimental.host_callback import id_print
 
+
 @jit_class
 class MOEAD1(Algorithm):
     """Parallel MOEA/D algorithm with fori_loop
@@ -30,6 +31,7 @@ class MOEAD1(Algorithm):
         n_objs,
         pop_size,
         type=1,
+        uniform_init=True,
         mutation_op=None,
         crossover_op=None,
     ):
@@ -40,6 +42,7 @@ class MOEAD1(Algorithm):
         self.pop_size = pop_size
         self.type = type
         self.n_neighbor = 0
+        self.uniform_init = uniform_init
 
         self.mutation = mutation_op
         self.crossover = crossover_op
@@ -55,12 +58,15 @@ class MOEAD1(Algorithm):
         w, _ = self.sample(subkey2)
         self.pop_size = w.shape[0]
         self.n_neighbor = int(math.ceil(self.pop_size / 10))
-
-        population = (
-            jax.random.uniform(subkey1, shape=(self.pop_size, self.dim))
-            * (self.ub - self.lb)
-            + self.lb
-        )
+        initializer = jax.nn.initializers.glorot_normal()
+        if self.uniform_init:
+            population = (
+                jax.random.uniform(subkey1, shape=(self.pop_size, self.dim))
+                * (self.ub - self.lb)
+                + self.lb
+            )
+        else:
+            population = initializer(subkey1, (self.pop_size, self.dim))
 
         neighbors = pairwise_euclidean_dist(w, w)
         neighbors = jnp.argsort(neighbors, axis=1)
@@ -129,13 +135,16 @@ class MOEAD1(Algorithm):
                 norm_o = jnp.linalg.norm(ind_obj - z)
                 cos_p = (
                     jnp.sum(
-                        (pop_obj[ind_p] - jnp.tile(z, (self.n_neighbor, 1))) * w[ind_p], axis=1
+                        (pop_obj[ind_p] - jnp.tile(z, (self.n_neighbor, 1))) * w[ind_p],
+                        axis=1,
                     )
                     / norm_w
                     / norm_p
                 )
                 cos_o = (
-                    jnp.sum(jnp.tile(ind_obj - z, (self.n_neighbor, 1)) * w[ind_p], axis=1)
+                    jnp.sum(
+                        jnp.tile(ind_obj - z, (self.n_neighbor, 1)) * w[ind_p], axis=1
+                    )
                     / norm_w
                     / norm_o
                 )
@@ -144,11 +153,13 @@ class MOEAD1(Algorithm):
             if self.type == 2:
                 # Tchebycheff approach
                 g_old = jnp.max(
-                    jnp.abs(pop_obj[ind_p] - jnp.tile(z, (self.n_neighbor, 1))) * w[ind_p],
+                    jnp.abs(pop_obj[ind_p] - jnp.tile(z, (self.n_neighbor, 1)))
+                    * w[ind_p],
                     axis=1,
                 )
                 g_new = jnp.max(
-                    jnp.tile(jnp.abs(ind_obj - z), (self.n_neighbor, 1)) * w[ind_p], axis=1
+                    jnp.tile(jnp.abs(ind_obj - z), (self.n_neighbor, 1)) * w[ind_p],
+                    axis=1,
                 )
             if self.type == 3:
                 # Tchebycheff approach with normalization
@@ -168,20 +179,30 @@ class MOEAD1(Algorithm):
             if self.type == 4:
                 # Modified Tchebycheff approach
                 g_old = jnp.max(
-                    jnp.abs(pop_obj[ind_p] - jnp.tile(z, (self.n_neighbor, 1))) / w[ind_p],
+                    jnp.abs(pop_obj[ind_p] - jnp.tile(z, (self.n_neighbor, 1)))
+                    / w[ind_p],
                     axis=1,
                 )
                 g_new = jnp.max(
-                    jnp.tile(jnp.abs(ind_obj - z), (self.n_neighbor, 1)) / w[ind_p], axis=1
+                    jnp.tile(jnp.abs(ind_obj - z), (self.n_neighbor, 1)) / w[ind_p],
+                    axis=1,
                 )
 
             g_new = g_new[:, jnp.newaxis]
             g_old = g_old[:, jnp.newaxis]
             population = population.at[ind_p].set(
-                jnp.where(g_old >= g_new, jnp.tile(ind_pop, (jnp.shape(ind_p)[0], 1)), population[ind_p])
+                jnp.where(
+                    g_old >= g_new,
+                    jnp.tile(ind_pop, (jnp.shape(ind_p)[0], 1)),
+                    population[ind_p],
+                )
             )
             pop_obj = pop_obj.at[ind_p].set(
-                jnp.where(g_old >= g_new, jnp.tile(ind_obj, (jnp.shape(ind_p)[0], 1)), pop_obj[ind_p])
+                jnp.where(
+                    g_old >= g_new,
+                    jnp.tile(ind_obj, (jnp.shape(ind_p)[0], 1)),
+                    pop_obj[ind_p],
+                )
             )
 
             return (population, pop_obj, z)

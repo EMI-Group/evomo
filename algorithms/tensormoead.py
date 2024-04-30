@@ -15,6 +15,7 @@ from evox import Algorithm, State, jit_class
 import math
 from jax.experimental.host_callback import id_print
 
+
 @jit_class
 class AggregationFunction:
     def __init__(self, function_name):
@@ -35,7 +36,9 @@ class AggregationFunction:
         norm_w = jnp.linalg.norm(w, axis=1)
         f = f - z
         d1 = jnp.sum(f * w, axis=1) / norm_w
-        d2 = jnp.linalg.norm(f - (d1[:, jnp.newaxis] * w / norm_w[:, jnp.newaxis]), axis=1)
+        d2 = jnp.linalg.norm(
+            f - (d1[:, jnp.newaxis] * w / norm_w[:, jnp.newaxis]), axis=1
+        )
         return d1 + 5 * d2
 
     def tchebycheff(self, f, w, z, *args):
@@ -53,6 +56,7 @@ class AggregationFunction:
     def __call__(self, *args, **kwargs):
         return self.function(*args, **kwargs)
 
+
 @jit_class
 class TensorMOEAD(Algorithm):
     def __init__(
@@ -61,7 +65,8 @@ class TensorMOEAD(Algorithm):
         ub,
         n_objs,
         pop_size,
-        aggregate_op=['pbi','pbi'],
+        aggregate_op=["pbi", "pbi"],
+        uniform_init=True,
         mutation_op=None,
         crossover_op=None,
     ):
@@ -71,6 +76,7 @@ class TensorMOEAD(Algorithm):
         self.dim = lb.shape[0]
         self.pop_size = pop_size
         self.n_neighbor = jnp.ceil(self.pop_size / 10).astype(int)
+        self.uniform_init = uniform_init
 
         self.mutation = mutation_op
         self.crossover = crossover_op
@@ -84,18 +90,22 @@ class TensorMOEAD(Algorithm):
         self.aggregate_func1 = AggregationFunction(aggregate_op[0])
         self.aggregate_func2 = AggregationFunction(aggregate_op[1])
 
-
     def setup(self, key):
         key, subkey1, subkey2 = jax.random.split(key, 3)
         w, _ = self.sample(subkey2)
         self.pop_size = w.shape[0]
         self.n_neighbor = int(math.ceil(self.pop_size / 10))
+        initializer = jax.nn.initializers.glorot_normal()
 
-        population = (
+        if self.uniform_init:
+            population = (
                 jax.random.uniform(subkey1, shape=(self.pop_size, self.dim))
                 * (self.ub - self.lb)
                 + self.lb
-        )
+            )
+        else:
+            population = initializer(subkey1, shape=(self.pop_size, self.dim))
+
         neighbors = pairwise_euclidean_dist(w, w)
         neighbors = jnp.argsort(neighbors, axis=1)
         neighbors = neighbors[:, : self.n_neighbor]
@@ -152,11 +162,14 @@ class TensorMOEAD(Algorithm):
 
         def body(ind_p, ind_obj):
             g_old = self.aggregate_func1(pop_obj[ind_p], w[ind_p], z_min, z_max)
-            g_new = self.aggregate_func1(jnp.tile(ind_obj, (self.n_neighbor, 1)), w[ind_p], z_min, z_max)
+            g_new = self.aggregate_func1(
+                jnp.tile(ind_obj, (self.n_neighbor, 1)), w[ind_p], z_min, z_max
+            )
 
             neighbor_indices = jnp.where(g_old > g_new, ind_p, -1)
             sub = sub_pop_indices.at[neighbor_indices].set(
-                jnp.where(neighbor_indices == -1, sub_pop_indices[neighbor_indices], -1))
+                jnp.where(neighbor_indices == -1, sub_pop_indices[neighbor_indices], -1)
+            )
             return sub
 
         indices_cube = jax.vmap(body, in_axes=(0, 0))(neighbor, obj)
@@ -167,7 +180,9 @@ class TensorMOEAD(Algorithm):
             idx = jnp.argmin(self.aggregate_func2(f, w, z_min, z_max))
             return x[idx], f[idx]
 
-        population, pop_obj = jax.vmap(body2, in_axes=(1, 0, 0))(indices_cube, population, pop_obj)
+        population, pop_obj = jax.vmap(body2, in_axes=(1, 0, 0))(
+            indices_cube, population, pop_obj
+        )
 
         state = state.update(population=population, fitness=pop_obj, z=z_min)
         return state

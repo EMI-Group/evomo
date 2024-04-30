@@ -12,6 +12,7 @@ import time
 from evox.metrics import IGD
 from jax.experimental.host_callback import id_print
 
+
 @jit_class
 class AggregationFunction:
     def __init__(self, function_name):
@@ -32,7 +33,9 @@ class AggregationFunction:
         norm_w = jnp.linalg.norm(w, axis=1)
         f = f - z
         d1 = jnp.sum(f * w, axis=1) / norm_w
-        d2 = jnp.linalg.norm(f - (d1[:, jnp.newaxis] * w / norm_w[:, jnp.newaxis]), axis=1)
+        d2 = jnp.linalg.norm(
+            f - (d1[:, jnp.newaxis] * w / norm_w[:, jnp.newaxis]), axis=1
+        )
         return d1 + 5 * d2
 
     def tchebycheff(self, f, w, z, *args):
@@ -50,8 +53,19 @@ class AggregationFunction:
     def __call__(self, *args, **kwargs):
         return self.function(*args, **kwargs)
 
+
 class MOEADOrigin:
-    def __init__(self, lb, ub, pop_size, n_objs, num_generations, problem, key):
+    def __init__(
+        self,
+        lb,
+        ub,
+        pop_size,
+        n_objs,
+        num_generations,
+        problem,
+        key,
+        uniform_init=True,
+    ):
         self.lb = lb
         self.ub = ub
         self.num_variables = lb.shape[0]
@@ -63,8 +77,9 @@ class MOEADOrigin:
         self.problem = problem
         self.key = key
         self.n_neighbor = 0
-        self.func_name = 'pbi'
+        self.func_name = "pbi"
         self.pf = self.problem.pf()
+        self.uniform_init = uniform_init
 
         self.mutation = mutation.Polynomial((lb, ub))
         self.crossover = crossover.SimulatedBinary(type=1)
@@ -73,7 +88,15 @@ class MOEADOrigin:
 
     @partial(jax.jit, static_argnums=(0,))
     def initialize_population(self, key):
-        return jax.random.uniform(key, (self.pop_size, self.num_variables)) * (self.ub - self.lb) + self.lb
+        initializer = jax.nn.initializers.glorot_normal()
+        if self.uniform_init:
+            return (
+                jax.random.uniform(key, (self.pop_size, self.num_variables))
+                * (self.ub - self.lb)
+                + self.lb
+            )
+        else:
+            return initializer(key, (self.pop_size, self.num_variables))
 
     @partial(jax.jit, static_argnums=(0,))
     def step_forloop(self, key, population, pop_obj, neighbors, w, z, state):
@@ -96,9 +119,17 @@ class MOEADOrigin:
 
             update_condition = (f_old > f_new)[:, jnp.newaxis]
             population = population.at[p].set(
-                jnp.where(update_condition, jnp.tile(off, (jnp.shape(p)[0], 1)), population[p]))
+                jnp.where(
+                    update_condition, jnp.tile(off, (jnp.shape(p)[0], 1)), population[p]
+                )
+            )
             pop_obj = pop_obj.at[p].set(
-                jnp.where(update_condition, jnp.tile(off_obj, (jnp.shape(p)[0], 1)), pop_obj[p]))
+                jnp.where(
+                    update_condition,
+                    jnp.tile(off_obj, (jnp.shape(p)[0], 1)),
+                    pop_obj[p],
+                )
+            )
         return key, population, pop_obj, z, state
 
     @partial(jax.jit, static_argnums=(0,))
@@ -124,14 +155,24 @@ class MOEADOrigin:
 
             update_condition = (f_old > f_new)[:, jnp.newaxis]
             population = population.at[p].set(
-                jnp.where(update_condition, jnp.tile(off, (jnp.shape(p)[0], 1)), population[p]))
+                jnp.where(
+                    update_condition, jnp.tile(off, (jnp.shape(p)[0], 1)), population[p]
+                )
+            )
             pop_obj = pop_obj.at[p].set(
-                jnp.where(update_condition, jnp.tile(off_obj, (jnp.shape(p)[0], 1)), pop_obj[p]))
+                jnp.where(
+                    update_condition,
+                    jnp.tile(off_obj, (jnp.shape(p)[0], 1)),
+                    pop_obj[p],
+                )
+            )
             return key, population, pop_obj, z, state
 
         vals = (key, population, pop_obj, z, state)
 
-        key, population, pop_obj, z, state = jax.lax.fori_loop(0, self.pop_size, body_fn, vals)
+        key, population, pop_obj, z, state = jax.lax.fori_loop(
+            0, self.pop_size, body_fn, vals
+        )
 
         return key, population, pop_obj, z, state
 
@@ -158,7 +199,8 @@ class MOEADOrigin:
         for gen in range(self.num_generations):
             print(gen)
             key, self.population, self.pop_obj, z, state = self.step(
-                key, self.population, self.pop_obj, neighbors, w, z, state)
+                key, self.population, self.pop_obj, neighbors, w, z, state
+            )
 
             igd_value = igd(self.pop_obj)
             print(igd_value)
@@ -166,7 +208,7 @@ class MOEADOrigin:
         print(end - start)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     pop_size = 100
     num_generations = 100
     key = jax.random.PRNGKey(42)
