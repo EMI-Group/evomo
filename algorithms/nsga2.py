@@ -7,10 +7,10 @@ from evox.operators.sampling import UniformSampling
 from evox.utils import pairwise_euclidean_dist
 from evox import Algorithm, State, jit_class
 import math
-from jax.experimental.host_callback import id_print
+# from jax.experimental.host_callback import id_print
 
 class nsga2:
-    def __init__(self, lb, ub, n_objs, pop_size, key=None, problem=None, mutation_op=None, loop_num=10000, crossover_op=None):
+    def __init__(self, lb, ub, n_objs, pop_size, key=None, problem=None, mutation_op=None, loop_num=10, crossover_op=None):
         self.lb = lb
         self.ub = ub
         self.n_objs = n_objs
@@ -21,9 +21,9 @@ class nsga2:
         self.problem = problem
         self.mutation = mutation_op if mutation_op else mutation.Polynomial((lb, ub))
         self.crossover = crossover_op if crossover_op else crossover.SimulatedBinary(type=2)
-        self.key = key if key else jax.random.PRNGKey(0)
+        self.key = key if key is not None else jax.random.PRNGKey(0)
         self.sample = UniformSampling(self.pop_size, self.n_objs)
-        self.loop_num = loop_num
+        self.loop_num = loop_num # dfault: 10000
         
     def fun(self):
         key, init_key, loop_key = jax.random.split(self.key, 3)
