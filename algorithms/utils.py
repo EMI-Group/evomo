@@ -55,7 +55,7 @@ def CrowdingDistance(PopObj, FrontNo):
             distances_space = jnp.diff(values)  # 应该有len(front) - 1 个值
             distances = distances_space[:-1] + distances_space[1:] # 应该有len(front) - 2 个值
             scaled_distances = distances / (Fmax[k] - Fmin[k] + 1e-10)
-            scaled_distances = jnp.concatenate((jnp.array([jnp.inf]), values, jnp.array([jnp.inf])))
+            scaled_distances = jnp.concatenate((jnp.array([jnp.inf]), scaled_distances, jnp.array([jnp.inf])))
             # 确保距离更新在正确的范围内
             front_cd = front_cd.at[sorted_indices].add(scaled_distances)  # 更新距离
         
