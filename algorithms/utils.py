@@ -43,14 +43,17 @@ def CrowdingDistance(PopObj, FrontNo):
     fronts = jnp.unique(FrontNo)
     
     def calculate_front(front):
+        if front.shape[0] <= 2:
+            return jnp.array([jnp.inf] * front.shape[0])
+        
         Fmax = jnp.max(PopObj[front, :], axis=0)
         Fmin = jnp.min(PopObj[front, :], axis=0)
         front_cd = jnp.zeros(front.shape[0])
         
-        for k in range(M):
+        # for k in range(M):
+        def calculate_distance(k, front_cd):
             sorted_indices = jnp.argsort(PopObj[front, k])
             sorted_front = front[sorted_indices]
-            # 为了匹配长度，在diff之前和之后添加最大值和最小值
             values = PopObj[sorted_front, k]
             distances_space = jnp.diff(values)  # 应该有len(front) - 1 个值
             distances = distances_space[:-1] + distances_space[1:] # 应该有len(front) - 2 个值
@@ -58,7 +61,7 @@ def CrowdingDistance(PopObj, FrontNo):
             scaled_distances = jnp.concatenate((jnp.array([jnp.inf]), scaled_distances, jnp.array([jnp.inf])))
             # 确保距离更新在正确的范围内
             front_cd = front_cd.at[sorted_indices].add(scaled_distances)  # 更新距离
-        
+        front_cd = jax.lax.fori_loop(0, M, calculate_distance, front_cd)
         return front_cd
     
     for f in fronts:

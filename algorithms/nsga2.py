@@ -10,7 +10,7 @@ import math
 # from jax.experimental.host_callback import id_print
 
 class nsga2:
-    def __init__(self, lb, ub, n_objs, pop_size, key=None, problem=None, mutation_op=None, loop_num=10, crossover_op=None):
+    def __init__(self, lb, ub, n_objs, pop_size, key=None, problem=None, mutation_op=None, loop_num=1, crossover_op=None):
         self.lb = lb
         self.ub = ub
         self.n_objs = n_objs
@@ -45,7 +45,7 @@ class nsga2:
         Next = FrontNo < MaxNo
         CrowDis = CrowdingDistance(PopObj, FrontNo)
         Last = jnp.nonzero(FrontNo == MaxNo)[0]
-        _, rank = jnp.sort(-CrowDis[Last])
+        rank = jnp.argsort(CrowDis[Last], descending=True)
         Next.at[Last[rank[:self.pop_size-Next.sum()]]].set(True)
         selected = Next
         population = population[selected]
