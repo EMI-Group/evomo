@@ -45,8 +45,8 @@ class nsga2:
     def fun(self):
         key, init_key, loop_key = jax.random.split(self.key,3)
         self.key = key
-        population = self.sample(key =init_key)
-        x, FrontNo, CrowdDis = self.EnvSel(population)
+        population, _ = self.sample(key =init_key)
+        x, FrontNo, CrowdDis = self.envSelect(population)
         for i in self.loop_num:
             x_key, mut_key = jax.random.split(loop_key,2)
             MatingPool = TournamentSelection(2,self.pop_size,FrontNo, CrowdDis)
@@ -57,7 +57,7 @@ class nsga2:
         return population
     
     def envSelect(self, population):
-        PopObj = self.problem(population)
+        PopObj, state = self.problem.evaluate(State(), population)
         [FrontNo, MaxNo] = NDSort(PopObj, self.pop_size)
         Next = FrontNo < MaxNo
         CrowDis = CrowdingDistance(PopObj, FrontNo)

@@ -2,11 +2,23 @@ from nsga2 import nsga2
 import evox
 import jax
 import jax.numpy as jnp
+from evox import algorithms, problems, workflows, monitors, State
+from evox.metrics import IGD as IGD1
 
-lb = jnp.full(shape=(2,), fill_value=-32)
-ub = jnp.full(shape=(2,), fill_value=32)
+lb = jnp.full(shape=(3,), fill_value=0)
+ub = jnp.full(shape=(3,), fill_value=1)
+n_obj = 3
+pop_size = 100
+
+problem = problems.numerical.DTLZ2(m=n_obj)
 
 key = jax.random.PRNGKey(0)
-ori_ns2 = nsga2()
+ori_ns2 = nsga2(lb=lb, ub=ub, n_objs=n_obj, pop_size=pop_size, key=key, problem=problem)
+df = ori_ns2.fun()
+true_pf = problem.pf()
+pf = problem.evaluate(State(), df)
+igd = IGD1(pf)
 
-ori_ns2
+print(igd(pf))
+
+

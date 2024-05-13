@@ -3,11 +3,15 @@ import jax.numpy as jnp
 
 
 def NDSort(PopObj, nSort):
-    [N, M] = PopObj.size()
+    [N, M] = PopObj.shape
     no = 0
-    orders = [nSort] * N
-    dom_nums = [0] * N
-    dom_sets = [set()] * N
+    orders = jnp.full(N, nSort)
+    dom_nums = jnp.zeros(N, dtype=int)
+    dom_sets = [set() for _ in range(N)]
+    
+    def compare(indi1, indi2):
+        return jnp.all(indi1 <= indi2) and jnp.any(indi1 < indi2)
+    
     for i in range(N):
         indi1 = PopObj[i,:]
         for j in range(i+1, N):
