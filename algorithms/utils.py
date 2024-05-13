@@ -45,7 +45,7 @@ def CrowdingDistance(PopObj, FrontNo):
     def calculate_front(front):
         Fmax = jnp.max(PopObj[front, :], axis=0)
         Fmin = jnp.min(PopObj[front, :], axis=0)
-        front_cd = jnp.zeros(N)
+        front_cd = jnp.zeros(front.shape[0])
         
         for k in range(M):
             sorted_indices = jnp.argsort(PopObj[front, k])
