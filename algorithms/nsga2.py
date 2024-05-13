@@ -58,7 +58,7 @@ class nsga2:
     
     def envSelect(self, population):
         PopObj, state = self.problem.evaluate(State(), population)
-        [FrontNo, MaxNo] = NDSort(PopObj, self.pop_size)
+        FrontNo, MaxNo = NDSort(PopObj, self.pop_size)
         Next = FrontNo < MaxNo
         CrowDis = CrowdingDistance(PopObj, FrontNo)
         Last = jnp.nonzero(FrontNo == MaxNo)

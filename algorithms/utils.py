@@ -1,9 +1,8 @@
 import jax
 import jax.numpy as jnp
 
-
 def NDSort(PopObj, nSort):
-    [N, M] = PopObj.shape
+    N, M = PopObj.shape
     no = 0
     orders = jnp.full(N, nSort)
     dom_nums = jnp.zeros(N, dtype=int)
@@ -13,63 +12,73 @@ def NDSort(PopObj, nSort):
         return jnp.all(indi1 <= indi2) and jnp.any(indi1 < indi2)
     
     for i in range(N):
-        indi1 = PopObj[i,:]
-        for j in range(i+1, N):
-            indi2 = PopObj[j,:]
-            if compare(indi1, indi2, M):
-                dom_nums[j] += 1
+        for j in range(i + 1, N):
+            if compare(PopObj[i, :], PopObj[j, :]):
+                dom_nums = dom_nums.at[j].add(1)
                 dom_sets[i].add(j)
-            elif compare(indi2, indi1, M):
-                dom_nums[i] += 1
+            elif compare(PopObj[j, :], PopObj[i, :]):
+                dom_nums = dom_nums.at[i].add(1)
                 dom_sets[j].add(i)
-    end = True
-    while nSort > 0 and end:
+    
+    while nSort > 0:
         no += 1
         nSort -= 1
-        end = False
-        for i in range(len(dom_nums)):
+        next_dom_nums = dom_nums
+        for i in range(N):
             if dom_nums[i] == 0:
-                orders[i] = no
-                dom_nums[i] = -1
-                end = True
-        for i in range(len(dom_nums)):
-            if dom_nums[i] == -1:
+                orders = orders.at[i].set(no)
+                next_dom_nums = next_dom_nums.at[i].set(-1)
                 for j in dom_sets[i]:
-                    dom_nums[j] -= 1
-                dom_nums[i] = -2
-    # orders = jnp.array(orders)
-    orders = jnp.where(orders < no, orders, no)
+                    next_dom_nums = next_dom_nums.at[j].add(-1)
+        if jnp.all(next_dom_nums == dom_nums):
+            break
+        dom_nums = next_dom_nums
+
+    orders = jnp.where(orders <= no, orders, no)
     return orders, no
 
-def compare(com1, com2, M):
-    res = True
-    for i in range(M):
-        if com1[i] > com2[i]:
-          res = False
-    return res
-
 def CrowdingDistance(PopObj, FrontNo):
-    [N, M] = PopObj.size()
-    cd = [0.0] * N
+    N, M = PopObj.shape
+    cd = jnp.zeros(N)
     fronts = jnp.unique(FrontNo)
-    for i in range(fronts.size()[0]):
-        front = jnp.nonzero(FrontNo == fronts[i]).squeeze_()
-        Fmax = jnp.max(PopObj[front,:],axis=0)
-        Fmin = jnp.min(PopObj[front,:],axis=0)
-        for k in range (M):
-            rank = jnp.sort(PopObj[front,k])
-            cd[front[rank[0]]] = float('inf')
-            cd[front[rank[-1]]] = float('inf')
-            for j in range(1,len(front)-1):
-                cd[front[rank[j]]] += (PopObj[front[rank[j+1]],k] + PopObj[front[rank[j-1]],k]) / (Fmax[k]- Fmin[k])
-                
+    
+    def calculate_front(front):
+        Fmax = jnp.max(PopObj[front, :], axis=0)
+        Fmin = jnp.min(PopObj[front, :], axis=0)
+        front_cd = jnp.zeros(N)
+        
+        for k in range(M):
+            sorted_indices = jnp.argsort(PopObj[front, k])
+            sorted_front = front[sorted_indices]
+            # 为了匹配长度，在diff之前和之后添加最大值和最小值
+            values = PopObj[sorted_front, k]
+            extended_values = jnp.concatenate(([Fmin[k]], values, [Fmax[k]]))
+            distances = jnp.diff(extended_values)  # 应该有len(front) + 1 个值
+            distances = distances[1:-1]  # 去掉头尾，恢复到正确的长度
+            if jnp.any(Fmax[k] - Fmin[k] > 0):  # 防止除以0
+                scaled_distances = distances / (Fmax[k] - Fmin[k])
+                front_cd = front_cd.at[sorted_front[1:-1]].add(scaled_distances)  # 更新距离
+            
+        front_cd = front_cd.at[sorted_front[[0, -1]]].set(jnp.inf)
+        return front_cd
+    
+    for f in fronts:
+        front_indices = jnp.where(FrontNo == f)[0]
+        cd = cd.at[front_indices].set(calculate_front(front_indices))
+    
     return cd
 
-def TournamentSelection(K,N, FrontNo, CrowdDis):
-    parents = jnp.randint(high=N, size=(K,N))
-    parents = jnp.where(FrontNo[parents[0,:]] < FrontNo[parents[1,:]] or
-                     (FrontNo[parents[0,:]] - FrontNo[parents[1,:]] == 0 and
-                      CrowdDis[parents[0,:]] > CrowdDis[parents[1,:]]),
-                     parents[0,:], parents[1,:])
-    # return the index of population
-    return parents
+def TournamentSelection(K, N, FrontNo, CrowdDis):
+    idx = jnp.arange(N)
+    parents = jax.random.randint(jax.random.PRNGKey(0), shape=(K, 2), minval=0, maxval=N)
+    
+    def select(p):
+        cond = (FrontNo[p[0]] < FrontNo[p[1]]) | ((FrontNo[p[0]] == FrontNo[p[1]]) & (CrowdDis[p[0]] > CrowdDis[p[1]]))
+        return jnp.where(cond, p[0], p[1])
+    
+    return jnp.apply_along_axis(select, 1, parents)
+
+# Usage example
+PopObj = jax.random.uniform(jax.random.PRNGKey(0), (100, 3))
+nSort = 10
+orders, no = NDSort(PopObj, nSort)
