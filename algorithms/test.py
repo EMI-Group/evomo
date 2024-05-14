@@ -1,4 +1,4 @@
-from algorithms.nsga2_origin import nsga2
+from algorithms.nsga2_origin import NSGA2Origin
 import evox
 import jax
 import jax.numpy as jnp
@@ -15,11 +15,13 @@ problem = problems.numerical.DTLZ2(m=n_obj)
 key = jax.random.PRNGKey(1)
 
 def test_nsga2():
-    # 0.06821167
+    # origin nsga2 1000 loop
+    # time: 4324.2117 s
+    # igd: 0.06821167
     print("start original nsga2")
     start = time.time()
-    ori_ns2 = nsga2(lb=lb, ub=ub, n_objs=n_obj, pop_size=pop_size, key=key, problem=problem, loop_num=100)
-    df = ori_ns2.fun()
+    ori_ns2 = NSGA2Origin(lb=lb, ub=ub, n_objs=n_obj, pop_size=pop_size, key=key, problem=problem, num_generation=100)
+    df = ori_ns2.run()
     end = time.time()
     print(end-start)
     true_pf = problem.pf()
@@ -30,8 +32,8 @@ def test_nsga2():
     print(pf)
 
 def test_evox():
-    # start evox nsga2 1000 loop
-    # 3.1723215579986572
+    # evox nsga2 1000 loop
+    # time: 3.1723 s
     # igd 0.06418476
     print("start evox nsga2")
     start = time.time()
@@ -53,7 +55,6 @@ def test_evox():
     
     print("igd", igd(non_nan_rows))
 
-
-test_evox()
-test_nsga2()
-
+if __name__ == "__main__":
+    test_evox()
+    test_nsga2()

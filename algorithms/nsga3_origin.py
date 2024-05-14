@@ -10,22 +10,36 @@ import math
 # from jax.experimental.host_callback import id_print
 
 class nsga3:
-    def __init__(self, lb, ub, n_objs, pop_size, key=None, problem=None, mutation_op=None, loop_num=1, crossover_op=None):
+
+    def __init__(
+        self,
+        lb,
+        ub,
+        pop_size,
+        n_objs,
+        num_generation=1,
+        problem=None,
+        key=None,
+        mutation_op=None,
+        crossover_op=None,
+    ):
         self.lb = lb
         self.ub = ub
         self.n_objs = n_objs
         self.dim = lb.shape[0]
         self.pop_size = pop_size
         self.n_neighbor = jnp.ceil(self.pop_size / 10).astype(int)
-        
+
         self.problem = problem
         self.mutation = mutation_op if mutation_op else mutation.Polynomial((lb, ub))
         self.crossover = crossover_op if crossover_op else crossover.SimulatedBinary(type=2)
         self.key = key if key is not None else jax.random.PRNGKey(0)
         self.sample = UniformSampling(self.pop_size, self.n_objs)
-        self.loop_num = loop_num # dfault: 10000
-        
-    def fun(self):
+        self.loop_num = num_generation
+        # dfault: 10000
+
+    def run(self):
+        # to do
         key, init_key, loop_key = jax.random.split(self.key, 3)
         self.key = key
         population, _ = self.sample(key=init_key)
@@ -38,7 +52,7 @@ class nsga3:
             offspring = self.mutation(mut_key, crossovered)
             population, FrontNo, CrowdDis = self.envSelect(jnp.vstack((population, offspring)))
         return population
-    
+
     def envSelect(self, population):
         PopObj, _ = self.problem.evaluate(State(), population)
         FrontNo, MaxNo = NDSort(PopObj, self.pop_size)
