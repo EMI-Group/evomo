@@ -27,7 +27,6 @@ class nsga2:
         
     def fun(self):
         key, init_key, loop_key = jax.random.split(self.key, 3)
-        self.key = key
         population, _ = self.sample(key=init_key)
         population, FrontNo, CrowdDis = self.envSelect(population)
         for i in range(self.loop_num):
@@ -44,9 +43,9 @@ class nsga2:
         FrontNo, MaxNo = NDSort(PopObj, self.pop_size)
         Next = FrontNo < MaxNo
         CrowDis = CrowdingDistance(PopObj, FrontNo, MaxNo)
-        Last = jnp.nonzero(FrontNo == MaxNo)[0]
+        Last = jnp.where(FrontNo == MaxNo)[0]
         rank = jnp.argsort(CrowDis[Last], descending=True)
-        Next.at[Last[rank[:self.pop_size-Next.sum()]]].set(True)
+        Next = Next.at[Last[rank[:self.pop_size-Next.sum()]]].set(True)
         selected = Next
         population = population[selected]
         FrontNo = FrontNo[selected]

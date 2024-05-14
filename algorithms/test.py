@@ -5,14 +5,14 @@ import jax.numpy as jnp
 from evox import algorithms, problems, workflows, monitors, State
 from evox.metrics import IGD
 import time
+from jax import jit
 
 lb = jnp.full(shape=(3,), fill_value=0)
 ub = jnp.full(shape=(3,), fill_value=1)
 n_obj = 3
 pop_size = 100
 
-
-
+print("start")
 start = time.time()
 problem = problems.numerical.DTLZ2(m=n_obj)
 key = jax.random.PRNGKey(0)

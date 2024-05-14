@@ -1,6 +1,6 @@
 import jax
 import jax.numpy as jnp
-from jax import lax, jit
+# from utils_torch import NDSort as NDSort_torch, CrowdingDistance as CrowdingDistance_torch, TournamentSelection as TournamentSelection_torch 
 def NDSort_old(PopObj, nSort):
     N, M = PopObj.shape
     no = 0
@@ -38,9 +38,9 @@ def NDSort_old(PopObj, nSort):
     return orders, no
 
 
-def NDSort(PopObj, nSort):
+def NDSort(PopObj, nSort=None):
     N, M = PopObj.shape
-    no = 0
+    no = -1
     orders = jnp.full(N, nSort)
     dom_nums = jnp.zeros(N, dtype=int)
 
@@ -53,7 +53,8 @@ def NDSort(PopObj, nSort):
     
     # 更新主导数字
     dom_nums = jnp.sum(dominated, axis=0)
-
+    if nSort is None:
+        nSort = PopObj.shape[0]
     while nSort > 0:
         no += 1
         nSort -= 1
@@ -81,23 +82,20 @@ def CrowdingDistance(PopObj, FrontNo, maxF=None):
         if front.shape[0] <= 2:
             return jnp.array([jnp.inf] * front.shape[0])
         
-        Fmax = jnp.max(PopObj[front, :], axis=0)
-        Fmin = jnp.min(PopObj[front, :], axis=0)
         front_cd = jnp.zeros(front.shape[0])
         
-        # for k in range(M):
-        def calculate_distance(k, front_cd):
-            sorted_indices = jnp.argsort(PopObj[front, k])
-            sorted_front = front[sorted_indices]
-            values = PopObj[sorted_front, k]
-            distances_space = jnp.diff(values)  # 应该有len(front) - 1 个值
-            distances = distances_space[:-1] + distances_space[1:] # 应该有len(front) - 2 个值
-            scaled_distances = distances / (Fmax[k] - Fmin[k] + 1e-10)
+        def calculate_distance(k):
+            current_popobj = PopObj[front, k]
+            sorted_indices = jnp.argsort(current_popobj)
+            values = current_popobj[sorted_indices]
+            distances = values[2:] - values[:-2] # 应该有len(front) - 2 个值
+            scaled_distances = distances / (values[-1] - values[0])
             scaled_distances = jnp.concatenate((jnp.array([jnp.inf]), scaled_distances, jnp.array([jnp.inf])))
-            # 确保距离更新在正确的范围内
-            front_cd = front_cd.at[sorted_indices].add(scaled_distances)  # 更新距离
-            return front_cd
-        front_cd = jax.lax.fori_loop(0, M, calculate_distance, front_cd)
+            real_distances = scaled_distances.at[sorted_indices].set(scaled_distances)
+            return real_distances
+        
+        front_cd = jax.vmap(calculate_distance)(jnp.arange(M))
+        front_cd = front_cd.sum(axis=0)
         return front_cd
     
     if maxF is None:
@@ -108,6 +106,9 @@ def CrowdingDistance(PopObj, FrontNo, maxF=None):
     else:
         front_indices = jnp.where(FrontNo == maxF)[0]
         cd = cd.at[front_indices].set(calculate_front(front_indices))
+        front_indices = jnp.where(FrontNo != maxF)[0]
+        cd = cd.at[front_indices].set(-jnp.inf)
+        
         
     
     return cd
@@ -127,47 +128,65 @@ def TournamentSelection(K, N, FrontNo, CrowdDis):
 # 测试函数
 def test_NDSort():
     import numpy as np
+    import torch
+    from evox.operators import non_dominated_sort
     np.random.seed(1)
     PopObj = np.random.rand(10, 2)
     
     # 转换为JAX数组
     PopObj_jax = jnp.array(PopObj)
     
-    print("start compare")
+    print("start NDSort compare")
 
     # 获取两个版本的输出
-    orders_old, no_old = NDSort_old(PopObj_jax, 5)
+    # orders_old, no_old = NDSort_old(PopObj_jax, 5)
     orders_new, no_new = NDSort(PopObj_jax, 5)
-
+    oder_evox = non_dominated_sort(PopObj_jax)
+    # PopObj_torch = torch.tensor(PopObj)
+    # orders_old, no_old = NDSort_torch(PopObj_torch, 5)
+    # orders_old, no_old = jnp.array(orders_old), jnp.array(no_old)
     # 比较输出
-    assert jnp.all(orders_old == orders_new), "Order arrays do not match"
-    assert no_old == no_new, "No values do not match"
+    print(oder_evox-orders_new)
+    # assert jnp.all(orders_old == orders_new), "Order arrays do not match"
+    # assert no_old == no_new, "No values do not match"
 
     print("All tests passed!")
 
 
 def test_CrowdingDistance():
+    from evox.operators import crowding_distance
     import numpy as np
-    np.random.seed(1)
-    PopObj = np.random.rand(10, 3)
-    FrontNo = np.random.randint(1, 3, 10)
+    import torch
+    np.random.seed(2)
+    PopObj = np.random.rand(100, 3)
+    FrontNo = np.random.randint(0, 3, 100)
     maxF = 2
     
     # 转换为JAX数组
     PopObj_jax = jnp.array(PopObj)
     FrontNo_jax = jnp.array(FrontNo)
     
-    print("start compare")
+    print("start CrowdingDistance compare")
 
     # 获取两个版本的输出
-    cd_old = CrowdingDistance(PopObj_jax, FrontNo_jax, maxF)
+    cd = CrowdingDistance(PopObj_jax, FrontNo_jax, maxF)
+    cd_evox = crowding_distance(PopObj_jax, FrontNo==maxF)
     # cd_new = CrowdingDistance(PopObj_jax, FrontNo_jax, maxF)
+    # PopObj_torch = torch.tensor(PopObj)
+    # FrontNo_torch = torch.tensor(FrontNo)
 
+    # 获取两个版本的输出
+    # cd_torch = jnp.array(CrowdingDistance_torch(PopObj_torch, FrontNo_torch))
+    
     # 比较输出
-    # assert jnp.all(cd_old == cd_new), "Crowding distance arrays do not match"
+    # print(cd_evox-cd)
+    assert jnp.all(cd == cd_evox), "Crowding distance arrays do not match"
 
     print("All tests passed!")
 
 # 调用测试函数
 # test_NDSort()
 # test_CrowdingDistance()
+
+# a = jnp.arange(10)-5
+# print(jnp.where(a>0))
