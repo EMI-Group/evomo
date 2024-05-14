@@ -11,19 +11,40 @@ lb = jnp.full(shape=(3,), fill_value=0)
 ub = jnp.full(shape=(3,), fill_value=1)
 n_obj = 3
 pop_size = 100
-
-print("start")
-start = time.time()
 problem = problems.numerical.DTLZ2(m=n_obj)
 key = jax.random.PRNGKey(1)
-ori_ns2 = nsga2(lb=lb, ub=ub, n_objs=n_obj, pop_size=pop_size, key=key, problem=problem, loop_num=100)
-df = ori_ns2.fun()
-end = time.time()
-print(end-start)
-true_pf = problem.pf()
-pf, _ = problem.evaluate(State(), df)
-igd = IGD(true_pf)
-print(igd(pf))
-print(df.shape)
-print(pf)
+
+def test_nsgae():
+    print("start original nsga2")
+    start = time.time()
+    ori_ns2 = nsga2(lb=lb, ub=ub, n_objs=n_obj, pop_size=pop_size, key=key, problem=problem, loop_num=100)
+    df = ori_ns2.fun()
+    end = time.time()
+    print(end-start)
+    true_pf = problem.pf()
+    pf, _ = problem.evaluate(State(), df)
+    igd = IGD(true_pf)
+    print(igd(pf))
+    print(df.shape)
+    print(pf)
+
+def test_evox():
+    print("start evox nsga2")
+    start = time.time()
+    nsga2 = algorithms.NSGA2(lb=lb, ub=ub, n_objs=n_obj, pop_size=pop_size)
+    workflow = workflows.StdWorkflow(nsga2, problem)
+    state = workflow.init(key)
+    # run the workflow for 100 steps
+    for i in range(100):
+        state = workflow.step(state)
+    end = time.time()
+    print(end-start)
+    true_pf = problem.pf()
+    pf, _ = problem.evaluate(State(), state.population)
+    igd = IGD(true_pf)
+    print(igd(pf))
+    print(state.population.shape)
+    print(pf)
+
+test_evox()
 
