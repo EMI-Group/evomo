@@ -39,12 +39,16 @@ def test_evox():
         state = workflow.step(state)
     end = time.time()
     print(end-start)
+    
+    fit = state.get_child_state("algorithm").fitness
+    pop = state.get_child_state("algorithm").population
+    non_nan_rows = fit[~jnp.isnan(fit).any(axis=1)]
+
     true_pf = problem.pf()
-    pf, _ = problem.evaluate(State(), state.population)
     igd = IGD(true_pf)
-    print(igd(pf))
-    print(state.population.shape)
-    print(pf)
+    
+    print("igd", igd(non_nan_rows))
+
 
 test_evox()
 
