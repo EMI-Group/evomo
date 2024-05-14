@@ -57,20 +57,21 @@ def NDSort(PopObj, nSort=None):
         nSort = PopObj.shape[0]
     while nSort > 0:
         no += 1
-        nSort -= 1
         next_dom_nums = dom_nums
         for i in range(N):
             if dom_nums[i] == 0:
+                nSort -= 1
                 orders = orders.at[i].set(no)
                 next_dom_nums = next_dom_nums.at[i].set(-1)
                 for j in range(N):
                     if dominated[i, j]:
                         next_dom_nums = next_dom_nums.at[j].add(-1)
-        if jnp.all(next_dom_nums == dom_nums):
-            break
+        # if jnp.all(next_dom_nums == dom_nums):
+        #     break
         dom_nums = next_dom_nums
+        
 
-    orders = jnp.where(orders <= no, orders, no)
+    orders = jnp.where(orders <= no, orders, no+1)
     return orders, no
 
 

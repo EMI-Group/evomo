@@ -27,25 +27,35 @@ class nsga2:
         
     def fun(self):
         key, init_key, loop_key = jax.random.split(self.key, 3)
-        population, _ = self.sample(key=init_key)
+        population = (
+            jax.random.uniform(init_key, shape=(self.pop_size, self.dim))
+            * (self.ub - self.lb)
+            + self.lb
+        )
         population, FrontNo, CrowdDis = self.envSelect(population)
         for i in range(self.loop_num):
+            # print(population[:5])
             x_key, mut_key, loop_key = jax.random.split(loop_key, 3)
             MatingPool = TournamentSelection(2, self.pop_size, FrontNo, CrowdDis)
             mating_pop = population[MatingPool]
             crossovered = self.crossover(x_key, mating_pop)
             offspring = self.mutation(mut_key, crossovered)
-            population, FrontNo, CrowdDis = self.envSelect(jnp.vstack((population, offspring)))
+            next_generation = jnp.clip(offspring, self.lb, self.ub)
+            population, FrontNo, CrowdDis = self.envSelect(jnp.vstack((population, next_generation)))
+            
         return population
     
     def envSelect(self, population):
         PopObj, _ = self.problem.evaluate(State(), population)
+        # print("fitness")
+        # print(PopObj)
         FrontNo, MaxNo = NDSort(PopObj, self.pop_size)
         Next = FrontNo < MaxNo
-        CrowDis = CrowdingDistance(PopObj, FrontNo, MaxNo)
+        CrowDis = CrowdingDistance(PopObj, FrontNo)
         Last = jnp.where(FrontNo == MaxNo)[0]
         rank = jnp.argsort(CrowDis[Last], descending=True)
         Next = Next.at[Last[rank[:self.pop_size-Next.sum()]]].set(True)
+        # Next = Next.at[Last[rank[self.pop_size-Next.sum():]]].set(False)
         selected = Next
         population = population[selected]
         FrontNo = FrontNo[selected]
