@@ -29,6 +29,9 @@ def test_nsga2():
     print(pf)
 
 def test_evox():
+    # start evox nsga2 1000 loop
+    # 3.1723215579986572
+    # igd 0.06418476
     print("start evox nsga2")
     start = time.time()
     nsga2 = algorithms.NSGA2(lb=lb, ub=ub, n_objs=n_obj, pop_size=pop_size)
