@@ -41,7 +41,7 @@ def test_evox():
     print(end-start)
     
     fit = state.get_child_state("algorithm").fitness
-    pop = state.get_child_state("algorithm").population
+    # pop = state.get_child_state("algorithm").population
     non_nan_rows = fit[~jnp.isnan(fit).any(axis=1)]
 
     true_pf = problem.pf()
