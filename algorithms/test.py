@@ -15,6 +15,7 @@ problem = problems.numerical.DTLZ2(m=n_obj)
 key = jax.random.PRNGKey(1)
 
 def test_nsga2():
+    # 0.06821167
     print("start original nsga2")
     start = time.time()
     ori_ns2 = nsga2(lb=lb, ub=ub, n_objs=n_obj, pop_size=pop_size, key=key, problem=problem, loop_num=100)
