@@ -34,7 +34,6 @@ class nsga2:
         )
         population, FrontNo, CrowdDis = self.envSelect(population)
         for i in range(self.loop_num):
-            # print(population[:5])
             x_key, mut_key, loop_key = jax.random.split(loop_key, 3)
             MatingPool = TournamentSelection(2, self.pop_size, FrontNo, CrowdDis)
             mating_pop = population[MatingPool]
@@ -47,15 +46,12 @@ class nsga2:
     
     def envSelect(self, population):
         PopObj, _ = self.problem.evaluate(State(), population)
-        # print("fitness")
-        # print(PopObj)
         FrontNo, MaxNo = NDSort(PopObj, self.pop_size)
         Next = FrontNo < MaxNo
         CrowDis = CrowdingDistance(PopObj, FrontNo)
         Last = jnp.where(FrontNo == MaxNo)[0]
         rank = jnp.argsort(CrowDis[Last], descending=True)
         Next = Next.at[Last[rank[:self.pop_size-Next.sum()]]].set(True)
-        # Next = Next.at[Last[rank[self.pop_size-Next.sum():]]].set(False)
         selected = Next
         population = population[selected]
         FrontNo = FrontNo[selected]

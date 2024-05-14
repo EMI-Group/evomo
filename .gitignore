@@ -160,3 +160,4 @@ cython_debug/
 .idea/
 
 algorithms/template.sh
+*.out
