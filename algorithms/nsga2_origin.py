@@ -49,7 +49,7 @@ class NSGA2Origin:
         PopObj, _ = self.problem.evaluate(State(), population)
         FrontNo, MaxNo = NDSort(PopObj, self.pop_size)
         Next = FrontNo < MaxNo
-        CrowDis = CrowdingDistance(PopObj, FrontNo)
+        CrowDis = CrowdingDistance(PopObj, FrontNo, MaxNo)
         Last = jnp.where(FrontNo == MaxNo)[0]
         rank = jnp.argsort(CrowDis[Last], descending=True)
         Next = Next.at[Last[rank[:self.pop_size-Next.sum()]]].set(True)
