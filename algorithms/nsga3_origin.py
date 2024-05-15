@@ -39,15 +39,15 @@ class nsga3:
         # dfault: 10000
 
     def run(self):
-        # to do
         key, init_key, loop_key = jax.random.split(self.key, 3)
         self.key = key
         population, _ = self.sample(key=init_key)
         population, FrontNo, CrowdDis = self.envSelect(population)
         for i in range(self.loop_num):
             x_key, mut_key, loop_key = jax.random.split(loop_key, 3)
-            MatingPool = TournamentSelection(2, self.pop_size, FrontNo, CrowdDis)
-            mating_pop = population[MatingPool]
+            # MatingPool = TournamentSelection(2, self.pop_size, FrontNo, CrowdDis)
+            # mating_pop = population[MatingPool]
+            mating_pop = population
             crossovered = self.crossover(x_key, mating_pop)
             offspring = self.mutation(mut_key, crossovered)
             population, FrontNo, CrowdDis = self.envSelect(jnp.vstack((population, offspring)))
