@@ -1,4 +1,4 @@
-from algorithms.nsga2_origin import NSGA2Origin
+from nsga2_origin import NSGA2Origin
 import evox
 import jax
 import jax.numpy as jnp

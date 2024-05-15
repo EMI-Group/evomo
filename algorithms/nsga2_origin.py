@@ -35,8 +35,9 @@ class NSGA2Origin:
         population, FrontNo, CrowdDis = self.envSelect(population)
         for i in range(self.loop_num):
             x_key, mut_key, loop_key = jax.random.split(loop_key, 3)
-            MatingPool = TournamentSelection(2, self.pop_size, FrontNo, CrowdDis)
-            mating_pop = population[MatingPool]
+            # MatingPool = TournamentSelection(2, self.pop_size, FrontNo, CrowdDis)
+            # mating_pop = population[MatingPool]
+            mating_pop = population
             crossovered = self.crossover(x_key, mating_pop)
             offspring = self.mutation(mut_key, crossovered)
             next_generation = jnp.clip(offspring, self.lb, self.ub)
@@ -48,7 +49,7 @@ class NSGA2Origin:
         PopObj, _ = self.problem.evaluate(State(), population)
         FrontNo, MaxNo = NDSort(PopObj, self.pop_size)
         Next = FrontNo < MaxNo
-        CrowDis = CrowdingDistance(PopObj, FrontNo)
+        CrowDis = CrowdingDistance(PopObj, FrontNo, MaxNo)
         Last = jnp.where(FrontNo == MaxNo)[0]
         rank = jnp.argsort(CrowDis[Last], descending=True)
         Next = Next.at[Last[rank[:self.pop_size-Next.sum()]]].set(True)
