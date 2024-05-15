@@ -35,8 +35,9 @@ class NSGA2Origin:
         population, FrontNo, CrowdDis = self.envSelect(population)
         for i in range(self.loop_num):
             x_key, mut_key, loop_key = jax.random.split(loop_key, 3)
-            MatingPool = TournamentSelection(2, self.pop_size, FrontNo, CrowdDis)
-            mating_pop = population[MatingPool]
+            # MatingPool = TournamentSelection(2, self.pop_size, FrontNo, CrowdDis)
+            # mating_pop = population[MatingPool]
+            mating_pop = population
             crossovered = self.crossover(x_key, mating_pop)
             offspring = self.mutation(mut_key, crossovered)
             next_generation = jnp.clip(offspring, self.lb, self.ub)
