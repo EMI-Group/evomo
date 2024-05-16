@@ -4,12 +4,11 @@ import jax.numpy as jnp
 from utils import NDSort, CrowdingDistance, TournamentSelection
 from evox.operators import mutation, crossover
 from evox.operators.sampling import UniformSampling
-from evox.utils import pairwise_euclidean_dist
+from evox.utils import cos_dist
 from evox import Algorithm, State, jit_class
-import math
-# from jax.experimental.host_callback import id_print
+from jax import jit
 
-class nsga3:
+class NSGA3Origin:
 
     def __init__(
         self,
@@ -34,16 +33,19 @@ class nsga3:
         self.mutation = mutation_op if mutation_op else mutation.Polynomial((lb, ub))
         self.crossover = crossover_op if crossover_op else crossover.SimulatedBinary(type=2)
         self.key = key if key is not None else jax.random.PRNGKey(0)
-        self.sample = UniformSampling(self.pop_size, self.n_objs)
+        self.sample = jit(UniformSampling(self.pop_size, self.n_objs))
         self.loop_num = num_generation
-        self.ref = self.sampling(self.key)[0]
+        self.ref = self.sample(self.key)[0]
         # dfault: 10000
 
     def run(self):
         key, init_key, loop_key = jax.random.split(self.key, 3)
         self.key = key
-        population, _ = self.sample(key=init_key)
-        population, FrontNo, CrowdDis = self.envSelect(population)
+        population = (
+            jax.random.uniform(init_key, shape=(self.pop_size, self.dim))
+            * (self.ub - self.lb)
+            + self.lb
+        )
         for i in range(self.loop_num):
             env_key, x_key, mut_key, loop_key = jax.random.split(loop_key, 4)
             # MatingPool = TournamentSelection(2, self.pop_size, FrontNo, CrowdDis)
@@ -52,13 +54,14 @@ class nsga3:
             crossovered = self.crossover(x_key, mating_pop)
             offspring = self.mutation(mut_key, crossovered)
             population = self.envSelect(jnp.vstack((population, offspring)), env_key)
+            print("one loop")
         return population
 
     def envSelect(self, population, key):
         PopObj, _ = self.problem.evaluate(State(), population)
         FrontNo, MaxNo = NDSort(PopObj, self.pop_size)
         Next = FrontNo < MaxNo 
-        Last = jnp.nonzero(FrontNo == MaxNo)[0]
+        Last = jnp.where(FrontNo == MaxNo)[0]
         # to do
         # 进行最后一轮选择
         Choose = LastSelection(PopObj[Next], PopObj[Last], self.pop_size - jnp.sum(Next), self.ref, key)
@@ -75,25 +78,24 @@ def LastSelection(PopObj1, PopObj2, K, Z, key):
     N2 = PopObj2.shape[0]
     NZ = Z.shape[0]
 
-    # 归一化
+    # 归一化 问问GPT这个归一化
     Extreme = jnp.zeros(M, dtype=int)
-    w = jnp.eye(M) * 1e-6 + 1
+    w = jnp.eye(M) + 1e-6
     for i in range(M):
-        _, Extreme = jnp.min(jnp.max(PopObj / w[i], axis=1), axis=0)
+        Extreme = Extreme.at[i].set(jnp.argmin(jnp.max(PopObj / w[i], axis=1), axis=0))
     Hyperplane = jnp.linalg.solve(PopObj[Extreme, :], jnp.ones(M))
     a = 1.0 / Hyperplane
     a = jnp.where(jnp.isnan(a), jnp.max(PopObj, axis=0), a)
     PopObj = PopObj / a
 
     # 关联每个解到参考点
-    Cosine = 1 - jnp.dot(PopObj, Z.T) / (
-        jnp.linalg.norm(PopObj, axis=1, keepdims=True) * jnp.linalg.norm(Z, axis=1)
-    )
-    Distance = jnp.sqrt(jnp.sum(PopObj**2, axis=1, keepdims=True)) * jnp.sqrt(
-        1 - Cosine**2
-    )
-    pi = jnp.argmin(Distance, axis=1)
+    cos_distance = cos_dist(PopObj, Z)
 
+    dist = jnp.linalg.norm(PopObj, axis=-1, keepdims=True) * jnp.sqrt(
+        1 - cos_distance**2
+    )
+    pi = jnp.argmin(dist, axis=1)
+    dist_point = dist[jnp.arange(N), pi]
     rho = jnp.bincount(pi[:N1], length=NZ)
 
     # 环境选择
@@ -104,11 +106,12 @@ def LastSelection(PopObj1, PopObj2, K, Z, key):
         Jmin = jnp.argmin(rho[Temp])
         j = Temp[Jmin]
         I = jnp.where((Choose == 0) & (pi[N1:] == j))[0]
-        if I.size > 0:
+        if I.shape[0] > 0:
             if rho[j] == 0:
-                s = jnp.argmin(Distance[N1 + I])
+                s = jnp.argmin(dist_point[N1 + I])
             else:
-                s = jax.random.choice(key, I.shape[0])
+                key, choice_key = jax.random.split(key)
+                s = jax.random.choice(choice_key, I.shape[0])
             Choose = Choose.at[I[s]].set(True)
             rho = rho.at[j].add(1)
         else:
