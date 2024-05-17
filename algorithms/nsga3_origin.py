@@ -62,7 +62,6 @@ class NSGA3Origin:
         FrontNo, MaxNo = NDSort(PopObj, self.pop_size)
         Next = FrontNo < MaxNo 
         Last = jnp.where(FrontNo == MaxNo)[0]
-        # to do
         # 进行最后一轮选择
         Choose = LastSelection(PopObj[Next], PopObj[Last], self.pop_size - jnp.sum(Next), self.ref, key)
         print(Choose.sum())
