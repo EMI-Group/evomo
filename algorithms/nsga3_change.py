@@ -80,11 +80,31 @@ def LastSelection(PopObj1, PopObj2, K, Z, key):
     NZ = Z.shape[0]
 
     # 原版 归一化
-    Extreme = jnp.zeros(M, dtype=int)
-    w = jnp.eye(M) + 1e-6
-    for i in range(M):
-        Extreme = Extreme.at[i].set(jnp.argmin(jnp.max(PopObj / w[i], axis=1), axis=0))
-   
+    # Extreme = jnp.zeros(M, dtype=int)
+    # w = jnp.eye(M) + 1e-6
+    # for i in range(M):
+    #     Extreme = Extreme.at[i].set(jnp.argmin(jnp.max(PopObj / w[i], axis=1), axis=0))
+    # 改动 归一化
+    max_indices = jnp.argmax(PopObj, axis=0)
+    unique_indices, counts = jnp.unique(max_indices, return_counts=True)
+
+    # 如果有重复的最大值索引，为重复索引的列找次大值
+    while jnp.any(counts > 1):
+        for index in unique_indices[counts > 1]:
+            # 找出具有相同最大行索引的所有列
+            columns = jnp.where(max_indices == index)[0]
+            # 对每一列处理，除了第一列
+            for col in columns[1:]:
+                # 设置当前最大值所在行的值为负无穷大，寻找次大值
+                temp_matrix = PopObj.at[index, col].set(-jnp.inf)
+                # 计算次大值的索引
+                new_index = jnp.argmax(temp_matrix[:, col], axis=0)
+                # 更新索引数组
+                max_indices = max_indices.at[col].set(new_index)
+
+        # 重新检查是否还有重复
+        unique_indices, counts = jnp.unique(max_indices, return_counts=True)
+    Extreme = max_indices
     Hyperplane = jnp.linalg.solve(PopObj[Extreme, :], jnp.ones(M))
     a = 1.0 / Hyperplane
     a = jnp.where(jnp.isnan(a), jnp.max(PopObj, axis=0), a)
