@@ -58,9 +58,9 @@ def test_nage2_evox():
 
 
 def test_nsga3():
-    # origin nsga2 1000 loop
-    # time: 4324.2117 s
-    # igd: 0.06821167
+    # origin nsga2 100 loop
+    # time: 1055.1837 s
+    # igd: 0.05381546
     print("start original nsga3")
     start = time.time()
     ori_ns3 = NSGA3Origin(
@@ -84,9 +84,9 @@ def test_nsga3():
 
 
 def test_nage3_evox():
-    # evox nsga2 1000 loop
-    # time: 3.1723 s
-    # igd 0.06418476
+    # evox nsga2 100 loop
+    # time: 4.2556774616 s
+    # igd 0.053480785
     print("start evox nsga3")
     start = time.time()
     nsga3 = algorithms.NSGA3(lb=lb, ub=ub, n_objs=n_obj, pop_size=pop_size)
