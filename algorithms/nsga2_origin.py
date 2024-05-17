@@ -32,7 +32,6 @@ class NSGA2Origin:
             * (self.ub - self.lb)
             + self.lb
         )
-        population, FrontNo, CrowdDis = self.envSelect(population)
         for i in range(self.loop_num):
             x_key, mut_key, loop_key = jax.random.split(loop_key, 3)
             # MatingPool = TournamentSelection(2, self.pop_size, FrontNo, CrowdDis)
