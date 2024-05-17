@@ -54,7 +54,6 @@ class NSGA3Origin:
             crossovered = self.crossover(x_key, mating_pop)
             offspring = self.mutation(mut_key, crossovered)
             population = self.envSelect(jnp.vstack((population, offspring)), env_key)
-            print("pop size: {}".format(population.shape))
         return population
 
     def envSelect(self, population, key):
@@ -65,7 +64,6 @@ class NSGA3Origin:
         # to do
         # 进行最后一轮选择
         Choose = LastSelection(PopObj[Next], PopObj[Last], self.pop_size - jnp.sum(Next), self.ref, key)
-        print(Choose.sum())
         Next = Next.at[Last[Choose]].set(True)
         return population[Next]
 
