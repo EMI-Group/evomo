@@ -23,7 +23,7 @@ from evox import Algorithm, jit_class, State
 
 
 @jit_class
-class NSGA3(Algorithm):
+class NSGA3Origin(Algorithm):
     """NSGA-III algorithm
 
     link: https://ieeexplore.ieee.org/document/6600851

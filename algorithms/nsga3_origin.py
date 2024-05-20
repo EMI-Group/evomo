@@ -8,7 +8,7 @@ from evox.utils import cos_dist
 from evox import Algorithm, State, jit_class
 from jax import jit
 
-class NSGA3Origin:
+class NSGA3Origin2:
 
     def __init__(
         self,
