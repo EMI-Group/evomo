@@ -49,14 +49,22 @@ class NSGA3(Algorithm):
         self.mutation = mutation_op
         self.crossover = crossover_op
 
-        if self.selection is None:
-            self.selection = selection.UniformRand(0.5)
-        if self.mutation is None:
-            self.mutation = mutation.Gaussian()
-        if self.crossover is None:
-            self.crossover = crossover.UniformRand()
+        # if self.selection is None:
+        #     self.selection = selection.UniformRand(0.5)
+        # if self.mutation is None:
+        #     self.mutation = mutation.Gaussian()
+        # if self.crossover is None:
+        #     self.crossover = crossover.UniformRand()
 
+        if self.selection is None:
+            self.selection = selection.UniformRand(1)
+        if self.mutation is None:
+            self.mutation = mutation.Polynomial((self.lb, self.ub))
+        if self.crossover is None:
+            self.crossover = crossover.SimulatedBinary()
         self.sampling = sampling.UniformSampling(self.pop_size, self.n_objs)
+        subkey = jax.random.PRNGKey(0)
+        self.ref = self.sampling(subkey)[0]
 
     def setup(self, key):
         key, subkey = jax.random.split(key)
@@ -65,8 +73,8 @@ class NSGA3(Algorithm):
             * (self.ub - self.lb)
             + self.lb
         )
-        self.ref = self.sampling(subkey)[0]
-        self.ref = self.ref / jnp.linalg.norm(self.ref, axis=1)[:, None]
+
+        # self.ref = self.ref / jnp.linalg.norm(self.ref, axis=1)[:, None]
         return State(
             population=population,
             fitness=jnp.zeros((self.pop_size, self.n_objs)),
@@ -83,14 +91,12 @@ class NSGA3(Algorithm):
 
     def ask(self, state):
         key, sel_key1, mut_key, sel_key2, x_key = jax.random.split(state.key, 5)
-        selected = self.selection(sel_key1, state.population)
-        mutated = self.mutation(mut_key, selected)
-        selected = self.selection(sel_key2, state.population)
-        crossovered = self.crossover(x_key, selected)
-
-        next_generation = jnp.clip(
-            jnp.concatenate([mutated, crossovered], axis=0), self.lb, self.ub
-        )
+        mutated = self.mutation(mut_key, state.population)
+        crossovered = self.crossover(x_key, mutated)
+        next_generation = jnp.clip(crossovered, self.lb, self.ub)
+        # next_generation = jnp.clip(
+        #     jnp.concatenate([mutated, crossovered], axis=0), self.lb, self.ub
+        # )
         return next_generation, state.update(next_generation=next_generation, key=key)
 
     def tell(self, state, fitness):
