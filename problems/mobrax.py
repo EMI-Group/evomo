@@ -62,29 +62,7 @@ class MoBrax(Problem):
     def setup(self, key):
         return State(key=key, obs_param=self.obs_norm.generate_init_params())
 
-    # @jit_method
-    # def evaluate(self, state, weights):
-    #     batch_size = tree_leaves(weights)[0].shape[0]
-    #     brax_state = self.jit_reset(jnp.tile(state.key, (batch_size, 1)))
-    #
-    #     def cond_func(val):
-    #         counter, state, _total_reward = val
-    #         return (counter < self.cap_episode) & (~state.done.all())
-    #
-    #     def body_func(val):
-    #         counter, brax_state, total_reward = val
-    #         action = self.batched_policy(weights, brax_state.obs)
-    #         brax_state = self.jit_env_step(brax_state, action)
-    #         id_print(brax_state.done)
-    #         total_reward += (1 - brax_state.done) * brax_state.reward
-    #         return counter + 1, brax_state, total_reward
-    #
-    #     init_val = (0, brax_state, jnp.zeros((batch_size, 2)))  #　self.num_obj
-    #
-    #     _counter, _brax_state, total_reward = jax.lax.while_loop(
-    #         cond_func, body_func, init_val
-    #     )
-    #     return total_reward, state
+
     @jit_method
     def evaluate(self, state, weights):
         batch_size = tree_leaves(weights)[0].shape[0]
@@ -164,56 +142,6 @@ class MoBrax(Problem):
             )
 
         return total_reward, state
-
-    # @jit_method
-    # def evaluate_single(self, state, weights):
-    #     batch_size = tree_leaves(weights)[0].shape[0]
-    #     brax_state = self.jit_reset(jnp.tile(state.key, (batch_size, 1)))
-    #
-    #     def cond_func(val):
-    #         counter, state, _total_reward, _ = val
-    #         return (counter < self.cap_episode) & (~state.done.all())
-    #
-    #     def body_func(val):
-    #         counter, brax_state, total_reward, batch_step = val
-    #         action = self.batched_policy(weights, brax_state.obs)
-    #         brax_state = self.jit_env_step(brax_state, action)
-    #         batch_step += (1 - brax_state.done)
-    #         total_reward += (1 - brax_state.done) * brax_state.reward
-    #         return counter + 1, brax_state, total_reward, batch_step
-    #
-    #     init_val = (0, brax_state, jnp.zeros((batch_size, )), jnp.zeros((batch_size, )))
-    #
-    #     _counter, _brax_state, total_reward, batch_step = jax.lax.while_loop(
-    #         cond_func, body_func, init_val
-    #     )
-    #     return total_reward, batch_step, state
-
-    # @jit_method
-    # def evaluate_multi(self, state, weights):
-    #     batch_size = tree_leaves(weights)[0].shape[0]
-    #     brax_state = self.jit_reset(jnp.tile(state.key, (batch_size, 1)))
-    #
-    #     def cond_func(val):
-    #         counter, state, _total_reward, _ = val
-    #         return (counter < self.cap_episode) & (~state.done.all())
-    #
-    #     def body_func(val):
-    #         counter, brax_state, total_reward, batch_step = val
-    #         action = self.batched_policy(weights, brax_state.obs)
-    #         brax_state = self.jit_env_step(brax_state, action)
-    #         batch_step += (1-brax_state.done)
-    #         done = jnp.tile(brax_state.done[:, jnp.newaxis], (1, self.num_obj))
-    #         reward = jnp.nan_to_num(brax_state.reward)
-    #         total_reward += (1 - done) * reward
-    #         return counter + 1, brax_state, total_reward, batch_step
-    #
-    #     init_val = (0, brax_state, jnp.zeros((batch_size, self.num_obj)), jnp.zeros((batch_size, )))
-    #
-    #     _counter, _brax_state, total_reward, batch_step = jax.lax.while_loop(
-    #         cond_func, body_func, init_val
-    #     )
-    #     return total_reward, batch_step, state
 
     def visualize(
         self,

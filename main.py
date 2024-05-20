@@ -10,7 +10,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import time
-from algorithms import TensorMOEAD, MOEAD1, PMOEAD, MOEADOrigin
+from algorithms import TensorMOEAD, MOEAD1, PMOEAD, MOEADOrigin, HypEOrigin
 from evox.utils import cos_dist
 from functools import partial
 import matplotlib.pyplot as plt
@@ -29,6 +29,11 @@ def run_moea(algorithm, key):
         problem=problem,
         monitor=monitor,
     )
+    # workflow = workflows.NonJitWorkflow(
+    #     algorithm=algorithm,
+    #     problem=problem,
+    #     monitor=monitor,
+    # )
 
     state = workflow.init(key)
 
@@ -55,17 +60,23 @@ def run_moea(algorithm, key):
 
 
 if __name__ == '__main__':
-    print("MOEAD")
+    print("HypEOrigin")
 
     lb = jnp.full(shape=(12,), fill_value=0)
     ub = jnp.full(shape=(12,), fill_value=1)
 
-    algorithm = PMOEAD(
+    algorithm = HypEOrigin(
         lb=lb,
         ub=ub,
         n_objs=3,
         pop_size=100,
     )
+    # algorithm = evox.algorithms.HypE(
+    #     lb=lb,
+    #     ub=ub,
+    #     n_objs=3,
+    #     pop_size=100,
+    # )
     key = jax.random.PRNGKey(42)
 
     for i in range(1):
