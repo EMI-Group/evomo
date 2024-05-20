@@ -1,5 +1,6 @@
 from nsga2_origin import NSGA2Origin
 from nsga3_origin import NSGA3Origin
+from nsga3_evox_ori import NSGA3 as NSGA3_EVOX_ORI
 import evox
 import jax
 import jax.numpy as jnp
@@ -107,7 +108,29 @@ def test_nage3_evox():
 
     print("igd", igd(non_nan_rows))
 
+def test_nsga3_evox_ori():
+    print("start evox nsga3_evox_ori")
+    start = time.time()
+    nsga3 = NSGA3_EVOX_ORI(lb=lb, ub=ub, n_objs=n_obj, pop_size=pop_size)
+    workflow = workflows.StdWorkflow(nsga3, problem)
+    state = workflow.init(key)
+    # run the workflow for 100 steps
+    for i in range(100):
+        state = workflow.step(state)
+    end = time.time()
+    print(end - start)
+
+    fit = state.get_child_state("algorithm").fitness
+    # pop = state.get_child_state("algorithm").population
+    non_nan_rows = fit[~jnp.isnan(fit).any(axis=1)]
+
+    true_pf = problem.pf()
+    igd = IGD(true_pf)
+
+    print("igd", igd(non_nan_rows))
+
 
 if __name__ == "__main__":
-    test_nsga3()
-    test_nage3_evox()
+    # test_nsga3()
+    # test_nage3_evox()
+    test_nsga3_evox_ori()
