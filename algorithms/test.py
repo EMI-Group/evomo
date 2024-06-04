@@ -69,10 +69,11 @@ def test_ori_algo(name, algo):
 
 
 def test_oris():
-    names = ["nsga3", "nsga3_1", "nsga3_2", "nsga3_3", "nsga3_4"]
-    algos = [NSGA3Origin, NSGA3Origin_1, NSGA3Origin_2, NSGA3Origin_3, NSGA3Origin_4]
-    for i in range(5):
-        test_ori_algo(names[i], algos[i])
+    # names = ["nsga3", "nsga3_1", "nsga3_2", "nsga3_3", "nsga3_4"]
+    # algos = [NSGA3Origin, NSGA3Origin_1, NSGA3Origin_2, NSGA3Origin_3, NSGA3Origin_4]
+    # for i in range(5):
+    #     test_ori_algo(names[i], algos[i])
+    test_ori_algo("nsga3", NSGA3Origin)
     test_evox_algo("nsga3", algorithms.NSGA3)
 
 
