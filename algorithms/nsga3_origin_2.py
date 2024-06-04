@@ -79,19 +79,16 @@ def LastSelection(PopObj1, PopObj2, K, Z, key):
     # 原版 归一化
     Extreme = jnp.zeros(M, dtype=int)
     w = jnp.eye(M) + 1e-6
-    # for i in range(M):
-    #     Extreme = Extreme.at[i].set(jnp.argmin(jnp.max(PopObj / w[i], axis=1), axis=0))
-    
-    def get_streme(i, Extreme, PopObj, w):
+    for i in range(M):
         Extreme = Extreme.at[i].set(jnp.argmin(jnp.max(PopObj / w[i], axis=1), axis=0))
-        return Extreme
     
-    Extreme = jax.lax.fori_loop(0, M, get_streme, Extreme, PopObj, w)
-    ''' 
-    #改版，更快一点点
-    #100 loop
-    #time: 1024.098295211792
-    #igd: 0.053742908
+    # def get_streme(i, Extreme, PopObj, w):
+    #     Extreme = Extreme.at[i].set(jnp.argmin(jnp.max(PopObj / w[i], axis=1), axis=0))
+    #     return Extreme
+    
+    # Extreme = jax.lax.fori_loop(0, M, get_streme, Extreme, PopObj, w)
+   
+    #改版
     max_indices = jnp.argmax(PopObj, axis=0)
     unique_indices, counts = jnp.unique(max_indices, return_counts=True)
 
@@ -112,7 +109,7 @@ def LastSelection(PopObj1, PopObj2, K, Z, key):
         # 重新检查是否还有重复
         unique_indices, counts = jnp.unique(max_indices, return_counts=True)
     Extreme = max_indices
-    '''
+    
     
     Hyperplane = jnp.linalg.solve(PopObj[Extreme, :], jnp.ones(M))
     a = 1.0 / Hyperplane
