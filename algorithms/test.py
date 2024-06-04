@@ -21,7 +21,7 @@ lb = jnp.full(shape=(dim,), fill_value=0)
 ub = jnp.full(shape=(dim,), fill_value=1)
 problem = problems.numerical.DTLZ2(d=dim, m=n_obj)
 key = jax.random.PRNGKey(1)
-
+loop_num = 100
 
 def test_evox_algo(name, algo):
     # evox nsga2 1000 loop
@@ -34,7 +34,7 @@ def test_evox_algo(name, algo):
     workflow = workflows.StdWorkflow(algo_instance, problem)
     state = workflow.init(key)
     # run the workflow for 100 steps
-    for i in range(100):
+    for i in range(loop_num):
         state = workflow.step(state)
     end = time.time()
     print(end-start)
@@ -59,7 +59,7 @@ def test_ori_algo(name, algo):
         pop_size=pop_size,
         key=key,
         problem=problem,
-        num_generation=100,
+        num_generation=loop_num,
     )
     df = algo_instance.run()
     end = time.time()
@@ -83,7 +83,5 @@ def test_oris():
 if __name__ == "__main__":
     # test_evox_algo()
     # test_nsga3_evox_ori()
-    test_oris()
-    # name = "nsga3_3"
-    # algo = NSGA3Origin_3
-    # test_ori_algo(name, algo)
+    # test_oris()
+    test_evox_algo("nsga3", algorithms.NSGA3)
