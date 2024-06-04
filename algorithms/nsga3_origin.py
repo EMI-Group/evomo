@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 
 from utils import NDSort, CrowdingDistance, TournamentSelection
-from evox.operators import mutation, crossover
+from evox.operators import mutation, crossover, non_dominated_sort
 from evox.operators.sampling import UniformSampling
 from evox.utils import cos_dist
 from evox import Algorithm, State, jit_class
@@ -16,7 +16,7 @@ class NSGA3Origin2:
         ub,
         pop_size,
         n_objs,
-        num_generation=1,
+        num_generation=1000,
         problem=None,
         key=None,
         mutation_op=None,
@@ -58,9 +58,14 @@ class NSGA3Origin2:
 
     def envSelect(self, population, key):
         PopObj, _ = self.problem.evaluate(State(), population)
-        FrontNo, MaxNo = NDSort(PopObj, self.pop_size)
-        Next = FrontNo < MaxNo 
+        # FrontNo, MaxNo = NDSort(PopObj, self.pop_size)
+       
+        FrontNo = non_dominated_sort(PopObj)
+        order = jnp.argsort(FrontNo)
+        MaxNo = FrontNo[order[self.pop_size]]
+        Next = FrontNo < MaxNo
         Last = jnp.where(FrontNo == MaxNo)[0]
+        
         # 进行最后一轮选择
         Choose = LastSelection(PopObj[Next], PopObj[Last], self.pop_size - jnp.sum(Next), self.ref, key)
         Next = Next.at[Last[Choose]].set(True)
@@ -79,14 +84,24 @@ def LastSelection(PopObj1, PopObj2, K, Z, key):
     # 原版 归一化
     Extreme = jnp.zeros(M, dtype=int)
     w = jnp.eye(M) + 1e-6
-    for i in range(M):
+    # for i in range(M):
+    #     Extreme = Extreme.at[i].set(jnp.argmin(jnp.max(PopObj / w[i], axis=1), axis=0))
+    
+    def get_streme(i, Extreme):
         Extreme = Extreme.at[i].set(jnp.argmin(jnp.max(PopObj / w[i], axis=1), axis=0))
+        return Extreme
+    
+    Extreme = jax.lax.fori_loop(0, M, get_streme, Extreme)
     
     ''' 
     #改版，更快一点点
-    #100 loop
-    #time: 1024.098295211792
-    #igd: 0.053742908
+    #(100, 500) objedct: 3 iteration: 100 igd: 19.244148
+    #原版 nsga3:
+    #time: 863.1117389202118
+    #改版 nsga3:
+    #time: 782.9815998077393
+    
+    
     max_indices = jnp.argmax(PopObj, axis=0)
     unique_indices, counts = jnp.unique(max_indices, return_counts=True)
 

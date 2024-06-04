@@ -1,0 +1,23 @@
+start nsga3:
+  time: 863.1117389202118
+  igd: 19.244148
+
+start nsga3_1:
+  time: 782.9815998077393
+  igd: 19.244148
+
+start nsga3_2:
+  time: 755.1120510101318
+  igd: 18.89166
+
+start nsga3_3:
+  time: 125.91563153266907
+  igd: 19.244148
+
+start nsga3_4:
+  time: 131.1712667942047
+  igd: 19.244148
+
+start evox nsga3:
+  time: 4.217398643493652
+  igd: 9.684819
