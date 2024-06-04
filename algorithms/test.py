@@ -14,8 +14,8 @@ from jax import jit
 
 lb = jnp.full(shape=(3,), fill_value=0)
 ub = jnp.full(shape=(3,), fill_value=1)
-n_obj = 10000
-pop_size = 1000
+n_obj = 500
+pop_size = 100
 problem = problems.numerical.DTLZ2(m=n_obj)
 key = jax.random.PRNGKey(1)
 
@@ -56,7 +56,7 @@ def test_ori_algo(name, algo):
         pop_size=pop_size,
         key=key,
         problem=problem,
-        num_generation=1,
+        num_generation=100,
     )
     df = algo_instance.run()
     end = time.time()
