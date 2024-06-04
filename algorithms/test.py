@@ -3,6 +3,7 @@ from nsga3_origin import NSGA3Origin
 from nsga3_origin_1 import NSGA3Origin as NSGA3Origin_1
 from nsga3_origin_2 import NSGA3Origin as NSGA3Origin_2
 from nsga3_origin_3 import NSGA3Origin as NSGA3Origin_3
+from nsga3_origin_4 import NSGA3Origin as NSGA3Origin_4
 from nsga3_evox_ori import NSGA3 as NSGA3_EVOX_ORI
 import evox
 import jax
@@ -12,11 +13,13 @@ from evox.metrics import IGD
 import time
 from jax import jit
 
-lb = jnp.full(shape=(3,), fill_value=0)
-ub = jnp.full(shape=(3,), fill_value=1)
-n_obj = 500
+
+n_obj = 3
 pop_size = 100
-problem = problems.numerical.DTLZ2(m=n_obj)
+dim = 500
+lb = jnp.full(shape=(dim,), fill_value=0)
+ub = jnp.full(shape=(dim,), fill_value=1)
+problem = problems.numerical.DTLZ2(d=dim, m=n_obj)
 key = jax.random.PRNGKey(1)
 
 
@@ -70,9 +73,9 @@ def test_ori_algo(name, algo):
 
 
 def test_oris():
-    names = ["nsga3", "nsga3_1", "nsga3_2", "nsga3_3"]
-    algos = [NSGA3Origin, NSGA3Origin_1, NSGA3Origin_2, NSGA3Origin_3]
-    for i in range(4):
+    names = ["nsga3", "nsga3_1", "nsga3_2", "nsga3_3", "nsga3_4"]
+    algos = [NSGA3Origin, NSGA3Origin_1, NSGA3Origin_2, NSGA3Origin_3, NSGA3Origin_4]
+    for i in range(5):
         test_ori_algo(names[i], algos[i])
 
 
