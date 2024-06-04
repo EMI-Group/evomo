@@ -1,9 +1,5 @@
 from nsga2_origin import NSGA2Origin
 from nsga3_origin import NSGA3Origin 
-from nsga3_origin_1 import NSGA3Origin as NSGA3Origin_1
-from nsga3_origin_2 import NSGA3Origin as NSGA3Origin_2
-from nsga3_origin_3 import NSGA3Origin as NSGA3Origin_3
-from nsga3_origin_4 import NSGA3Origin as NSGA3Origin_4
 from nsga3_evox_ori import NSGA3 as NSGA3_EVOX_ORI
 import evox
 import jax
