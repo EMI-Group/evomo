@@ -83,5 +83,5 @@ def test_oris():
 if __name__ == "__main__":
     # test_evox_algo()
     # test_nsga3_evox_ori()
-    # test_oris()
-    test_evox_algo("nsga3", algorithms.NSGA3)
+    test_oris()
+    # test_evox_algo("nsga3", algorithms.NSGA3)
