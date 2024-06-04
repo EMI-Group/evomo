@@ -3,3 +3,8 @@ from .moead_foriloop import MOEAD1
 from .p_moead import PMOEAD
 from .moead_origin import MOEADOrigin
 from .hype_origin import HypEOrigin
+from .hype_evox import HypE
+from .nsga2_origin import NSGA2Origin
+from .nsga3_evox import NSGA3
+from .nsga3_evox_ori import NSGA3Origin
+from .nsga3_origin import NSGA3Origin2
