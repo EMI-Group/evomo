@@ -77,6 +77,7 @@ def test_oris():
     algos = [NSGA3Origin, NSGA3Origin_1, NSGA3Origin_2, NSGA3Origin_3, NSGA3Origin_4]
     for i in range(5):
         test_ori_algo(names[i], algos[i])
+    test_evox_algo("nsga3", algorithms.NSGA3)
 
 
 if __name__ == "__main__":
