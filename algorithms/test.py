@@ -1,6 +1,6 @@
 from nsga2_origin import NSGA2Origin
-from nsga3_origin import NSGA3Origin 
-from nsga3_evox_ori import NSGA3 as NSGA3_EVOX_ORI
+from nsga3_origin import NSGA3Origin2 
+from nsga3_evox_ori import NSGA3Origin as NSGA3Origin_evox
 import evox
 import jax
 import jax.numpy as jnp
@@ -10,14 +10,14 @@ import time
 from jax import jit
 
 
-n_obj = 3
-pop_size = 100
+n_obj = 10
+pop_size = 1000
 dim = 500
 lb = jnp.full(shape=(dim,), fill_value=0)
 ub = jnp.full(shape=(dim,), fill_value=1)
 problem = problems.numerical.DTLZ2(d=dim, m=n_obj)
 key = jax.random.PRNGKey(1)
-loop_num = 100
+loop_num = 1000
 
 def test_evox_algo(name, algo):
     # evox nsga2 1000 loop
@@ -73,8 +73,8 @@ def test_oris():
     # algos = [NSGA3Origin, NSGA3Origin_1, NSGA3Origin_2, NSGA3Origin_3, NSGA3Origin_4]
     # for i in range(5):
     #     test_ori_algo(names[i], algos[i])
-    test_ori_algo("nsga3", NSGA3Origin)
-    test_evox_algo("nsga3", algorithms.NSGA3)
+    test_ori_algo("nsga3", NSGA3Origin2)
+    # test_evox_algo("nsga3", algorithms.NSGA3)
 
 
 if __name__ == "__main__":
