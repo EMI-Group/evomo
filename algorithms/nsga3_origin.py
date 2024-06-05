@@ -86,13 +86,13 @@ def LastSelection(PopObj1, PopObj2, K, Z, key):
     w = jnp.eye(M) + 1e-6
     # for i in range(M):
     #     Extreme = Extreme.at[i].set(jnp.argmin(jnp.max(PopObj / w[i], axis=1), axis=0))
-    
+
     def get_streme(i, Extreme):
         Extreme = Extreme.at[i].set(jnp.argmin(jnp.max(PopObj / w[i], axis=1), axis=0))
         return Extreme
-    
+
     Extreme = jax.lax.fori_loop(0, M, get_streme, Extreme)
-    
+
     ''' 
     #改版，更快一点点
     #(100, 500) objedct: 3 iteration: 100 igd: 19.244148
@@ -123,10 +123,9 @@ def LastSelection(PopObj1, PopObj2, K, Z, key):
         unique_indices, counts = jnp.unique(max_indices, return_counts=True)
     Extreme = max_indices
     '''
-    
+
     Hyperplane = jnp.linalg.solve(PopObj[Extreme, :], jnp.ones(M))
-    a = 1.0 / Hyperplane
-    a = jnp.where(jnp.isnan(a), jnp.max(PopObj, axis=0), a)
+    a = jnp.max(PopObj, axis=0) if jnp.any(jnp.isnan(Hyperplane)) else 1.0 / Hyperplane
     PopObj = PopObj / a
 
     # 关联每个解到参考点
