@@ -10,7 +10,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import time
-from algorithms import TensorMOEAD, MOEAD1, PMOEAD, MOEADOrigin, HypEOrigin
+from algorithms import TensorMOEAD, MOEAD1, PMOEAD, MOEADOrigin, HypEOrigin, NSGA3
 from evox.utils import cos_dist
 from functools import partial
 import matplotlib.pyplot as plt
@@ -65,7 +65,7 @@ if __name__ == '__main__':
     lb = jnp.full(shape=(12,), fill_value=0)
     ub = jnp.full(shape=(12,), fill_value=1)
 
-    algorithm = HypEOrigin(
+    algorithm = NSGA3(
         lb=lb,
         ub=ub,
         n_objs=3,

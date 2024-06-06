@@ -23,7 +23,7 @@ from evox.operators import (
 from evox import Algorithm, jit_class, State
 from evox.utils import cos_dist
 
-
+@jit_class
 class NSGA3(Algorithm):
     """NSGA-III algorithm
 
