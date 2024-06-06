@@ -150,7 +150,7 @@ class HypEOrigin(Algorithm):
         pop_obj = state.fitness
         key, subkey, sel_key, x_key, mut_key = jax.random.split(state.key, 5)
         # hv = cal_hv(pop_obj, state.ref_point, self.pop_size, self.n_sample, subkey)
-        hv = calculate_hv_for(pop_obj, state.ref_point, self.pop_size, self.n_sample, subkey)
+        hv = calculate_hv_foriloop(pop_obj, state.ref_point, self.pop_size, self.n_sample, subkey)
 
         selected, _ = self.selection(sel_key, population, -hv)
         crossovered = self.crossover(x_key, selected)
@@ -170,7 +170,7 @@ class HypEOrigin(Algorithm):
         mask = rank == worst_rank
 
         key, subkey = jax.random.split(state.key)
-        hv = calculate_hv_for(merged_obj, state.ref_point, n, self.n_sample, subkey)
+        hv = calculate_hv_foriloop(merged_obj, state.ref_point, n, self.n_sample, subkey)
 
         dis = jnp.where(mask, hv, -jnp.inf)
 
