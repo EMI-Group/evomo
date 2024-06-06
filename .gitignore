@@ -161,3 +161,5 @@ cython_debug/
 
 *template.sh
 *.out
+
+algorithms/test.py
