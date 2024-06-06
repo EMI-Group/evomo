@@ -126,6 +126,7 @@ class HypE(Algorithm):
         selected, _ = self.selection(sel_key, population, -hv)
         crossovered = self.crossover(x_key, selected)
         next_generation = self.mutation(mut_key, crossovered)
+        next_generation = jnp.clip(next_generation, self.lb, self.ub)
 
         return next_generation, state.update(next_generation=next_generation)
 

@@ -23,7 +23,7 @@ def run_moea(algorithm, key):
     monitor = PopMonitor()
     # monitor = StdMOMonitor()
 
-    problem = problems.numerical.DTLZ2(m=3)
+    problem = problems.numerical.DTLZ1(m=3)
     workflow = workflows.StdWorkflow(
         algorithm=algorithm,
         problem=problem,
@@ -60,7 +60,7 @@ def run_moea(algorithm, key):
 
 
 if __name__ == '__main__':
-    print("HypEOrigin")
+    print("NSGA3")
 
     lb = jnp.full(shape=(12,), fill_value=0)
     ub = jnp.full(shape=(12,), fill_value=1)
@@ -69,13 +69,13 @@ if __name__ == '__main__':
         lb=lb,
         ub=ub,
         n_objs=3,
-        pop_size=100,
+        pop_size=5000,
     )
     # algorithm = evox.algorithms.HypE(
     #     lb=lb,
     #     ub=ub,
     #     n_objs=3,
-    #     pop_size=100,
+    #     pop_size=10000,
     # )
     key = jax.random.PRNGKey(42)
 

@@ -22,6 +22,7 @@ from evox.operators import (
 )
 from evox import Algorithm, jit_class, State
 from evox.utils import cos_dist
+from jax.experimental.host_callback import id_print
 
 @jit_class
 class NSGA3(Algorithm):
@@ -72,12 +73,13 @@ class NSGA3(Algorithm):
             )
         else:
             population = initializer(subkey, shape=(self.pop_size, self.dim))
-        self.ref = self.sampling(subkey)[0]
-        # self.pop_size = len(self.ref)
+        ref = self.sampling(subkey)[0]
+
         return State(
             population=population,
             fitness=jnp.zeros((self.pop_size, self.n_objs)),
             next_generation=population,
+            ref=ref,
             key=key,
         )
 
@@ -138,19 +140,19 @@ class NSGA3(Algorithm):
         )
 
         normalized_fitness = ranked_fitness / nadir_point
-        cos_distance = cos_dist(normalized_fitness, self.ref)
+        cos_distance = cos_dist(normalized_fitness, state.ref)
         dist = jnp.linalg.norm(normalized_fitness, axis=-1, keepdims=True) * jnp.sqrt(
             1 - cos_distance**2
         )
         # Associate each solution with its nearest reference point
         group_id = jnp.nanargmin(dist, axis=1)
-        group_id = jnp.where(group_id == -1, len(self.ref), group_id)
+        group_id = jnp.where(group_id == -1, len(state.ref), group_id)
         group_dist = jnp.nanmin(dist, axis=1)
         rho = jnp.bincount(
-            jnp.where(rank < last_rank, group_id, len(self.ref)), length=len(self.ref)
+            jnp.where(rank < last_rank, group_id, len(state.ref)), length=len(state.ref)
         )
         rho_last = jnp.bincount(
-            jnp.where(rank == last_rank, group_id, len(self.ref)), length=len(self.ref)
+            jnp.where(rank == last_rank, group_id, len(state.ref)), length=len(state.ref)
         )
         group_id = jnp.where(rank == last_rank, group_id, jnp.inf)
         group_dist = jnp.where(rank == last_rank, group_dist, jnp.inf)
