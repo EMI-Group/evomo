@@ -24,7 +24,6 @@ from evox import Algorithm, jit_class, State
 from evox.utils import cos_dist
 from jax.experimental.host_callback import id_print
 
-
 @jit_class
 class NSGA3(Algorithm):
     """NSGA-III algorithm

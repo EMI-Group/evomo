@@ -1,6 +1,6 @@
 from nsga2_origin import NSGA2Origin
-from nsga3_origin import NSGA3Origin 
-from nsga3_evox_ori import NSGA3 as NSGA3_EVOX_ORI
+from nsga3_origin import NSGA3Origin2 
+from nsga3_evox_ori import NSGA3Origin as NSGA3Origin_evox
 import evox
 import jax
 import jax.numpy as jnp
@@ -10,8 +10,8 @@ import time
 from jax import jit
 
 
-n_obj = 3
-pop_size = 100
+n_obj = 100
+pop_size = 1024
 dim = 500
 lb = jnp.full(shape=(dim,), fill_value=0)
 ub = jnp.full(shape=(dim,), fill_value=1)
@@ -59,13 +59,12 @@ def test_ori_algo(name, algo):
     )
     df = algo_instance.run()
     end = time.time()
-    print(end - start)
+    print("time: {}".format(end - start))
     true_pf = problem.pf()
     pf, _ = problem.evaluate(State(), df)
     igd = IGD(true_pf)
-    print(igd(pf))
+    print("igd: {}".format(igd(pf)))
     print(df.shape)
-    print(pf)
 
 
 def test_oris():
@@ -73,12 +72,10 @@ def test_oris():
     # algos = [NSGA3Origin, NSGA3Origin_1, NSGA3Origin_2, NSGA3Origin_3, NSGA3Origin_4]
     # for i in range(5):
     #     test_ori_algo(names[i], algos[i])
-    test_ori_algo("nsga3", NSGA3Origin)
-    test_evox_algo("nsga3", algorithms.NSGA3)
+    test_ori_algo("nsga3", NSGA3Origin2)
+    
 
 
 if __name__ == "__main__":
-    # test_evox_algo()
-    # test_nsga3_evox_ori()
     test_oris()
     # test_evox_algo("nsga3", algorithms.NSGA3)
