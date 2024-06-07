@@ -169,6 +169,7 @@ class NSGA3(Algorithm):
             num, rho_level, rho, rank, last_index = vals
             selected_rho = rho == rho_level
             dists = jnp.where((rank == last_rank)[:, jnp.newaxis], dist, jnp.inf)
+            # if rho_level is not zero, need to do random selection
             selected_idx = jnp.argmin(dists, axis=0)
             index = jnp.where(selected_rho, selected_idx, jnp.inf)
             rho_level += 1
