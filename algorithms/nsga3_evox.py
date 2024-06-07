@@ -196,7 +196,7 @@ class NSGA3(Algorithm):
         )
 
         def cut_mask(rank, dif, mask_index):
-            sorted_index = jnp.sort(mask_index, descending=False)
+            sorted_index = jnp.sort(mask_index)
             index = jnp.where(
                 jnp.arange(sorted_index.size) < dif, sorted_index, the_drop_one_idx
             ).astype(jnp.int32)

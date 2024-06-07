@@ -7,6 +7,7 @@ from evox.operators.sampling import UniformSampling
 from evox.utils import cos_dist
 from evox import Algorithm, State, jit_class
 from jax import jit
+import time
 
 class NSGA3Origin2:
 
@@ -16,7 +17,7 @@ class NSGA3Origin2:
         ub,
         pop_size,
         n_objs,
-        num_generation=1000,
+        num_generations=1000,
         problem=None,
         key=None,
         mutation_op=None,
@@ -34,11 +35,12 @@ class NSGA3Origin2:
         self.crossover = crossover_op if crossover_op else crossover.SimulatedBinary(type=2)
         self.key = key if key is not None else jax.random.PRNGKey(0)
         self.sample = jit(UniformSampling(self.pop_size, self.n_objs))
-        self.loop_num = num_generation
+        self.loop_num = num_generations
         self.ref = self.sample(self.key)[0]
         # dfault: 10000
 
     def run(self):
+        start = time.time()
         key, init_key, loop_key = jax.random.split(self.key, 3)
         self.key = key
         population = (
@@ -53,8 +55,9 @@ class NSGA3Origin2:
             mating_pop = population
             crossovered = self.crossover(x_key, mating_pop)
             offspring = self.mutation(mut_key, crossovered)
-            population = self.envSelect(jnp.vstack((population, offspring)), env_key)
-        return population
+            population, PopObj = self.envSelect(jnp.vstack((population, offspring)), env_key)
+        end = time.time()
+        return population, PopObj, start-end
 
     def envSelect(self, population, key):
         PopObj, _ = self.problem.evaluate(State(), population)
@@ -69,7 +72,7 @@ class NSGA3Origin2:
         # 进行最后一轮选择
         Choose = LastSelection(PopObj[Next], PopObj[Last], self.pop_size - jnp.sum(Next), self.ref, key)
         Next = Next.at[Last[Choose]].set(True)
-        return population[Next]
+        return population[Next], PopObj[Next]
 
 
 def LastSelection(PopObj1, PopObj2, K, Z, key):
