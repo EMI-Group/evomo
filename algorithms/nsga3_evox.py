@@ -116,10 +116,10 @@ class NSGA3(Algorithm):
         ranked_fitness = ranked_fitness - ideal_points
         weight = jnp.eye(self.n_objs) + 1e-6
 
-        def get_extreme(i):
-            return jnp.nanargmin(jnp.nanmax(ranked_fitness / weight[i], axis=1))
+        def get_extreme(w):
+            return jnp.nanargmin(jnp.nanmax(ranked_fitness / w, axis=1))
 
-        extreme_ind = jax.vmap(get_extreme)(jnp.arange(self.n_objs))
+        extreme_ind = jax.vmap(get_extreme)(weight)
         extreme = ranked_fitness[extreme_ind]
 
         def get_intercept(val):
