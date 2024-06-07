@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 
-from utils import NDSort, CrowdingDistance, TournamentSelection
+from algorithms.utils import NDSort, CrowdingDistance, TournamentSelection
 from evox.operators import mutation, crossover, non_dominated_sort
 from evox.operators.sampling import UniformSampling
 from evox.utils import cos_dist
