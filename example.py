@@ -100,7 +100,7 @@ def tests():
     config.loop_num = 1000
     test_evox_algo("nsga3_improve_2", NSGA3_EVOX, config)
     test_evox_algo("nsga3_evox_2", evox.algorithms.NSGA3, config)
-
+    
 
 if __name__ == "__main__":
     tests()

@@ -1,23 +1,12 @@
-start nsga3:
-  time: 863.1117389202118
-  igd: 19.244148
-
-start nsga3_1:
-  time: 782.9815998077393
-  igd: 19.244148
-
-start nsga3_2:
-  time: 755.1120510101318
-  igd: 18.89166
-
-start nsga3_3:
-  time: 125.91563153266907
-  igd: 19.244148
-
-start nsga3_4:
-  time: 131.1712667942047
-  igd: 19.244148
-
-start evox nsga3:
-  time: 4.217398643493652
-  igd: 9.684819
+nsga3_improve_1:
+  time: 3.4461188316345215
+  igd: 0.053666014
+nsga3_evox_1:
+  time: 5.3535027503967285
+  igd: 0.05344387
+nsga3_improve_2:
+  time: 56.706618785858154
+  igd: 0.015178134
+nsga3_evox_2:
+  time: 246.5128710269928
+  igd: 0.015155382
