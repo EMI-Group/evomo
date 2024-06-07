@@ -38,6 +38,15 @@ def run(algorithm_name, problem, key, num_iter=100, d=500):
             "NSGA3": NSGA3(
                 lb=jnp.zeros((d,)), ub=jnp.ones((d,)), n_objs=3, pop_size=10000
             ),
+            "NSGA3Origin2": NSGA3Origin2(
+                lb=jnp.zeros((d,)),
+                ub=jnp.ones((d,)),
+                n_objs=3,
+                pop_size=10000,
+                problem=problem,
+                key=key,
+                num_generations=10,
+            ),
         }.get(algorithm_name)
 
         if algorithm_name == "MOEADOrigin":
@@ -45,7 +54,7 @@ def run(algorithm_name, problem, key, num_iter=100, d=500):
             return jnp.array(pop), jnp.array(obj), jnp.array(run_time)
         elif algorithm_name == "NSGA3Origin2":
             pop, obj, run_time = algorithm.run()
-            return jnp.array(pop), jnp.array(obj), jnp.array(run_time)
+            return pop, obj, jnp.array(run_time)
 
         workflow = StdWorkflow(
             algorithm,
@@ -124,7 +133,8 @@ if __name__ == "__main__":
     # ]
     # algorithm_names = ["MOEADOrigin", "PMOEAD", "HypEOrigin"]
     # algorithm_names = ["PMOEAD", "HypEOrigin"]
-    algorithm_names = ["NSGA3"]
+    # algorithm_names = ["NSGA3", "NSGA3Origin2"]
+    algorithm_names = ["NSGA3Origin2"]
     problem_list = [
         problems.numerical.DTLZ1(m=3),
         problems.numerical.DTLZ2(m=3),

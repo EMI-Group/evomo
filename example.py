@@ -68,7 +68,7 @@ def test_ori_algo(name, algo, config_dict):
         pop_size=pop_size,
         key=key,
         problem=problem,
-        num_generation=loop_num,
+        num_generations=loop_num,
     )
     df = algo_instance.run()
     end = time.time()
