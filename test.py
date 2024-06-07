@@ -45,7 +45,7 @@ def run(algorithm_name, problem, key, num_iter=100, d=500):
                 pop_size=10000,
                 problem=problem,
                 key=key,
-                num_generations=10,
+                num_generations=100,
             ),
         }.get(algorithm_name)
 
