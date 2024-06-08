@@ -1,5 +1,5 @@
 from evox import problems, metrics
-from evox.workflows import StdWorkflow
+from evox.workflows import StdWorkflow, NonJitWorkflow
 from algorithms import MOEADOrigin, PMOEAD, HypEOrigin, HypE, NSGA3Origin, NSGA3, NSGA3Origin2
 from jax import random
 import jax
@@ -39,27 +39,24 @@ def run(algorithm_name, problem, key, num_iter=100, d=500):
                 lb=jnp.zeros((d,)), ub=jnp.ones((d,)), n_objs=3, pop_size=10000
             ),
             "NSGA3Origin2": NSGA3Origin2(
-                lb=jnp.zeros((d,)),
-                ub=jnp.ones((d,)),
-                n_objs=3,
-                pop_size=10000,
-                problem=problem,
-                key=key,
-                num_generations=100,
+                lb=jnp.zeros((d,)), ub=jnp.ones((d,)), n_objs=3, pop_size=10000
             ),
         }.get(algorithm_name)
 
         if algorithm_name == "MOEADOrigin":
             pop, obj, run_time = algorithm.run()
             return jnp.array(pop), jnp.array(obj), jnp.array(run_time)
-        elif algorithm_name == "NSGA3Origin2":
-            pop, obj, run_time = algorithm.run()
-            return pop, obj, jnp.array(run_time)
-
-        workflow = StdWorkflow(
+      
+        if algorithm_name == "NSGA3Origin2":
+            workflow = NonJitWorkflow(
             algorithm,
             problem,
-        )
+            )
+        else:
+            workflow = StdWorkflow(
+                algorithm,
+                problem,
+            )
         state = workflow.init(key)
         step_func = jax.jit(workflow.step).lower(state).compile()
         state = step_func(state)

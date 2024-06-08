@@ -1,7 +1,8 @@
 from algorithms.nsga2_origin import NSGA2Origin
-from algorithms.nsga3_origin import NSGA3Origin2 as NSGA3Origin
+from algorithms.old_nsga3_origin import NSGA3Origin2 as NSGA3Origin
 from algorithms.nsga3_evox_ori import NSGA3Origin as NSGA3_EVOX_ORI
 from algorithms.nsga3_evox import NSGA3 as NSGA3_EVOX
+from algorithms.nsga3_origin import NSGA3Origin2 as NSGA3Origin_evox_version
 import evox
 import jax
 import jax.numpy as jnp
@@ -18,7 +19,7 @@ dim = 5
 # ub = jnp.full(shape=(dim,), fill_value=1)
 problem = problems.numerical.DTLZ2
 key = jax.random.PRNGKey(1)
-loop_num = 100
+loop_num = 10
 
 
 def test_evox_algo(name, algo, config_dict):
@@ -37,7 +38,7 @@ def test_evox_algo(name, algo, config_dict):
         pop_size=config_dict.pop_size,
     )
     # nsga3 = algorithms.NSGA3(lb=lb, ub=ub, n_objs=n_obj, pop_size=pop_size)
-    workflow = workflows.StdWorkflow(algo_instance, problem)
+    workflow = workflows.NonJitWorkflow(algo_instance, problem)
     state = workflow.init(key)
     # run the workflow for 100 steps
     for i in range(config_dict.loop_num):
@@ -93,13 +94,13 @@ def tests():
 
     # 使用 SimpleNamespace 将字典转换为结构体
     config = SimpleNamespace(**config_dict)
-    test_evox_algo("nsga3_improve_1", NSGA3_EVOX, config)
-    test_evox_algo("nsga3_evox_1", evox.algorithms.NSGA3, config)
-    config.pop_size = 1000
-    config.dim = 10
-    config.loop_num = 1000
-    test_evox_algo("nsga3_improve_2", NSGA3_EVOX, config)
-    test_evox_algo("nsga3_evox_2", evox.algorithms.NSGA3, config)
+    test_evox_algo("nsga3_evox", NSGA3Origin_evox_version, config)
+    # test_evox_algo("nsga3_evox_1", evox.algorithms.NSGA3, config)
+    # config.pop_size = 1000
+    # config.dim = 10
+    # config.loop_num = 1000
+    # test_evox_algo("nsga3_improve_2", NSGA3_EVOX, config)
+    # test_evox_algo("nsga3_evox_2", evox.algorithms.NSGA3, config)
     
 
 if __name__ == "__main__":
