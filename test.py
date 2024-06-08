@@ -58,7 +58,10 @@ def run(algorithm_name, problem, key, num_iter=100, d=500):
                 problem,
             )
         state = workflow.init(key)
-        step_func = jax.jit(workflow.step).lower(state).compile()
+        if algorithm_name == "NSGA3Origin2":
+            step_func = workflow.step
+        else:
+            step_func = jax.jit(workflow.step).lower(state).compile()
         state = step_func(state)
         run_time = []
         obj = []
