@@ -2,14 +2,13 @@ import jax
 import jax.numpy as jnp
 
 from algorithms.utils import NDSort, CrowdingDistance, TournamentSelection
-from evox.operators import mutation, crossover, non_dominated_sort
-from evox.operators.sampling import UniformSampling
+from evox.operators import mutation, crossover, non_dominated_sort, selection, sampling
 from evox.utils import cos_dist
 from evox import Algorithm, State, jit_class
 from jax import jit
 import time
 
-class NSGA3Origin2:
+class NSGA3Origin2(Algorithm):
 
     def __init__(
         self,
@@ -17,9 +16,8 @@ class NSGA3Origin2:
         ub,
         pop_size,
         n_objs,
-        num_generations=1000,
-        problem=None,
-        key=None,
+        uniform_init=True,
+        selection_op=None,
         mutation_op=None,
         crossover_op=None,
     ):
@@ -29,51 +27,72 @@ class NSGA3Origin2:
         self.dim = lb.shape[0]
         self.pop_size = pop_size
         self.n_neighbor = jnp.ceil(self.pop_size / 10).astype(int)
+        self.uniform_init = uniform_init
 
-        self.problem = problem
         self.mutation = mutation_op if mutation_op else mutation.Polynomial((lb, ub))
         self.crossover = crossover_op if crossover_op else crossover.SimulatedBinary(type=2)
-        self.key = key if key is not None else jax.random.PRNGKey(0)
-        self.sample = jit(UniformSampling(self.pop_size, self.n_objs))
-        self.loop_num = num_generations
-        self.ref = self.sample(self.key)[0]
-        # dfault: 10000
+        self.selection = selection_op if selection_op else selection.UniformRand(1)
+        self.sampling = sampling.UniformSampling(self.pop_size, self.n_objs)
 
-    def run(self):
-        start = time.time()
-        key, init_key, loop_key = jax.random.split(self.key, 3)
-        self.key = key
-        population = (
-            jax.random.uniform(init_key, shape=(self.pop_size, self.dim))
-            * (self.ub - self.lb)
-            + self.lb
+    def setup(self, key):
+        key, subkey = jax.random.split(key)
+        initializer = jax.nn.initializers.glorot_normal()
+        if self.uniform_init:
+            population = (
+                jax.random.uniform(subkey, shape=(self.pop_size, self.dim))
+                * (self.ub - self.lb)
+                + self.lb
+            )
+        else:
+            population = initializer(subkey, shape=(self.pop_size, self.dim))
+        ref = self.sampling(subkey)[0]
+
+        return State(
+            population=population,
+            fitness=jnp.zeros((self.pop_size, self.n_objs)),
+            next_generation=population,
+            ref=ref,
+            key=key,
         )
-        for i in range(self.loop_num):
-            env_key, x_key, mut_key, loop_key = jax.random.split(loop_key, 4)
-            # MatingPool = TournamentSelection(2, self.pop_size, FrontNo, CrowdDis)
-            # mating_pop = population[MatingPool]
-            mating_pop = population
-            crossovered = self.crossover(x_key, mating_pop)
-            offspring = self.mutation(mut_key, crossovered)
-            population, PopObj = self.envSelect(jnp.vstack((population, offspring)), env_key)
-        end = time.time()
-        return population, PopObj, start-end
 
-    def envSelect(self, population, key):
-        PopObj, _ = self.problem.evaluate(State(), population)
-        # FrontNo, MaxNo = NDSort(PopObj, self.pop_size)
+    def init_ask(self, state):
+        return state.population, state
+
+    def init_tell(self, state, fitness):
+        state = state.update(fitness=fitness)
+        return state
+    
+    def ask(self, state):
+        key, mut_key, x_key = jax.random.split(state.key, 3)
+        crossovered = self.crossover(x_key, state.population)
+        next_generation = self.mutation(mut_key, crossovered)
+        next_generation = jnp.clip(next_generation, self.lb, self.ub)
+
+        return next_generation, state.update(next_generation=next_generation, key=key)
+        
+    def tell(self, state, fitness):
+        merged_pop = jnp.concatenate([state.population, state.next_generation], axis=0)
+        merged_fitness = jnp.concatenate([state.fitness, fitness], axis=0)
+
        
-        FrontNo = non_dominated_sort(PopObj)
+        FrontNo = non_dominated_sort(merged_pop)
         order = jnp.argsort(FrontNo)
         MaxNo = FrontNo[order[self.pop_size]]
         Next = FrontNo < MaxNo
         Last = jnp.where(FrontNo == MaxNo)[0]
         
         # 进行最后一轮选择
-        Choose = LastSelection(PopObj[Next], PopObj[Last], self.pop_size - jnp.sum(Next), self.ref, key)
+        select_key, key = jax.random.split(state.key)
+        Choose = LastSelection(merged_fitness[Next], merged_fitness[Last], self.pop_size - jnp.sum(Next), state.ref, select_key)
         Next = Next.at[Last[Choose]].set(True)
-        return population[Next], PopObj[Next]
-
+        
+        state = state.update(
+            population=merged_pop[Next],
+            fitness=merged_fitness[Next],
+            key=key
+        )
+        return state
+        
 
 def LastSelection(PopObj1, PopObj2, K, Z, key):
     PopObj = jnp.vstack([PopObj1, PopObj2])
