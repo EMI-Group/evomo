@@ -169,7 +169,7 @@ class NSGA3(Algorithm):
         rho_last = jnp.where(selected_rho, rho_last - 1, rho_last)
         rho = jnp.where(selected_rho, rho_level, rho)
         rho = jnp.where(rho_last == 0, jnp.inf, rho)
-        the_selected_one_idx = jnp.min(jnp.min(selected_idx), the_selected_one_idx)
+        the_selected_one_idx = jnp.minimum(jnp.min(selected_idx), the_selected_one_idx)
         real_index = jnp.where(jnp.isinf(selected_idx), the_selected_one_idx, index).astype(jnp.int32)
 
         def update_rank(rank, idx):
@@ -177,7 +177,7 @@ class NSGA3(Algorithm):
             return rank, idx
 
         rank, _ = jax.lax.scan(update_rank, rank, real_index)
-        last_num = selected_rho.sum()
+        last_num = jnp.sum(selected_rho)
         selected_number += last_num
             
         # for rho > 0
