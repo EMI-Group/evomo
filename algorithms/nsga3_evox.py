@@ -162,7 +162,6 @@ class NSGA3(Algorithm):
         selected_number = jnp.sum(rho)
         rho = jnp.where(rho_last == 0, jnp.inf, rho)
 
-
         # for rho == 0
         rho_level = 0
         selected_rho = rho == rho_level
@@ -191,18 +190,17 @@ class NSGA3(Algorithm):
             # need to do random selection but for simplicity, we just select the first one
             selected_idx = jnp.argmin(dists, axis=0)
             index = jnp.where(selected_rho, selected_idx, the_selected_one_idx).astype(jnp.int32)
-            # update matrixes
+            # update matrix
             rho_level += 1
             rho_last = jnp.where(selected_rho, rho_last - 1, rho_last)
             rho = jnp.where(selected_rho, rho_level, rho)
             rho = jnp.where(rho_last == 0, jnp.inf, rho)
-
+            
             rho_level = jnp.min(rho)
+            
             rank, _ = jax.lax.scan(update_rank, rank, index)
-            last_num = selected_rho.sum()
+            last_num = jnp.sum(selected_rho)
             num += last_num
-            
-            
 
             return num, rho_level, rho, rho_last, rank, index
 
