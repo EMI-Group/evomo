@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from jax.experimental.host_callback import id_print
 from evox.operators import non_dominated_sort
-
+import pickle
 
 def run_moea(algorithm, key):
     monitor = PopMonitor()
@@ -42,12 +42,12 @@ def run_moea(algorithm, key):
     igd = IGD1(true_pf)
     ref = jnp.array([1., 1., 1.])
     ind = HV1(ref=ref)
-
+    path = "data/states/nsga3.pkl"
     for i in range(100):
+        # state = state.load(path)
         print(i)
-        key, subkey = jax.random.split(key)
         state = workflow.step(state)
-
+        
         fit = state.get_child_state("algorithm").fitness
         pop = state.get_child_state("algorithm").population
 
@@ -62,23 +62,19 @@ def run_moea(algorithm, key):
 if __name__ == '__main__':
     print("NSGA3")
 
-    lb = jnp.full(shape=(12,), fill_value=0)
-    ub = jnp.full(shape=(12,), fill_value=1)
+    lb = jnp.full(shape=(10,), fill_value=0)
+    ub = jnp.full(shape=(10,), fill_value=1)
 
     algorithm = NSGA3(
         lb=lb,
         ub=ub,
         n_objs=3,
-        pop_size=5000,
+        pop_size=10,
     )
-    # algorithm = evox.algorithms.HypE(
-    #     lb=lb,
-    #     ub=ub,
-    #     n_objs=3,
-    #     pop_size=10000,
-    # )
     key = jax.random.PRNGKey(42)
 
+    # disable JIT
+    # jax.config.update("jax_disable_jit", True)
     for i in range(1):
         start = time.time()
         run_moea(algorithm, key)
