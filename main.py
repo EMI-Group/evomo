@@ -62,14 +62,14 @@ def run_moea(algorithm, key):
 if __name__ == '__main__':
     print("NSGA3")
 
-    lb = jnp.full(shape=(10,), fill_value=0)
-    ub = jnp.full(shape=(10,), fill_value=1)
+    lb = jnp.full(shape=(100,), fill_value=0)
+    ub = jnp.full(shape=(100,), fill_value=1)
 
     algorithm = NSGA3(
         lb=lb,
         ub=ub,
         n_objs=3,
-        pop_size=10,
+        pop_size=1000,
     )
     key = jax.random.PRNGKey(42)
 
