@@ -201,8 +201,14 @@ class NSGA3(Algorithm):
             rank, _ = jax.lax.scan(update_rank, rank, real_index)
             last_num = selected_rho.sum()
             num += last_num
+            jax.debug.print("in loop: rho_level:{}", rho_level)
+            jax.debug.print("in loop: last_num:{}", last_num)
+            jax.debug.print("in loop: rank:{}", rank)
+            jax.debug.print("in loop: rho:{}", rho)
+            jax.debug.print("in loop: rho_last:{}", rho_last)
             return num, rho_level, rho, rho_last, rank, index
 
+        jax.debug.print("into a loop")
         selected_number, rho_level, rho, rho_last, rank, last_index = (
             jax.lax.while_loop(
                 lambda val: val[0] < self.pop_size,
@@ -210,7 +216,7 @@ class NSGA3(Algorithm):
                 (selected_number, 1, rho, rho_last, rank, index),
             )
         )
-
+        jax.debug.print("out of loop")
         def cut_mask(rank, dif, mask_index):
             sorted_index = jnp.sort(mask_index)
             the_drop_one_idx = sorted_index[0]

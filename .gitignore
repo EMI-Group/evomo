@@ -160,7 +160,7 @@ cython_debug/
 .idea/
 
 *template.sh
-*.out
+# *.out
 
 algorithms/test.py
 **/old*.py

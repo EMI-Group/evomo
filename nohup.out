@@ -1,0 +1,1998 @@
+/home/lh/projects/tensoremo/main.py:18: DeprecationWarning: The host_callback APIs are deprecated as of March 20, 2024. The functionality is subsumed by the new JAX external callbacks. See https://github.com/google/jax/issues/20385.
+  from jax.experimental.host_callback import id_print
+NSGA3
+0
+igd 120.7393
+1
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[65. 54. 20. ... inf inf inf]
+in loop: rho_last:[8 4 6 ... 0 0 0]
+in loop: last_num:159
+in loop: rank:[ 0 15 22 ...  8 13  5]
+in loop: rho_level:3
+in loop: rho:[65. 54. 20. ... inf inf inf]
+in loop: rho_last:[8 4 6 ... 0 0 0]
+in loop: last_num:112
+in loop: rank:[ 0 15 22 ...  8 13  5]
+igd 108.28476
+2
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[38.  9. 18. ... inf inf inf]
+in loop: rho_last:[6 3 3 ... 0 0 0]
+in loop: last_num:168
+in loop: rank:[ 2  6  4 ... 15 16 20]
+in loop: rho_level:3
+in loop: rho:[38.  9. 18. ... inf inf inf]
+in loop: rho_last:[6 3 3 ... 0 0 0]
+in loop: last_num:139
+in loop: rank:[ 2  6  4 ... 15 16 20]
+igd 103.801544
+3
+into a loop
+out of loop
+igd 95.069626
+4
+into a loop
+out of loop
+igd 79.17768
+5
+into a loop
+out of loop
+igd 62.55542
+6
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[21. inf inf ... 15.  7. 22.]
+in loop: rho_last:[4 0 0 ... 3 2 5]
+in loop: last_num:186
+in loop: rank:[ 8  7  3 ... 14 24  8]
+in loop: rho_level:3
+in loop: rho:[21. inf inf ... 15.  7. 22.]
+in loop: rho_last:[4 0 0 ... 3 2 5]
+in loop: last_num:145
+in loop: rank:[ 8  7  3 ... 14 24  8]
+in loop: rho_level:4
+in loop: rho:[21. inf inf ... 15.  7. 22.]
+in loop: rho_last:[4 0 0 ... 3 2 5]
+in loop: last_num:88
+in loop: rank:[ 8  7  3 ... 14 24  8]
+in loop: rho_level:5
+in loop: rho:[21. inf inf ... 15.  7. 22.]
+in loop: rho_last:[4 0 0 ... 3 2 5]
+in loop: last_num:58
+in loop: rank:[ 8  7  3 ... 14 24  8]
+igd 50.66244
+7
+into a loop
+out of loop
+igd 43.42745
+8
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[inf  2. inf ... 17.  3. 29.]
+in loop: rho_last:[0 1 0 ... 3 1 2]
+in loop: last_num:186
+in loop: rank:[ 4 12  9 ... 12 13  3]
+in loop: rho_level:3
+in loop: rho:[inf inf inf ... 17.  3. 29.]
+in loop: rho_last:[0 0 0 ... 3 1 2]
+in loop: last_num:146
+in loop: rank:[ 4 12  9 ... 12 13  3]
+in loop: rho_level:4
+in loop: rho:[inf inf inf ... 17. inf 29.]
+in loop: rho_last:[0 0 0 ... 3 0 2]
+in loop: last_num:85
+in loop: rank:[ 4 12  9 ... 12 13  3]
+igd 43.42745
+9
+into a loop
+out of loop
+igd 42.46262
+10
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[18. inf inf ...  7.  9. 28.]
+in loop: rho_last:[1 0 0 ... 2 1 5]
+in loop: last_num:139
+in loop: rank:[ 8  8 13 ... 14 10 12]
+in loop: rho_level:3
+in loop: rho:[18. inf inf ...  7.  9. 28.]
+in loop: rho_last:[1 0 0 ... 2 1 5]
+in loop: last_num:105
+in loop: rank:[ 8  8 13 ... 14 10 12]
+in loop: rho_level:4
+in loop: rho:[18. inf inf ...  7.  9. 28.]
+in loop: rho_last:[1 0 0 ... 2 1 5]
+in loop: last_num:80
+in loop: rank:[ 8  8 13 ... 14 10 12]
+in loop: rho_level:5
+in loop: rho:[18. inf inf ...  7.  9. 28.]
+in loop: rho_last:[1 0 0 ... 2 1 5]
+in loop: last_num:63
+in loop: rank:[ 8  8 13 ... 14 10 12]
+igd 33.634174
+11
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[18.  3. inf ... 12. 11. 29.]
+in loop: rho_last:[2 1 0 ... 2 2 1]
+in loop: last_num:143
+in loop: rank:[ 9 11 11 ...  6 20 10]
+in loop: rho_level:3
+in loop: rho:[18.  3. inf ... 12. 11. 29.]
+in loop: rho_last:[2 1 0 ... 2 2 1]
+in loop: last_num:138
+in loop: rank:[ 9 11 11 ...  6 20 10]
+in loop: rho_level:4
+in loop: rho:[18. inf inf ... 12. 11. 29.]
+in loop: rho_last:[2 0 0 ... 2 2 1]
+in loop: last_num:97
+in loop: rank:[ 9 10 11 ...  6 20 10]
+igd 29.384356
+12
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[20. inf inf ... 15. 14. 28.]
+in loop: rho_last:[2 0 0 ... 2 2 4]
+in loop: last_num:143
+in loop: rank:[12 10 12 ... 12 11 22]
+in loop: rho_level:3
+in loop: rho:[20. inf inf ... 15. 14. 28.]
+in loop: rho_last:[2 0 0 ... 2 2 4]
+in loop: last_num:103
+in loop: rank:[12 10 12 ... 12 11 22]
+in loop: rho_level:4
+in loop: rho:[20. inf inf ... 15. 14. 28.]
+in loop: rho_last:[2 0 0 ... 2 2 4]
+in loop: last_num:83
+in loop: rank:[12 10 12 ... 12 11 22]
+igd 29.384356
+13
+into a loop
+out of loop
+igd 29.384356
+14
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[18. inf inf ... 14.  9. 21.]
+in loop: rho_last:[1 0 0 ... 2 1 2]
+in loop: last_num:159
+in loop: rank:[ 7 10 13 ...  4 23 22]
+in loop: rho_level:3
+in loop: rho:[18. inf inf ... 14.  9. 21.]
+in loop: rho_last:[1 0 0 ... 2 1 2]
+in loop: last_num:111
+in loop: rank:[ 7 10 13 ...  4 23 22]
+in loop: rho_level:4
+in loop: rho:[18. inf inf ... 14.  9. 21.]
+in loop: rho_last:[1 0 0 ... 2 1 2]
+in loop: last_num:71
+in loop: rank:[ 7 10 13 ...  4 23 22]
+in loop: rho_level:5
+in loop: rho:[18. inf inf ... 14.  9. 21.]
+in loop: rho_last:[1 0 0 ... 2 1 2]
+in loop: last_num:57
+in loop: rank:[ 7 10 13 ...  4 23 22]
+in loop: rho_level:6
+in loop: rho:[18. inf inf ... 14.  9. 21.]
+in loop: rho_last:[1 0 0 ... 2 1 2]
+in loop: last_num:43
+in loop: rank:[ 7 10 13 ...  4 23 22]
+in loop: rho_level:7
+in loop: rho:[18. inf inf ... 14.  9. 21.]
+in loop: rho_last:[1 0 0 ... 2 1 2]
+in loop: last_num:32
+in loop: rank:[ 7 10 13 ...  4 23 22]
+in loop: rho_level:8
+in loop: rho:[18. inf inf ... 14.  9. 21.]
+in loop: rho_last:[1 0 0 ... 2 1 2]
+in loop: last_num:22
+in loop: rank:[ 7 10 13 ...  4 23 22]
+in loop: rho_level:9
+in loop: rho:[18. inf inf ... 14.  9. 21.]
+in loop: rho_last:[1 0 0 ... 2 1 2]
+in loop: last_num:12
+in loop: rank:[ 7 10 13 ...  4 23 22]
+in loop: rho_level:10
+in loop: rho:[18. inf inf ... 14. inf 21.]
+in loop: rho_last:[1 0 0 ... 2 0 2]
+in loop: last_num:14
+in loop: rank:[ 7 10 13 ...  4 23 22]
+in loop: rho_level:11
+in loop: rho:[18. inf inf ... 14. inf 21.]
+in loop: rho_last:[1 0 0 ... 2 0 2]
+in loop: last_num:6
+in loop: rank:[ 7 10 13 ...  4 23 22]
+igd 29.384356
+15
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[23. inf 14. ...  9.  7. 21.]
+in loop: rho_last:[3 0 1 ... 1 3 4]
+in loop: last_num:144
+in loop: rank:[ 9 10 11 ... 10  6 25]
+in loop: rho_level:3
+in loop: rho:[23. inf 14. ...  9.  7. 21.]
+in loop: rho_last:[3 0 1 ... 1 3 4]
+in loop: last_num:111
+in loop: rank:[ 9 10 11 ... 10  6 25]
+in loop: rho_level:4
+in loop: rho:[23. inf 14. ...  9.  7. 21.]
+in loop: rho_last:[3 0 1 ... 1 3 4]
+in loop: last_num:68
+in loop: rank:[ 9 10 10 ... 10  6 25]
+in loop: rho_level:5
+in loop: rho:[23. inf 14. ...  9.  7. 21.]
+in loop: rho_last:[3 0 1 ... 1 3 4]
+in loop: last_num:45
+in loop: rank:[ 9 10 10 ... 10  6 25]
+in loop: rho_level:6
+in loop: rho:[23. inf 14. ...  9.  7. 21.]
+in loop: rho_last:[3 0 1 ... 1 3 4]
+in loop: last_num:36
+in loop: rank:[ 9 10 10 ... 10  6 25]
+in loop: rho_level:7
+in loop: rho:[23. inf 14. ...  9.  7. 21.]
+in loop: rho_last:[3 0 1 ... 1 3 4]
+in loop: last_num:33
+in loop: rank:[ 9 10 10 ... 10  6 25]
+in loop: rho_level:8
+in loop: rho:[23. inf 14. ...  9.  8. 21.]
+in loop: rho_last:[3 0 1 ... 1 2 4]
+in loop: last_num:20
+in loop: rank:[ 9 10 10 ... 10  6 25]
+in loop: rho_level:9
+in loop: rho:[23. inf 14. ...  9.  9. 21.]
+in loop: rho_last:[3 0 1 ... 1 1 4]
+in loop: last_num:17
+in loop: rank:[ 9 10 10 ... 10  6 25]
+in loop: rho_level:10
+in loop: rho:[23. inf 14. ... inf inf 21.]
+in loop: rho_last:[3 0 1 ... 0 0 4]
+in loop: last_num:10
+in loop: rank:[ 9 10 10 ... 10  6 25]
+igd 29.384356
+16
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[22.  4. 10. ...  9. inf 19.]
+in loop: rho_last:[5 1 3 ... 1 0 2]
+in loop: last_num:131
+in loop: rank:[10 12 14 ... 14 13 14]
+in loop: rho_level:3
+in loop: rho:[22.  4. 10. ...  9. inf 19.]
+in loop: rho_last:[5 1 3 ... 1 0 2]
+in loop: last_num:110
+in loop: rank:[10 12 14 ... 14 13 14]
+in loop: rho_level:4
+in loop: rho:[22.  4. 10. ...  9. inf 19.]
+in loop: rho_last:[5 1 3 ... 1 0 2]
+in loop: last_num:75
+in loop: rank:[10 12 14 ... 14 13 14]
+in loop: rho_level:5
+in loop: rho:[22. inf 10. ...  9. inf 19.]
+in loop: rho_last:[5 0 3 ... 1 0 2]
+in loop: last_num:49
+in loop: rank:[10 12 14 ... 14 13 14]
+in loop: rho_level:6
+in loop: rho:[22. inf 10. ...  9. inf 19.]
+in loop: rho_last:[5 0 3 ... 1 0 2]
+in loop: last_num:36
+in loop: rank:[10 12 14 ... 14 13 14]
+in loop: rho_level:7
+in loop: rho:[22. inf 10. ...  9. inf 19.]
+in loop: rho_last:[5 0 3 ... 1 0 2]
+in loop: last_num:20
+in loop: rank:[10 12 14 ... 14 13 14]
+in loop: rho_level:8
+in loop: rho:[22. inf 10. ...  9. inf 19.]
+in loop: rho_last:[5 0 3 ... 1 0 2]
+in loop: last_num:19
+in loop: rank:[10 12 14 ... 14 13 14]
+in loop: rho_level:9
+in loop: rho:[22. inf 10. ...  9. inf 19.]
+in loop: rho_last:[5 0 3 ... 1 0 2]
+in loop: last_num:15
+in loop: rank:[10 12 14 ... 14 13 14]
+in loop: rho_level:10
+in loop: rho:[22. inf 10. ... inf inf 19.]
+in loop: rho_last:[5 0 3 ... 0 0 2]
+in loop: last_num:14
+in loop: rank:[10 12 14 ... 14 13 14]
+igd 23.26054
+17
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[18. inf inf ... inf  5. 16.]
+in loop: rho_last:[2 0 0 ... 0 3 1]
+in loop: last_num:124
+in loop: rank:[11  5  7 ...  8 19 19]
+in loop: rho_level:3
+in loop: rho:[18. inf inf ... inf  5. 16.]
+in loop: rho_last:[2 0 0 ... 0 3 1]
+in loop: last_num:111
+in loop: rank:[11  5  7 ...  8 19 19]
+in loop: rho_level:4
+in loop: rho:[18. inf inf ... inf  5. 16.]
+in loop: rho_last:[2 0 0 ... 0 3 1]
+in loop: last_num:67
+in loop: rank:[11  5  7 ...  8 19 19]
+in loop: rho_level:5
+in loop: rho:[18. inf inf ... inf  5. 16.]
+in loop: rho_last:[2 0 0 ... 0 3 1]
+in loop: last_num:51
+in loop: rank:[11  5  7 ...  8 19 19]
+in loop: rho_level:6
+in loop: rho:[18. inf inf ... inf  6. 16.]
+in loop: rho_last:[2 0 0 ... 0 2 1]
+in loop: last_num:34
+in loop: rank:[11  5  7 ...  8 19 19]
+igd 23.26054
+18
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[18. inf inf ...  7.  7. 22.]
+in loop: rho_last:[2 0 0 ... 2 3 1]
+in loop: last_num:133
+in loop: rank:[ 6  9  9 ... 22 23 24]
+in loop: rho_level:3
+in loop: rho:[18. inf inf ...  7.  7. 22.]
+in loop: rho_last:[2 0 0 ... 2 3 1]
+in loop: last_num:118
+in loop: rank:[ 6  9  9 ... 22 23 24]
+in loop: rho_level:4
+in loop: rho:[18. inf inf ...  7.  7. 22.]
+in loop: rho_last:[2 0 0 ... 2 3 1]
+in loop: last_num:79
+in loop: rank:[ 6  9  9 ... 22 23 24]
+in loop: rho_level:5
+in loop: rho:[18. inf inf ...  7.  7. 22.]
+in loop: rho_last:[2 0 0 ... 2 3 1]
+in loop: last_num:58
+in loop: rank:[ 6  9  9 ... 22 23 24]
+in loop: rho_level:6
+in loop: rho:[18. inf inf ...  7.  7. 22.]
+in loop: rho_last:[2 0 0 ... 2 3 1]
+in loop: last_num:46
+in loop: rank:[ 6  9  9 ... 22 23 24]
+igd 23.26054
+19
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[17. inf inf ... 13.  7. 16.]
+in loop: rho_last:[2 0 0 ... 1 1 2]
+in loop: last_num:148
+in loop: rank:[ 7 10 10 ...  7 23 30]
+in loop: rho_level:3
+in loop: rho:[17. inf inf ... 13.  7. 16.]
+in loop: rho_last:[2 0 0 ... 1 1 2]
+in loop: last_num:114
+in loop: rank:[ 7 10 10 ...  7 23 30]
+in loop: rho_level:4
+in loop: rho:[17. inf inf ... 13.  7. 16.]
+in loop: rho_last:[2 0 0 ... 1 1 2]
+in loop: last_num:73
+in loop: rank:[ 7 10 10 ...  7 23 30]
+igd 23.26054
+20
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[16. inf  7. ... 15. inf 18.]
+in loop: rho_last:[1 0 1 ... 1 0 1]
+in loop: last_num:137
+in loop: rank:[ 9 12 10 ... 19 18  7]
+igd 22.058083
+21
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[13. inf inf ...  6. inf 27.]
+in loop: rho_last:[1 0 0 ... 1 0 2]
+in loop: last_num:134
+in loop: rank:[11 12 12 ... 20 23 25]
+igd 22.058083
+22
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[13.  9. inf ...  8.  7. inf]
+in loop: rho_last:[2 1 0 ... 2 1 0]
+in loop: last_num:149
+in loop: rank:[ 6 12 11 ... 23 13 28]
+in loop: rho_level:3
+in loop: rho:[13.  9. inf ...  8.  7. inf]
+in loop: rho_last:[2 1 0 ... 2 1 0]
+in loop: last_num:96
+in loop: rank:[ 6 12 11 ... 23 13 28]
+in loop: rho_level:4
+in loop: rho:[13.  9. inf ...  8.  7. inf]
+in loop: rho_last:[2 1 0 ... 2 1 0]
+in loop: last_num:73
+in loop: rank:[ 6 12 11 ... 23 13 28]
+igd 17.17276
+23
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[13.  6. inf ...  6.  6. 29.]
+in loop: rho_last:[1 5 0 ... 3 3 2]
+in loop: last_num:109
+in loop: rank:[ 8 12  5 ... 12  8 30]
+in loop: rho_level:3
+in loop: rho:[13.  6. inf ...  6.  6. 29.]
+in loop: rho_last:[1 5 0 ... 3 3 2]
+in loop: last_num:104
+in loop: rank:[ 8 12  5 ... 12  8 30]
+igd 17.17276
+24
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[14. inf  2. ...  6. inf 24.]
+in loop: rho_last:[1 0 1 ... 1 0 5]
+in loop: last_num:144
+in loop: rank:[ 8  6  7 ... 13 19 22]
+in loop: rho_level:3
+in loop: rho:[14. inf inf ...  6. inf 24.]
+in loop: rho_last:[1 0 0 ... 1 0 5]
+in loop: last_num:97
+in loop: rank:[ 8  6  7 ... 13 19 22]
+igd 13.447709
+25
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[12. 10. inf ...  3.  6. 25.]
+in loop: rho_last:[1 1 0 ... 2 2 2]
+in loop: last_num:131
+in loop: rank:[ 9  6  7 ... 25  3 22]
+in loop: rho_level:3
+in loop: rho:[12. 10. inf ...  3.  6. 25.]
+in loop: rho_last:[1 1 0 ... 2 2 2]
+in loop: last_num:107
+in loop: rank:[ 9  6  7 ... 25  3 22]
+igd 13.447709
+26
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[12. inf inf ...  6.  6. 19.]
+in loop: rho_last:[3 0 0 ... 2 1 2]
+in loop: last_num:150
+in loop: rank:[11  8 10 ... 27 17 10]
+in loop: rho_level:3
+in loop: rho:[12. inf inf ...  6.  6. 19.]
+in loop: rho_last:[3 0 0 ... 2 1 2]
+in loop: last_num:109
+in loop: rank:[11  8 10 ... 27 17 10]
+igd 13.447709
+27
+into a loop
+out of loop
+igd 13.447709
+28
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[10.  9. inf ...  7.  5. 16.]
+in loop: rho_last:[1 1 0 ... 1 1 1]
+in loop: last_num:129
+in loop: rank:[10 12  8 ... 28 16 15]
+in loop: rho_level:3
+in loop: rho:[10.  9. inf ...  7.  5. 16.]
+in loop: rho_last:[1 1 0 ... 1 1 1]
+in loop: last_num:104
+in loop: rank:[10 12  8 ... 28 16 15]
+igd 13.447709
+29
+into a loop
+out of loop
+igd 12.762172
+30
+into a loop
+out of loop
+igd 12.761083
+31
+into a loop
+out of loop
+igd 10.650656
+32
+into a loop
+out of loop
+igd 10.650656
+33
+into a loop
+out of loop
+igd 9.175707
+34
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[13. inf  3. ... 49. 23. 41.]
+in loop: rho_last:[2 0 1 ... 5 2 1]
+in loop: last_num:127
+in loop: rank:[ 7  8  8 ... 21  3 34]
+in loop: rho_level:3
+in loop: rho:[13. inf  3. ... 49. 23. 41.]
+in loop: rho_last:[2 0 1 ... 5 2 1]
+in loop: last_num:87
+in loop: rank:[ 7  8  8 ... 21  3 34]
+igd 9.175707
+35
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[15. inf inf ... 40. 21. inf]
+in loop: rho_last:[1 0 0 ... 9 5 0]
+in loop: last_num:143
+in loop: rank:[ 9 10 10 ... 17 20 12]
+in loop: rho_level:3
+in loop: rho:[15. inf inf ... 40. 21. inf]
+in loop: rho_last:[1 0 0 ... 9 5 0]
+in loop: last_num:105
+in loop: rank:[ 9 10 10 ... 17 20 12]
+igd 9.175707
+36
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[12. inf inf ... 34. 23. 53.]
+in loop: rho_last:[3 0 0 ... 6 2 5]
+in loop: last_num:132
+in loop: rank:[ 9 12 12 ... 12  3 22]
+in loop: rho_level:3
+in loop: rho:[12. inf inf ... 34. 23. 53.]
+in loop: rho_last:[3 0 0 ... 6 2 5]
+in loop: last_num:91
+in loop: rank:[ 9 12 12 ... 12  3 22]
+in loop: rho_level:4
+in loop: rho:[12. inf inf ... 34. 23. 53.]
+in loop: rho_last:[3 0 0 ... 6 2 5]
+in loop: last_num:65
+in loop: rank:[ 9 12 12 ... 12  3 22]
+igd 7.6774173
+37
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[13.  5. inf ... 29. 17. 41.]
+in loop: rho_last:[1 1 0 ... 6 7 4]
+in loop: last_num:146
+in loop: rank:[ 9 14 12 ...  3 17 26]
+in loop: rho_level:3
+in loop: rho:[13.  5. inf ... 29. 17. 41.]
+in loop: rho_last:[1 1 0 ... 6 7 4]
+in loop: last_num:92
+in loop: rank:[ 9 14 12 ...  3 17 26]
+igd 7.6774173
+38
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[14. inf inf ... 20. 10. 32.]
+in loop: rho_last:[1 0 0 ... 4 2 6]
+in loop: last_num:145
+in loop: rank:[11 13 12 ... 26 26  4]
+in loop: rho_level:3
+in loop: rho:[14. inf inf ... 20. 10. 32.]
+in loop: rho_last:[1 0 0 ... 4 2 6]
+in loop: last_num:123
+in loop: rank:[11 13 12 ... 26 26  4]
+in loop: rho_level:4
+in loop: rho:[14. inf inf ... 20. 10. 32.]
+in loop: rho_last:[1 0 0 ... 4 2 6]
+in loop: last_num:74
+in loop: rank:[10 13 12 ... 26 26  4]
+igd 7.6774173
+39
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[12. inf  3. ... 15.  9. 27.]
+in loop: rho_last:[1 0 1 ... 4 3 4]
+in loop: last_num:168
+in loop: rank:[12  8 11 ... 24  5 21]
+igd 7.677396
+40
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[13. inf inf ... 22.  7. 28.]
+in loop: rho_last:[1 0 0 ... 4 3 9]
+in loop: last_num:138
+in loop: rank:[ 8 10 12 ... 14 21 20]
+igd 6.3731766
+41
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[14. inf inf ... 16.  8. 34.]
+in loop: rho_last:[2 0 0 ... 1 1 2]
+in loop: last_num:119
+in loop: rank:[ 9 10 12 ... 30 28  9]
+igd 6.3731766
+42
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[16. inf  3. ... 11.  3. 31.]
+in loop: rho_last:[1 0 2 ... 2 2 4]
+in loop: last_num:139
+in loop: rank:[10 11  8 ...  3 24 27]
+igd 6.3731766
+43
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[13. inf inf ... inf inf 24.]
+in loop: rho_last:[2 0 0 ... 0 0 4]
+in loop: last_num:143
+in loop: rank:[10  9  6 ... 26 20 31]
+in loop: rho_level:3
+in loop: rho:[13. inf inf ... inf inf 24.]
+in loop: rho_last:[2 0 0 ... 0 0 4]
+in loop: last_num:102
+in loop: rank:[10  9  6 ... 26 20 31]
+in loop: rho_level:4
+in loop: rho:[13. inf inf ... inf inf 24.]
+in loop: rho_last:[2 0 0 ... 0 0 4]
+in loop: last_num:56
+in loop: rank:[10  9  6 ... 26 20 31]
+in loop: rho_level:5
+in loop: rho:[13. inf inf ... inf inf 24.]
+in loop: rho_last:[2 0 0 ... 0 0 4]
+in loop: last_num:47
+in loop: rank:[10  9  6 ... 26 20 31]
+igd 5.1683
+44
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[12. inf inf ... inf inf 23.]
+in loop: rho_last:[1 0 0 ... 0 0 2]
+in loop: last_num:134
+in loop: rank:[12 10  6 ... 18 14 35]
+igd 5.1683
+45
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[inf  5. inf ...  4. inf 21.]
+in loop: rho_last:[0 1 0 ... 1 0 2]
+in loop: last_num:123
+in loop: rank:[12  9 13 ... 25 23 24]
+in loop: rho_level:3
+in loop: rho:[inf  5. inf ...  4. inf 21.]
+in loop: rho_last:[0 1 0 ... 1 0 2]
+in loop: last_num:101
+in loop: rank:[12  9 13 ... 25 23 24]
+in loop: rho_level:4
+in loop: rho:[inf  5. inf ...  4. inf 21.]
+in loop: rho_last:[0 1 0 ... 1 0 2]
+in loop: last_num:65
+in loop: rank:[12  9 13 ... 25 23 24]
+igd 5.1683
+46
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[19. inf inf ... inf inf 21.]
+in loop: rho_last:[1 0 0 ... 0 0 1]
+in loop: last_num:123
+in loop: rank:[11  2  6 ... 23 28  0]
+in loop: rho_level:3
+in loop: rho:[19. inf inf ... inf inf 21.]
+in loop: rho_last:[1 0 0 ... 0 0 1]
+in loop: last_num:103
+in loop: rank:[11  2  6 ... 23 28  0]
+in loop: rho_level:4
+in loop: rho:[19. inf inf ... inf inf 21.]
+in loop: rho_last:[1 0 0 ... 0 0 1]
+in loop: last_num:58
+in loop: rank:[11  2  6 ... 23 28  0]
+in loop: rho_level:5
+in loop: rho:[19. inf inf ... inf inf 21.]
+in loop: rho_last:[1 0 0 ... 0 0 1]
+in loop: last_num:46
+in loop: rank:[11  2  6 ... 23 28  0]
+in loop: rho_level:6
+in loop: rho:[19. inf inf ... inf inf 21.]
+in loop: rho_last:[1 0 0 ... 0 0 1]
+in loop: last_num:39
+in loop: rank:[11  2  6 ... 23 28  0]
+in loop: rho_level:7
+in loop: rho:[19. inf inf ... inf inf 21.]
+in loop: rho_last:[1 0 0 ... 0 0 1]
+in loop: last_num:21
+in loop: rank:[10  2  6 ... 23 28  0]
+in loop: rho_level:8
+in loop: rho:[19. inf inf ... inf inf 21.]
+in loop: rho_last:[1 0 0 ... 0 0 1]
+in loop: last_num:12
+in loop: rank:[10  2  6 ... 23 28  0]
+igd 5.1683
+47
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[18. inf  4. ... inf inf 24.]
+in loop: rho_last:[4 0 1 ... 0 0 1]
+in loop: last_num:129
+in loop: rank:[14  4  7 ... 25  6 19]
+in loop: rho_level:3
+in loop: rho:[18. inf  4. ... inf inf 24.]
+in loop: rho_last:[4 0 1 ... 0 0 1]
+in loop: last_num:96
+in loop: rank:[14  4  7 ... 25  6 19]
+in loop: rho_level:4
+in loop: rho:[18. inf  4. ... inf inf 24.]
+in loop: rho_last:[4 0 1 ... 0 0 1]
+in loop: last_num:68
+in loop: rank:[14  4  7 ... 25  6 19]
+in loop: rho_level:5
+in loop: rho:[18. inf inf ... inf inf 24.]
+in loop: rho_last:[4 0 0 ... 0 0 1]
+in loop: last_num:49
+in loop: rank:[14  4  7 ... 25  6 19]
+in loop: rho_level:6
+in loop: rho:[18. inf inf ... inf inf 24.]
+in loop: rho_last:[4 0 0 ... 0 0 1]
+in loop: last_num:42
+in loop: rank:[14  4  7 ... 25  6 19]
+igd 5.1683
+48
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[19.  2.  3. ...  7. inf 27.]
+in loop: rho_last:[1 3 2 ... 1 0 1]
+in loop: last_num:146
+in loop: rank:[ 4  8  9 ... 31 15 20]
+in loop: rho_level:3
+in loop: rho:[19.  3.  3. ...  7. inf 27.]
+in loop: rho_last:[1 2 2 ... 1 0 1]
+in loop: last_num:113
+in loop: rank:[ 4  8  9 ... 31 15 20]
+in loop: rho_level:4
+in loop: rho:[19.  4.  4. ...  7. inf 27.]
+in loop: rho_last:[1 1 1 ... 1 0 1]
+in loop: last_num:70
+in loop: rank:[ 4  8  9 ... 31 15 20]
+igd 5.1683
+49
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[19. inf inf ... inf inf 29.]
+in loop: rho_last:[1 0 0 ... 0 0 2]
+in loop: last_num:135
+in loop: rank:[ 4  9 12 ... 20 29 23]
+in loop: rho_level:3
+in loop: rho:[19. inf inf ... inf inf 29.]
+in loop: rho_last:[1 0 0 ... 0 0 2]
+in loop: last_num:117
+in loop: rank:[ 4  9 12 ... 20 29 23]
+in loop: rho_level:4
+in loop: rho:[19. inf inf ... inf inf 29.]
+in loop: rho_last:[1 0 0 ... 0 0 2]
+in loop: last_num:66
+in loop: rank:[ 4  9 12 ... 20 29 23]
+in loop: rho_level:5
+in loop: rho:[19. inf inf ... inf inf 29.]
+in loop: rho_last:[1 0 0 ... 0 0 2]
+in loop: last_num:49
+in loop: rank:[ 4  9 12 ... 20 29 23]
+igd 5.1683
+50
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[16. inf inf ... 10. inf inf]
+in loop: rho_last:[1 0 0 ... 1 0 0]
+in loop: last_num:120
+in loop: rank:[ 4 10 11 ... 29  6 14]
+in loop: rho_level:3
+in loop: rho:[16. inf inf ... 10. inf inf]
+in loop: rho_last:[1 0 0 ... 1 0 0]
+in loop: last_num:93
+in loop: rank:[ 4 10 11 ... 29  6 14]
+in loop: rho_level:4
+in loop: rho:[16. inf inf ... 10. inf inf]
+in loop: rho_last:[1 0 0 ... 1 0 0]
+in loop: last_num:48
+in loop: rank:[ 4 10 11 ... 29  6 14]
+in loop: rho_level:5
+in loop: rho:[16. inf inf ... 10. inf inf]
+in loop: rho_last:[1 0 0 ... 1 0 0]
+in loop: last_num:51
+in loop: rank:[ 4 10 10 ... 29  6 14]
+in loop: rho_level:6
+in loop: rho:[16. inf inf ... 10. inf inf]
+in loop: rho_last:[1 0 0 ... 1 0 0]
+in loop: last_num:43
+in loop: rank:[ 4 10 10 ... 29  6 14]
+in loop: rho_level:7
+in loop: rho:[16. inf inf ... 10. inf inf]
+in loop: rho_last:[1 0 0 ... 1 0 0]
+in loop: last_num:21
+in loop: rank:[ 4 10 10 ... 29  6 14]
+in loop: rho_level:8
+in loop: rho:[16. inf inf ... 10. inf inf]
+in loop: rho_last:[1 0 0 ... 1 0 0]
+in loop: last_num:16
+in loop: rank:[ 4 10 10 ... 29  6 14]
+igd 5.1549335
+51
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[18. inf inf ... 11. inf 37.]
+in loop: rho_last:[1 0 0 ... 1 0 2]
+in loop: last_num:125
+in loop: rank:[ 4 15 13 ... 22  0 23]
+in loop: rho_level:3
+in loop: rho:[18. inf inf ... 11. inf 37.]
+in loop: rho_last:[1 0 0 ... 1 0 2]
+in loop: last_num:89
+in loop: rank:[ 4 15 13 ... 22  0 23]
+in loop: rho_level:4
+in loop: rho:[18. inf inf ... 11. inf 37.]
+in loop: rho_last:[1 0 0 ... 1 0 2]
+in loop: last_num:69
+in loop: rank:[ 4 15 13 ... 22  0 23]
+in loop: rho_level:5
+in loop: rho:[18. inf inf ... 11. inf 37.]
+in loop: rho_last:[1 0 0 ... 1 0 2]
+in loop: last_num:54
+in loop: rank:[ 4 15 13 ... 22  0 23]
+igd 5.0899515
+52
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[20.  3. inf ... 15. inf 34.]
+in loop: rho_last:[1 1 0 ... 1 0 2]
+in loop: last_num:153
+in loop: rank:[ 5  9 12 ... 25 23 30]
+in loop: rho_level:3
+in loop: rho:[20.  3. inf ... 15. inf 34.]
+in loop: rho_last:[1 1 0 ... 1 0 2]
+in loop: last_num:107
+in loop: rank:[ 5  9 12 ... 25 23 30]
+in loop: rho_level:4
+in loop: rho:[20. inf inf ... 15. inf 34.]
+in loop: rho_last:[1 0 0 ... 1 0 2]
+in loop: last_num:71
+in loop: rank:[ 5  9 12 ... 25 23 30]
+in loop: rho_level:5
+in loop: rho:[20. inf inf ... 15. inf 34.]
+in loop: rho_last:[1 0 0 ... 1 0 2]
+in loop: last_num:71
+in loop: rank:[ 5  9 12 ... 25 23 30]
+igd 5.0212564
+53
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[19. inf inf ... 19. inf 36.]
+in loop: rho_last:[1 0 0 ... 1 0 1]
+in loop: last_num:150
+in loop: rank:[ 6 10 10 ...  1 13 10]
+in loop: rho_level:3
+in loop: rho:[19. inf inf ... 19. inf 36.]
+in loop: rho_last:[1 0 0 ... 1 0 1]
+in loop: last_num:104
+in loop: rank:[ 6 10 10 ...  1 13 10]
+in loop: rho_level:4
+in loop: rho:[19. inf inf ... 19. inf 36.]
+in loop: rho_last:[1 0 0 ... 1 0 1]
+in loop: last_num:71
+in loop: rank:[ 6 10 10 ...  1 13 10]
+in loop: rho_level:5
+in loop: rho:[19. inf inf ... 19. inf 36.]
+in loop: rho_last:[1 0 0 ... 1 0 1]
+in loop: last_num:55
+in loop: rank:[ 6 10 10 ...  1 13 10]
+in loop: rho_level:6
+in loop: rho:[19. inf inf ... 19. inf 36.]
+in loop: rho_last:[1 0 0 ... 1 0 1]
+in loop: last_num:41
+in loop: rank:[ 6 10 10 ...  1 13 10]
+in loop: rho_level:7
+in loop: rho:[19. inf inf ... 19. inf 36.]
+in loop: rho_last:[1 0 0 ... 1 0 1]
+in loop: last_num:31
+in loop: rank:[ 6 10 10 ...  1 13 10]
+igd 4.08721
+54
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[inf  7. inf ... inf inf 41.]
+in loop: rho_last:[0 2 0 ... 0 0 4]
+in loop: last_num:147
+in loop: rank:[ 7 11 12 ... 28 13 21]
+in loop: rho_level:3
+in loop: rho:[inf  7. inf ... inf inf 41.]
+in loop: rho_last:[0 2 0 ... 0 0 4]
+in loop: last_num:115
+in loop: rank:[ 7 11 12 ... 28 13 21]
+in loop: rho_level:4
+in loop: rho:[inf  7. inf ... inf inf 41.]
+in loop: rho_last:[0 2 0 ... 0 0 4]
+in loop: last_num:72
+in loop: rank:[ 7 11 12 ... 28 13 21]
+igd 4.08721
+55
+into a loop
+out of loop
+igd 4.085831
+56
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[21. inf inf ... 15.  3. 35.]
+in loop: rho_last:[2 0 0 ... 1 1 2]
+in loop: last_num:148
+in loop: rank:[11 10 10 ... 10 25 24]
+in loop: rho_level:3
+in loop: rho:[21. inf inf ... 15.  3. 35.]
+in loop: rho_last:[2 0 0 ... 1 1 2]
+in loop: last_num:90
+in loop: rank:[11 10 10 ... 10 25 24]
+in loop: rho_level:4
+in loop: rho:[21. inf inf ... 15. inf 35.]
+in loop: rho_last:[2 0 0 ... 1 0 2]
+in loop: last_num:62
+in loop: rank:[11 10 10 ... 10 25 24]
+in loop: rho_level:5
+in loop: rho:[21. inf inf ... 15. inf 35.]
+in loop: rho_last:[2 0 0 ... 1 0 2]
+in loop: last_num:52
+in loop: rank:[11 10 10 ... 10 25 24]
+in loop: rho_level:6
+in loop: rho:[21. inf inf ... 15. inf 35.]
+in loop: rho_last:[2 0 0 ... 1 0 2]
+in loop: last_num:24
+in loop: rank:[11 10 10 ... 10 25 24]
+in loop: rho_level:7
+in loop: rho:[21. inf inf ... 15. inf 35.]
+in loop: rho_last:[2 0 0 ... 1 0 2]
+in loop: last_num:27
+in loop: rank:[10 10 10 ... 10 25 24]
+in loop: rho_level:8
+in loop: rho:[21. inf inf ... 15. inf 35.]
+in loop: rho_last:[2 0 0 ... 1 0 2]
+in loop: last_num:28
+in loop: rank:[10 10 10 ... 10 25 24]
+igd 4.085831
+57
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[20. inf inf ... 16.  3. 39.]
+in loop: rho_last:[1 0 0 ... 2 1 1]
+in loop: last_num:128
+in loop: rank:[12 11 11 ... 11 27 35]
+igd 4.085831
+58
+into a loop
+out of loop
+igd 4.085831
+59
+into a loop
+out of loop
+igd 3.4382489
+60
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[14. inf inf ... 13.  5. 36.]
+in loop: rho_last:[2 0 0 ... 1 1 2]
+in loop: last_num:117
+in loop: rank:[ 9 13  8 ... 26 24 26]
+in loop: rho_level:3
+in loop: rho:[14. inf inf ... 13.  5. 36.]
+in loop: rho_last:[2 0 0 ... 1 1 2]
+in loop: last_num:75
+in loop: rank:[ 9 13  8 ... 26 24 26]
+igd 3.3838375
+61
+into a loop
+out of loop
+igd 3.3835804
+62
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[13. inf  6. ... 17. inf inf]
+in loop: rho_last:[1 0 2 ... 2 0 0]
+in loop: last_num:131
+in loop: rank:[12 12  8 ... 19 12 17]
+igd 3.3835804
+63
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[14. inf inf ... 10. inf 34.]
+in loop: rho_last:[1 0 0 ... 1 0 4]
+in loop: last_num:123
+in loop: rank:[ 9 16 12 ... 20 23 31]
+igd 2.1311033
+64
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[inf  3. inf ...  6.  6. 26.]
+in loop: rho_last:[0 1 0 ... 2 4 5]
+in loop: last_num:114
+in loop: rank:[11 11 11 ... 18  9 20]
+igd 2.1311033
+65
+into a loop
+out of loop
+igd 2.1311033
+66
+into a loop
+out of loop
+igd 2.1311033
+67
+into a loop
+out of loop
+igd 2.1311033
+68
+into a loop
+out of loop
+igd 2.1311033
+69
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[14. inf inf ...  7.  8. 28.]
+in loop: rho_last:[1 0 0 ... 2 1 3]
+in loop: last_num:102
+in loop: rank:[13 12  8 ... 36 22 31]
+igd 1.7469226
+70
+into a loop
+out of loop
+igd 1.7469226
+71
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[13. inf inf ...  4.  3. 24.]
+in loop: rho_last:[1 0 0 ... 2 2 1]
+in loop: last_num:134
+in loop: rank:[ 9  6 13 ...  6 21 33]
+in loop: rho_level:3
+in loop: rho:[13. inf inf ...  4.  3. 24.]
+in loop: rho_last:[1 0 0 ... 2 2 1]
+in loop: last_num:85
+in loop: rank:[ 9  6 13 ...  6 21 33]
+in loop: rho_level:4
+in loop: rho:[13. inf inf ...  4.  4. 24.]
+in loop: rho_last:[1 0 0 ... 2 1 1]
+in loop: last_num:67
+in loop: rank:[ 9  6 13 ...  6 21 33]
+in loop: rho_level:5
+in loop: rho:[13. inf inf ...  5. inf 24.]
+in loop: rho_last:[1 0 0 ... 1 0 1]
+in loop: last_num:44
+in loop: rank:[ 9  6 13 ...  6 21 33]
+igd 1.7384709
+72
+into a loop
+out of loop
+igd 1.7384709
+73
+into a loop
+out of loop
+in loop: rho_level:2
+in loop: rho:[14. inf inf ...  8. inf 29.]
+in loop: rho_last:[1 0 0 ... 1 0 1]
+in loop: last_num:126
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:3
+in loop: rho:[14. inf inf ...  8. inf 29.]
+in loop: rho_last:[1 0 0 ... 1 0 1]
+in loop: last_num:111
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:4
+in loop: rho:[14. inf inf ...  8. inf 29.]
+in loop: rho_last:[1 0 0 ... 1 0 1]
+in loop: last_num:60
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:5
+in loop: rho:[14. inf inf ...  8. inf 29.]
+in loop: rho_last:[1 0 0 ... 1 0 1]
+in loop: last_num:46
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:6
+in loop: rho:[14. inf inf ...  8. inf 29.]
+in loop: rho_last:[1 0 0 ... 1 0 1]
+in loop: last_num:31
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:7
+in loop: rho:[14. inf inf ...  8. inf 29.]
+in loop: rho_last:[1 0 0 ... 1 0 1]
+in loop: last_num:31
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:8
+in loop: rho:[14. inf inf ...  8. inf 29.]
+in loop: rho_last:[1 0 0 ... 1 0 1]
+in loop: last_num:26
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:9
+in loop: rho:[14. inf inf ... inf inf 29.]
+in loop: rho_last:[1 0 0 ... 0 0 1]
+in loop: last_num:21
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:10
+in loop: rho:[14. inf inf ... inf inf 29.]
+in loop: rho_last:[1 0 0 ... 0 0 1]
+in loop: last_num:12
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:11
+in loop: rho:[14. inf inf ... inf inf 29.]
+in loop: rho_last:[1 0 0 ... 0 0 1]
+in loop: last_num:5
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:12
+in loop: rho:[14. inf inf ... inf inf 29.]
+in loop: rho_last:[1 0 0 ... 0 0 1]
+in loop: last_num:5
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:13
+in loop: rho:[14. inf inf ... inf inf 29.]
+in loop: rho_last:[1 0 0 ... 0 0 1]
+in loop: last_num:8
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:14
+in loop: rho:[14. inf inf ... inf inf 29.]
+in loop: rho_last:[1 0 0 ... 0 0 1]
+in loop: last_num:6
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:15
+in loop: rho:[inf inf inf ... inf inf 29.]
+in loop: rho_last:[0 0 0 ... 0 0 1]
+in loop: last_num:2
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:16
+in loop: rho:[inf inf inf ... inf inf 29.]
+in loop: rho_last:[0 0 0 ... 0 0 1]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:17
+in loop: rho:[inf inf inf ... inf inf 29.]
+in loop: rho_last:[0 0 0 ... 0 0 1]
+in loop: last_num:1
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:18
+in loop: rho:[inf inf inf ... inf inf 29.]
+in loop: rho_last:[0 0 0 ... 0 0 1]
+in loop: last_num:2
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:19
+in loop: rho:[inf inf inf ... inf inf 29.]
+in loop: rho_last:[0 0 0 ... 0 0 1]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:20
+in loop: rho:[inf inf inf ... inf inf 29.]
+in loop: rho_last:[0 0 0 ... 0 0 1]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:21
+in loop: rho:[inf inf inf ... inf inf 29.]
+in loop: rho_last:[0 0 0 ... 0 0 1]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:22
+in loop: rho:[inf inf inf ... inf inf 29.]
+in loop: rho_last:[0 0 0 ... 0 0 1]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:23
+in loop: rho:[inf inf inf ... inf inf 29.]
+in loop: rho_last:[0 0 0 ... 0 0 1]
+in loop: last_num:1
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:24
+in loop: rho:[inf inf inf ... inf inf 29.]
+in loop: rho_last:[0 0 0 ... 0 0 1]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:25
+in loop: rho:[inf inf inf ... inf inf 29.]
+in loop: rho_last:[0 0 0 ... 0 0 1]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:26
+in loop: rho:[inf inf inf ... inf inf 29.]
+in loop: rho_last:[0 0 0 ... 0 0 1]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:27
+in loop: rho:[inf inf inf ... inf inf 29.]
+in loop: rho_last:[0 0 0 ... 0 0 1]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:28
+in loop: rho:[inf inf inf ... inf inf 29.]
+in loop: rho_last:[0 0 0 ... 0 0 1]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:29
+in loop: rho:[inf inf inf ... inf inf 29.]
+in loop: rho_last:[0 0 0 ... 0 0 1]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:30
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:1
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:31
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:32
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:33
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:34
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:35
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:36
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:37
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:38
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:1
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:39
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:1
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:40
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:1
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:41
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:42
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:43
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:44
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:45
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:46
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:47
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:48
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:49
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:50
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:51
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:52
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:53
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:54
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:55
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:56
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:57
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:58
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:59
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:60
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:61
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:62
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:63
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:64
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:65
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:66
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:67
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:68
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:69
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:70
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:71
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:72
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:73
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:74
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:75
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:76
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:77
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:78
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:79
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:80
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:81
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:82
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:83
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:84
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:85
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:86
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:87
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:88
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:89
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:90
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:91
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:92
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:93
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:94
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:95
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:96
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:97
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:98
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:99
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:100
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:101
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:102
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:103
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:104
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:105
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:106
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:107
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:108
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:109
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:110
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:111
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:112
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:113
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:114
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:115
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:116
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:117
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:118
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:119
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:120
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:121
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:122
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:123
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:124
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:125
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:126
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:127
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:128
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:129
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:130
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:131
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:132
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:133
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:134
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:135
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:136
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:137
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:138
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:139
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:140
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:141
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:142
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:143
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:144
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:145
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:146
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:147
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:148
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:149
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:150
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:151
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:152
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:153
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:154
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:155
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:156
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:157
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:158
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:159
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:160
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:161
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:162
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:163
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:164
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:165
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:166
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:167
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:168
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:169
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:170
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:171
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:172
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:173
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:174
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:175
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:176
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:177
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:178
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:179
+in loop: rho:[inf inf inf ... inf inf inf]
+in loop: rho_last:[0 0 0 ... 0 0 0]
+in loop: last_num:0
+in loop: rank:[15  7 10 ...  3 18 32]
+in loop: rho_level:180
+in loop: rho:[inf inf inf ... inf inf inf]
