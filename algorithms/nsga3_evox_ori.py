@@ -134,21 +134,36 @@ class NSGA3Origin(Algorithm):
         )
         normalized_fitness = offset_fitness / nadir_point
 
+        # def perpendicular_distance(x, y):
+        #     dist = jnp.zeros((len(x), len(y)))
+        #
+        #     for i in range(len(x)):
+        #         proj_len = jnp.dot(x[i], y.T) / jnp.sum(y * y, axis=1)
+        #         proj_vec = proj_len[:, None] * y
+        #         prep_vec = x[i] - proj_vec
+        #         norm = jnp.linalg.norm(prep_vec, axis=1)
+        #
+        #         dist = dist.at[i].set(norm)
+        #
+        #     return dist
+        #
+        # dist = perpendicular_distance(ranked_fitness, self.ref)
+
         def perpendicular_distance(x, y):
             dist = jnp.zeros((len(x), len(y)))
 
-            for i in range(len(x)):
+            def loop_body(i, dist):
                 proj_len = jnp.dot(x[i], y.T) / jnp.sum(y * y, axis=1)
                 proj_vec = proj_len[:, None] * y
                 prep_vec = x[i] - proj_vec
                 norm = jnp.linalg.norm(prep_vec, axis=1)
 
-                dist = dist.at[i].set(norm)
+                return dist.at[i].set(norm)
 
+            dist = jax.lax.fori_loop(0, len(x), loop_body, dist)
             return dist
 
         dist = perpendicular_distance(ranked_fitness, self.ref)
-
 
         pi = jnp.nanargmin(dist, axis=1)
         d = dist[jnp.arange(len(normalized_fitness)), pi]
