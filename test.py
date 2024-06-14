@@ -134,9 +134,9 @@ if __name__ == "__main__":
     # algorithm_names = ["MOEADOrigin", "PMOEAD", "HypEOrigin"]
     # algorithm_names = ["PMOEAD", "HypEOrigin"]
     # algorithm_names = ["NSGA3", "NSGA3Origin2"]
-    algorithm_names = ["NSGA3Origin2"]
+    algorithm_names = ["NSGA3"]
     problem_list = [
-        problems.numerical.DTLZ1(m=3),
+        problems.numerical.LSMOP1(m=3),
         problems.numerical.DTLZ2(m=3),
         problems.numerical.DTLZ3(m=3),
         problems.numerical.DTLZ4(m=3),

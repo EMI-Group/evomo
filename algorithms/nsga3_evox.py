@@ -145,6 +145,7 @@ class NSGA3(Algorithm):
 
         normalized_fitness = ranked_fitness / nadir_point
         cos_distance = cos_dist(normalized_fitness, state.ref)
+        # dist is matrix with shape is (merged_pop_size, ref_num)
         dist = jnp.linalg.norm(normalized_fitness, axis=-1, keepdims=True) * jnp.sqrt(
             1 - cos_distance**2
         )
@@ -170,7 +171,7 @@ class NSGA3(Algorithm):
         rho = jnp.where(selected_rho, rho_level, rho)
         rho = jnp.where(rho_last == 0, jnp.inf, rho)
         the_selected_one_idx = jnp.minimum(jnp.min(selected_idx), the_selected_one_idx)
-        real_index = jnp.where(jnp.isinf(selected_idx), the_selected_one_idx, index).astype(jnp.int32)
+        real_index = jnp.where(jnp.isinf(index), the_selected_one_idx, index).astype(jnp.int32)
 
         def update_rank(rank, idx):
             rank = rank.at[idx].set(last_rank - 1)
@@ -192,7 +193,7 @@ class NSGA3(Algorithm):
             rho_last = jnp.where(selected_rho, rho_last - 1, rho_last)
             rho = jnp.where(selected_rho, rho_level, rho)
             rho = jnp.where(rho_last == 0, jnp.inf, rho)
-            real_index = jnp.where(jnp.isinf(selected_idx), the_selected_one_idx, index).astype(jnp.int32)
+            real_index = jnp.where(jnp.isinf(index), the_selected_one_idx, index).astype(jnp.int32)
 
             def update_rank(rank, idx):
                 rank = rank.at[idx].set(last_rank - 1)
@@ -201,14 +202,9 @@ class NSGA3(Algorithm):
             rank, _ = jax.lax.scan(update_rank, rank, real_index)
             last_num = selected_rho.sum()
             num += last_num
-            jax.debug.print("in loop: rho_level:{}", rho_level)
-            jax.debug.print("in loop: last_num:{}", last_num)
-            jax.debug.print("in loop: rank:{}", rank)
-            jax.debug.print("in loop: rho:{}", rho)
-            jax.debug.print("in loop: rho_last:{}", rho_last)
+          
             return num, rho_level, rho, rho_last, rank, index
 
-        jax.debug.print("into a loop")
         selected_number, rho_level, rho, rho_last, rank, last_index = (
             jax.lax.while_loop(
                 lambda val: val[0] < self.pop_size,
@@ -216,7 +212,7 @@ class NSGA3(Algorithm):
                 (selected_number, 1, rho, rho_last, rank, index),
             )
         )
-        jax.debug.print("out of loop")
+        
         def cut_mask(rank, dif, mask_index):
             sorted_index = jnp.sort(mask_index)
             the_drop_one_idx = sorted_index[0]
