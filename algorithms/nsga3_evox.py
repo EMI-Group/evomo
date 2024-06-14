@@ -146,6 +146,7 @@ class NSGA3(Algorithm):
 
         normalized_fitness = ranked_fitness / nadir_point
         cos_distance = cos_dist(normalized_fitness, state.ref)
+        # dist is matrix with shape is (merged_pop_size, ref_num)
         dist = jnp.linalg.norm(normalized_fitness, axis=-1, keepdims=True) * jnp.sqrt(
             1 - cos_distance ** 2
         )
@@ -168,10 +169,10 @@ class NSGA3(Algorithm):
         selected_idx = jnp.argmin(dists, axis=0)
         index = jnp.where(selected_rho, selected_idx, jnp.inf)
         rho_last = jnp.where(selected_rho, rho_last - 1, rho_last)
-        rho = jnp.where(selected_rho, rho_level, rho)
+        rho = jnp.where(selected_rho, rho_level + 1, rho)
         rho = jnp.where(rho_last == 0, jnp.inf, rho)
-        the_selected_one_idx = jnp.minimum(jnp.min(selected_idx), the_selected_one_idx)
-        real_index = jnp.where(jnp.isinf(selected_idx), the_selected_one_idx, index).astype(jnp.int32)
+        the_selected_one_idx = jnp.minimum(jnp.min(index), the_selected_one_idx)
+        real_index = jnp.where(jnp.isinf(index), the_selected_one_idx, index).astype(jnp.int32)
 
         def update_rank(rank, idx):
             rank = rank.at[idx].set(last_rank - 1)
@@ -186,29 +187,28 @@ class NSGA3(Algorithm):
             num, rho_level, rho, rho_last, rank, last_index = vals
             selected_rho = rho == rho_level
             dists = jnp.where((rank == last_rank)[:, jnp.newaxis], dist, jnp.inf)
-            # if rho_level is not zero, need to do random selection
+            # need to do random selection but for simplicity, we just select the first one
             selected_idx = jnp.argmin(dists, axis=0)
-            index = jnp.where(selected_rho, selected_idx, jnp.inf)
+            index = jnp.where(selected_rho, selected_idx, the_selected_one_idx).astype(jnp.int32)
+            # update matrix
             rho_level += 1
             rho_last = jnp.where(selected_rho, rho_last - 1, rho_last)
             rho = jnp.where(selected_rho, rho_level, rho)
             rho = jnp.where(rho_last == 0, jnp.inf, rho)
-            real_index = jnp.where(jnp.isinf(selected_idx), the_selected_one_idx, index).astype(jnp.int32)
-
-            def update_rank(rank, idx):
-                rank = rank.at[idx].set(last_rank - 1)
-                return rank, idx
-
-            rank, _ = jax.lax.scan(update_rank, rank, real_index)
+            
+            rho_level = jnp.min(rho)
+            
+            rank, _ = jax.lax.scan(update_rank, rank, index)
             last_num = jnp.sum(selected_rho)
             num += last_num
+
             return num, rho_level, rho, rho_last, rank, index
 
         selected_number, rho_level, rho, rho_last, rank, last_index = (
             jax.lax.while_loop(
                 lambda val: val[0] < self.pop_size,
                 select_loop,
-                (selected_number, 1, rho, rho_last, rank, index),
+                (selected_number, jnp.min(rho), rho, rho_last, rank, real_index),
             )
         )
 
