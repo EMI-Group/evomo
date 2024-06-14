@@ -49,13 +49,6 @@ class NSGA3Origin(Algorithm):
         self.mutation = mutation_op
         self.crossover = crossover_op
 
-        # if self.selection is None:
-        #     self.selection = selection.UniformRand(0.5)
-        # if self.mutation is None:
-        #     self.mutation = mutation.Gaussian()
-        # if self.crossover is None:
-        #     self.crossover = crossover.UniformRand()
-
         if self.selection is None:
             self.selection = selection.UniformRand(1)
         if self.mutation is None:
@@ -65,6 +58,7 @@ class NSGA3Origin(Algorithm):
         self.sampling = sampling.UniformSampling(self.pop_size, self.n_objs)
         subkey = jax.random.PRNGKey(0)
         self.ref = self.sampling(subkey)[0]
+        self.ref = self.ref / jnp.linalg.norm(self.ref, axis=1)[:, None]
 
     def setup(self, key):
         key, subkey = jax.random.split(key)
@@ -74,7 +68,7 @@ class NSGA3Origin(Algorithm):
             + self.lb
         )
 
-        # self.ref = self.ref / jnp.linalg.norm(self.ref, axis=1)[:, None]
+        #
         return State(
             population=population,
             fitness=jnp.zeros((self.pop_size, self.n_objs)),
@@ -94,9 +88,7 @@ class NSGA3Origin(Algorithm):
         mutated = self.mutation(mut_key, state.population)
         crossovered = self.crossover(x_key, mutated)
         next_generation = jnp.clip(crossovered, self.lb, self.ub)
-        # next_generation = jnp.clip(
-        #     jnp.concatenate([mutated, crossovered], axis=0), self.lb, self.ub
-        # )
+
         return next_generation, state.update(next_generation=next_generation, key=key)
 
     def tell(self, state, fitness):
@@ -118,20 +110,16 @@ class NSGA3Origin(Algorithm):
         # Normalize
         ideal = jnp.nanmin(ranked_fitness, axis=0)
         offset_fitness = ranked_fitness - ideal
-        weight = jnp.eye(self.n_objs, self.n_objs) + 1e-6
-        weighted = (
-            jnp.repeat(offset_fitness, self.n_objs, axis=0).reshape(
-                len(offset_fitness), self.n_objs, self.n_objs
-            )
-            / weight
-        )
-        asf = jnp.nanmax(weighted, axis=2)
-        ex_idx = jnp.argmin(asf, axis=0)
-        extreme = offset_fitness[ex_idx]
+
+        extreme = jnp.zeros(self.n_objs, dtype=int)
+        weight = jnp.eye(self.n_objs) + 1e-6
+        for i in range(self.n_objs):
+            extreme = extreme.at[i].set(jnp.argmin(
+                jnp.max(offset_fitness / jnp.tile(weight[i], (len(offset_fitness), 1)), axis=1), axis=0))
 
         def extreme_point(val):
-            extreme = val[0]
-            plane = jnp.linalg.solve(extreme, jnp.ones(self.n_objs))
+            extreme, offset_fitness = val
+            plane = jnp.linalg.solve(offset_fitness[extreme, :], jnp.ones(self.n_objs))
             intercept = 1 / plane
             return intercept
 
@@ -146,15 +134,37 @@ class NSGA3Origin(Algorithm):
         )
         normalized_fitness = offset_fitness / nadir_point
 
-        # Associate
+        # def perpendicular_distance(x, y):
+        #     dist = jnp.zeros((len(x), len(y)))
+        #
+        #     for i in range(len(x)):
+        #         proj_len = jnp.dot(x[i], y.T) / jnp.sum(y * y, axis=1)
+        #         proj_vec = proj_len[:, None] * y
+        #         prep_vec = x[i] - proj_vec
+        #         norm = jnp.linalg.norm(prep_vec, axis=1)
+        #
+        #         dist = dist.at[i].set(norm)
+        #
+        #     return dist
+        #
+        # dist = perpendicular_distance(ranked_fitness, self.ref)
+
         def perpendicular_distance(x, y):
-            proj_len = x @ y.T
-            proj_vec = proj_len.reshape(proj_len.size, 1) * jnp.tile(y, (len(x), 1))
-            prep_vec = jnp.repeat(x, len(y), axis=0) - proj_vec
-            dist = jnp.reshape(jnp.linalg.norm(prep_vec, axis=1), (len(x), len(y)))
+            dist = jnp.zeros((len(x), len(y)))
+
+            def loop_body(i, dist):
+                proj_len = jnp.dot(x[i], y.T) / jnp.sum(y * y, axis=1)
+                proj_vec = proj_len[:, None] * y
+                prep_vec = x[i] - proj_vec
+                norm = jnp.linalg.norm(prep_vec, axis=1)
+
+                return dist.at[i].set(norm)
+
+            dist = jax.lax.fori_loop(0, len(x), loop_body, dist)
             return dist
 
         dist = perpendicular_distance(ranked_fitness, self.ref)
+
         pi = jnp.nanargmin(dist, axis=1)
         d = dist[jnp.arange(len(normalized_fitness)), pi]
 

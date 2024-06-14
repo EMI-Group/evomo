@@ -26,7 +26,8 @@ from jax.experimental.host_callback import id_print
 from jax import vmap
 from jax.numpy import newaxis
 
-# @jit_class
+
+@jit_class
 class NSGA3(Algorithm):
     """NSGA-III algorithm
 
@@ -34,15 +35,15 @@ class NSGA3(Algorithm):
     """
 
     def __init__(
-        self,
-        lb,
-        ub,
-        n_objs,
-        pop_size,
-        uniform_init=True,
-        selection_op=None,
-        mutation_op=None,
-        crossover_op=None,
+            self,
+            lb,
+            ub,
+            n_objs,
+            pop_size,
+            uniform_init=True,
+            selection_op=None,
+            mutation_op=None,
+            crossover_op=None,
     ):
         self.lb = lb
         self.ub = ub
@@ -69,9 +70,9 @@ class NSGA3(Algorithm):
         initializer = jax.nn.initializers.glorot_normal()
         if self.uniform_init:
             population = (
-                jax.random.uniform(subkey, shape=(self.pop_size, self.dim))
-                * (self.ub - self.lb)
-                + self.lb
+                    jax.random.uniform(subkey, shape=(self.pop_size, self.dim))
+                    * (self.ub - self.lb)
+                    + self.lb
             )
         else:
             population = initializer(subkey, shape=(self.pop_size, self.dim))
@@ -147,7 +148,7 @@ class NSGA3(Algorithm):
         cos_distance = cos_dist(normalized_fitness, state.ref)
         # dist is matrix with shape is (merged_pop_size, ref_num)
         dist = jnp.linalg.norm(normalized_fitness, axis=-1, keepdims=True) * jnp.sqrt(
-            1 - cos_distance**2
+            1 - cos_distance ** 2
         )
         # Associate each solution with its nearest reference point
         group_id = jnp.nanargmin(dist, axis=1)
@@ -160,6 +161,7 @@ class NSGA3(Algorithm):
         )
         selected_number = jnp.sum(rho)
         rho = jnp.where(rho_last == 0, jnp.inf, rho)
+
 
         # for rho == 0
         rho_level = 0
@@ -194,6 +196,7 @@ class NSGA3(Algorithm):
             rho_last = jnp.where(selected_rho, rho_last - 1, rho_last)
             rho = jnp.where(selected_rho, rho_level, rho)
             rho = jnp.where(rho_last == 0, jnp.inf, rho)
+
             rho_level = jnp.min(rho)
             rank, _ = jax.lax.scan(update_rank, rank, index)
             last_num = selected_rho.sum()
@@ -223,7 +226,7 @@ class NSGA3(Algorithm):
                 return rank, idx
 
             rank, _ = jax.lax.scan(_update_rank, rank, index)
-            return rank 
+            return rank
 
         dif = selected_number - self.pop_size
         rank = cut_mask(rank, dif, last_index)

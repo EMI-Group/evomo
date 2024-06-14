@@ -150,7 +150,6 @@ def LastSelection(PopObj1, PopObj2, K, Z, key):
     a = jnp.max(PopObj, axis=0) if jnp.any(jnp.isnan(Hyperplane)) else 1.0 / Hyperplane
     PopObj = PopObj / a
 
-    # 关联每个解到参考点
     cos_distance = cos_dist(PopObj, Z)
 
     dist = jnp.linalg.norm(PopObj, axis=-1, keepdims=True) * jnp.sqrt(
@@ -160,7 +159,6 @@ def LastSelection(PopObj1, PopObj2, K, Z, key):
     dist_point = dist[jnp.arange(N), pi]
     rho = jnp.bincount(pi[:N1], length=NZ)
 
-    # 环境选择
     Choose = jnp.zeros(N2, dtype=bool)
     Zchoose = jnp.ones(NZ, dtype=bool)
     while jnp.sum(Choose) < K:
