@@ -137,12 +137,12 @@ if __name__ == "__main__":
     algorithm_names = ["NSGA3"]
     problem_list = [
         problems.numerical.LSMOP1(m=3),
-        problems.numerical.DTLZ2(m=3),
-        problems.numerical.DTLZ3(m=3),
-        problems.numerical.DTLZ4(m=3),
-        problems.numerical.DTLZ5(m=3),
-        problems.numerical.DTLZ6(m=3),
-        problems.numerical.DTLZ7(m=3),
+        problems.numerical.LSMOP2(m=3),
+        problems.numerical.LSMOP3(m=3),
+        problems.numerical.LSMOP4(m=3),
+        problems.numerical.LSMOP5(m=3),
+        problems.numerical.LSMOP6(m=3),
+        problems.numerical.LSMOP7(m=3),
     ]
     alpha_list = [1.5, 1.5, 50, 1.5, 5, 5, 5]
     num_runs = 31
