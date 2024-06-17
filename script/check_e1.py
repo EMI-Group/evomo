@@ -43,7 +43,7 @@ def check_json_files(directory):
     return results
 
 # Set the directory path where the JSON files are located
-directory_path = 'data/acc_performance'
+directory_path = '../data/acc_performance'
 validation_results = check_json_files(directory_path)
 
 # Print the results

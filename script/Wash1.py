@@ -2,6 +2,7 @@ import os
 
 # If you want to run on CPU, uncomment the following line
 # os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+os.environ['XLA_PYTHON_CLIENT_ALLOCATOR'] = 'platform'
 from evox import problems
 from evox.workflows import StdWorkflow
 from algorithms import MOEADOrigin, PMOEAD, HypEOrigin, HypE, NSGA3Origin, NSGA3
@@ -17,12 +18,12 @@ from tqdm import tqdm
 def run(algorithm_name, problem, key, dim, pop_size, n_objs, num_iter=100):
     try:
         algorithm = {
-#             "MOEADOrigin": MOEADOrigin(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size, problem=problem, key=key, num_generations=100),
-#             "PMOEAD": PMOEAD(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
-#             "HypEOrigin": HypEOrigin(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
-#             "HypE": HypE(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
+            "MOEADOrigin": MOEADOrigin(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size, problem=problem, key=key, num_generations=100),
+            "PMOEAD": PMOEAD(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
+            "HypEOrigin": HypEOrigin(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
+            "HypE": HypE(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
             "NSGA3Origin": NSGA3Origin(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
-#             "NSGA3": NSGA3(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
+            "NSGA3": NSGA3(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
         }.get(algorithm_name)
 
         if algorithm is None:
@@ -52,19 +53,20 @@ if __name__ == "__main__":
     jax.config.update("jax_default_prng_impl", "rbg")
     num_iter = 100
 
-    pop_scale_list = np.round(2 ** np.arange(14, 16)).astype(int)
-    dim_scale_list = np.round(2 ** np.arange(14, 21)).astype(int)
+    pop_scale_list = np.round(2 ** np.arange(15, 16)).astype(int)
+    dim_scale_list = np.round(2 ** np.arange(20, 21)).astype(int)
 
     algorithm_list = ["MOEADOrigin", "PMOEAD", "HypEOrigin", "HypE", "NSGA3Origin", "NSGA3"]
-    algorithm_list = ["NSGA3Origin"]
+    algorithm_list = ["MOEADOrigin"]
+#     algorithm_list = ["NSGA3"]
 
     device = jax.default_backend()
     problem_list = [problems.numerical.DTLZ1(m=3)]
 
     num_runs = 10
-    alg_keys = [random.PRNGKey(46)]
+    alg_keys = [random.PRNGKey(42)]
 
-    directory = f"data/acc_performance"
+    directory = f"../data/acc_performance"
     if not os.path.exists(directory):
         os.makedirs(directory, exist_ok=True)
 
@@ -78,50 +80,48 @@ if __name__ == "__main__":
             dim_scale_durations = []
             key = run_keys[exp_id]
 
+            with open(f"{directory}/{name}_exp{exp_id}_over10000.json", "r") as f:
+                data = json.load(f)
+                pop_ls = data["pop_scale_list"]
+#                 pop_scale_list = data["pop_scale_list"]
+                pop_scale_durations = data["pop_scale"]
+                dim_ls = data["dim_scale_list"]
+#                 dim_scale_list = data["dim_scale_list"]
+                dim_scale_durations = data["dim_scale"]
+#             f.close()
+            
             # Collect pop_scale durations
-            for pop_size in tqdm(pop_scale_list, desc="Pop size scaling"):
-                duration = run(algorithm_name, problem_list[0], key, 500, pop_size, 3, num_iter)
-                pop_scale_durations.append(duration)
+#             for pop_size in tqdm(pop_scale_list, desc="Pop size scaling"):
+#                 break
+#                 duration = run(algorithm_name, problem_list[0], key, 500, pop_size, 3, num_iter)
+#                 pop_scale_durations[-1] = duration
                 
-                # Organize data in the specified order
+#                 # Organize data in the specified order
+#                 data = {
+#                     "pop_scale_list": pop_ls,
+#                     "pop_scale": pop_scale_durations,
+#                     "dim_scale_list": dim_ls,
+#                     "dim_scale": dim_scale_durations,
+#                 }
+
+#                 # Save to JSON file
+#                 with open(f"{directory}/{name}_exp{exp_id}_over10000.json", "w") as f:
+#                     json.dump(data, f)
+                
+
+            # Collect dim_scale durations
+            for dim in tqdm(dim_scale_list, desc="Dimension scaling"):
+                duration = run(algorithm_name, problem_list[0], key, dim, 100, 3, num_iter)
+                dim_scale_durations.append(duration)
                 data = {
-                    "pop_scale_list": pop_scale_list.tolist(),
+                    "pop_scale_list": pop_ls,
                     "pop_scale": pop_scale_durations,
-                    "dim_scale_list": dim_scale_list.tolist(),
+                    "dim_scale_list": dim_ls,
                     "dim_scale": dim_scale_durations,
                 }
 
                 # Save to JSON file
                 with open(f"{directory}/{name}_exp{exp_id}_over10000.json", "w") as f:
                     json.dump(data, f)
-                
-
-            # Collect dim_scale durations
-            for dim in tqdm(dim_scale_list, desc="Dimension scaling"):
-                duration = run(algorithm_name, problem_list[0], key, dim, 100, 3, num_iter)
-#                 if np.isnan(duration):
-#                     break
-                # Organize data in the specified order
-                dim_scale_durations.append(duration)
-                data = {
-                    "pop_scale_list": pop_scale_list.tolist(),
-                    "pop_scale": pop_scale_durations,
-                    "dim_scale_list": dim_scale_list.tolist(),
-                    "dim_scale": dim_scale_durations,
-                }
-                
-                # Save to JSON file
-                with open(f"{directory}/{name}_exp{exp_id}_over10000.json", "w") as f:
-                    json.dump(data, f)  
-
-#             # Organize data in the specified order
-#             data = {
-#                 "pop_scale_list": pop_scale_list.tolist(),
-#                 "pop_scale": pop_scale_durations,
-#                 "dim_scale_list": dim_scale_list.tolist(),
-#                 "dim_scale": dim_scale_durations,
-#             }
-
-#             # Save to JSON file
-#             with open(f"{directory}/{name}_exp{exp_id}_under10000.json", "w") as f:
-#                 json.dump(data, f)
+                    
+            break

@@ -88,10 +88,10 @@ if __name__ == "__main__":
     jax.config.update("jax_default_prng_impl", "rbg")
     num_iter = 100
 
-    algorithm_names = ["MOEADOrigin", "PMOEAD", "HypEOrigin", "HypE", "NSGA3Origin", "NSGA3"]
-    algorithm_names = ["HypE", "NSGA3Origin", "NSGA3"]
-    algorithm_names = ["NSGA3Origin", "NSGA3"]
-    algorithm_names = ["HypEOrigin"]
+#     algorithm_names = ["MOEADOrigin", "PMOEAD", "HypEOrigin", "HypE", "NSGA3Origin", "NSGA3"]
+#     algorithm_names = ["MOEADOrigin", "PMOEAD", "HypEOrigin"]
+#     algorithm_names = ["PMOEAD", "HypEOrigin"]
+    algorithm_names = ["NSGA3"]
     problem_list = [
             problems.numerical.DTLZ1(m=3),
             problems.numerical.DTLZ2(m=3),
@@ -109,7 +109,7 @@ if __name__ == "__main__":
     key = random.PRNGKey(42)
     pro_keys = random.split(key, num_pro)
 
-    directory = f"data/effi_scal"
+    directory = f"../data/effi_scal"
     if not os.path.exists(directory):
         os.makedirs(directory, exist_ok=True)
 

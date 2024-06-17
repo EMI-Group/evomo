@@ -64,7 +64,7 @@ if __name__ == "__main__":
     num_runs = 10
     alg_keys = [random.PRNGKey(43)]
 
-    directory = f"data/acc_performance"
+    directory = f"../data/acc_performance"
     if not os.path.exists(directory):
         os.makedirs(directory, exist_ok=True)
 

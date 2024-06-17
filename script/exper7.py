@@ -40,7 +40,7 @@ def run_workflow(
     pop = []
     obj = []
     start = time.perf_counter()
-    writer = SummaryWriter(log_dir=f"logs/{log_dir}/{Al_env_exp_struct}_log1")
+    writer = SummaryWriter(log_dir=f"../logs/{log_dir}/{Al_env_exp_struct}_log1")
     metric_key = random.PRNGKey(42)
     writer.add_scalar("HV", 0, 0)
     for iter in range(num_iter):
@@ -79,52 +79,52 @@ def main():
     jax.config.update("jax_default_prng_impl", "rbg")
     num_iter, num_runs = 100, 10
     algorithm_list = ["Random", "NSGAIII", "PMOEAD", "HYPE"]
-    algorithm_list = ["Random"]
+    algorithm_list = ["PMOEAD"]
     envs = [
-        {
-            "name": "mo_halfcheetah",
-            "observation_shape": 17,
-            "action_shape": 6,
-            "num_obj": 2,
-            "type": "continuous",
-            "ref": jnp.array([0, -291]),
-            "scale": 1,
-            "layer": 2,
-            "node": 16,
-        },
-        {
-            "name": "mo_hopper_m3",
-            "observation_shape": 11,
-            "action_shape": 3,
-            "num_obj": 3,
-            "type": "continuous",
-            "ref": jnp.array([0, 0, -881]),
-            "scale": 1,
-            "layer": 2,
-            "node": 16,
-        },
-        {
-            "name": "mo_swimmer",
-            "observation_shape": 8,
-            "action_shape": 2,
-            "num_obj": 2,
-            "type": "continuous",
-            "ref": jnp.array([0, -0.1]),
-            "scale": 1,
-            "layer": 2,
-            "node": 16,
-        },
-        {
-            "name": "mo_ant",
-            "observation_shape": 27,
-            "action_shape": 8,
-            "num_obj": 2,
-            "type": "continuous",
-            "ref": jnp.array([0, -315]),
-            "scale": 1,
-            "layer": 2,
-            "node": 16,
-        },
+#         {
+#             "name": "mo_halfcheetah",
+#             "observation_shape": 17,
+#             "action_shape": 6,
+#             "num_obj": 2,
+#             "type": "continuous",
+#             "ref": jnp.array([0, -291]),
+#             "scale": 1,
+#             "layer": 2,
+#             "node": 16,
+#         },
+#         {
+#             "name": "mo_hopper_m3",
+#             "observation_shape": 11,
+#             "action_shape": 3,
+#             "num_obj": 3,
+#             "type": "continuous",
+#             "ref": jnp.array([0, 0, -881]),
+#             "scale": 1,
+#             "layer": 2,
+#             "node": 16,
+#         },
+#         {
+#             "name": "mo_swimmer",
+#             "observation_shape": 8,
+#             "action_shape": 2,
+#             "num_obj": 2,
+#             "type": "continuous",
+#             "ref": jnp.array([0, -0.1]),
+#             "scale": 1,
+#             "layer": 2,
+#             "node": 16,
+#         },
+#         {
+#             "name": "mo_ant",
+#             "observation_shape": 27,
+#             "action_shape": 8,
+#             "num_obj": 2,
+#             "type": "continuous",
+#             "ref": jnp.array([0, -315]),
+#             "scale": 1,
+#             "layer": 2,
+#             "node": 16,
+#         },
         {
             "name": "mo_humanoid",
             "observation_shape": 244,
@@ -281,7 +281,7 @@ def main():
 
                 raw_data = {"pop": pop, "objs": objs, "time": times.tolist()}
 
-                with open(f"data/mul_neuro/{name}.json", "w") as f:
+                with open(f"../data/mul_neuro/{name}.json", "w") as f:
                     json.dump(raw_data, f)
 
 

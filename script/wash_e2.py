@@ -25,10 +25,10 @@ def wash_json_files(directory):
 #     return results
 
 # Set the directory path where the JSON files are located
-directory_path = 'data/effi_scal'
+directory_path = '../data/effi_scal'
 wash_json_files(directory_path)
 
-# file_path = "data/effi_scal/HypE_DTLZ1_exp0.json"
+# file_path = "../data/effi_scal/HypE_DTLZ1_exp0.json"
 # with open(file_path, 'r') as file:
 #     data = json.load(file)
 #     his_data = data["history_data"]

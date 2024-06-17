@@ -19,10 +19,10 @@ def run(algorithm_name, problem, key, dim, pop_size, n_objs, num_iter=100):
         algorithm = {
 #             "MOEADOrigin": MOEADOrigin(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size, problem=problem, key=key, num_generations=100),
 #             "PMOEAD": PMOEAD(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
-            "HypEOrigin": HypEOrigin(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
+#             "HypEOrigin": HypEOrigin(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
 #             "HypE": HypE(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
 #             "NSGA3Origin": NSGA3Origin(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
-#             "NSGA3": NSGA3(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
+            "NSGA3": NSGA3(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
         }.get(algorithm_name)
 
         if algorithm is None:
@@ -56,15 +56,15 @@ if __name__ == "__main__":
     dim_scale_list = np.round(2 ** np.arange(14, 21)).astype(int)
 
     algorithm_list = ["MOEADOrigin", "PMOEAD", "HypEOrigin", "HypE", "NSGA3Origin", "NSGA3"]
-    algorithm_list = ["HypEOrigin"]
+    algorithm_list = ["NSGA3"]
 
     device = jax.default_backend()
     problem_list = [problems.numerical.DTLZ1(m=3)]
 
     num_runs = 10
-    alg_keys = [random.PRNGKey(44)]
+    alg_keys = [random.PRNGKey(47)]
 
-    directory = f"data/acc_performance"
+    directory = f"../data/acc_performance"
     if not os.path.exists(directory):
         os.makedirs(directory, exist_ok=True)
 

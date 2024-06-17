@@ -1,5 +1,5 @@
 from algorithms.nsga2_origin import NSGA2Origin
-from algorithms.old_nsga3_origin import NSGA3Origin2 as NSGA3Origin
+# from algorithms.old_nsga3_origin import NSGA3Origin2 as NSGA3Origin
 from algorithms.nsga3_evox_ori import NSGA3Origin as NSGA3_EVOX_ORI
 from algorithms.nsga3_evox import NSGA3 as NSGA3_EVOX
 from algorithms.nsga3_origin import NSGA3Origin2 as NSGA3Origin_evox_version

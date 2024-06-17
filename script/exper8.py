@@ -41,7 +41,7 @@ def run_workflow(
     pop = []
     obj = []
     start = time.perf_counter()
-    writer = SummaryWriter(log_dir=f"logs/{log_dir}/{Al_env_exp_struct}_log1")
+    writer = SummaryWriter(log_dir=f"../logs/{log_dir}/{Al_env_exp_struct}_log1")
     metric_key = random.PRNGKey(42)
     writer.add_scalar("HV", 0, 0)
     for iter in range(num_iter):
@@ -282,7 +282,7 @@ def main():
 
                 raw_data = {"pop": pop, "objs": objs, "time": times.tolist()}
 
-                with open(f"data/mul_neuro/{name}.json", "w") as f:
+                with open(f"../data/mul_neuro/{name}.json", "w") as f:
                     json.dump(raw_data, f)
 
 

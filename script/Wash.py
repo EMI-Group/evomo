@@ -2,9 +2,11 @@ import os
 
 # If you want to run on CPU, uncomment the following line
 # os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+# os.environ['XLA_PYTHON_CLIENT_ALLOCATOR'] = 'platform'
+# os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = .99
 from evox import problems
-from evox.workflows import StdWorkflow, NonJitWorkflow
-from algorithms import MOEADOrigin, PMOEAD, HypEOrigin, HypE, NSGA3Origin, NSGA3, TensorMOEAD, NSGA3Origin2
+from evox.workflows import StdWorkflow
+from algorithms import MOEADOrigin, PMOEAD, HypEOrigin, HypE, NSGA3Origin, NSGA3
 from jax import random
 import jax
 import jax.numpy as jnp
@@ -23,8 +25,6 @@ def run(algorithm_name, problem, key, dim, pop_size, n_objs, num_iter=100):
             "HypE": HypE(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
             "NSGA3Origin": NSGA3Origin(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
             "NSGA3": NSGA3(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
-            "TensorMOEAD": TensorMOEAD(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
-            "NSGA3Origin2": NSGA3Origin2(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
         }.get(algorithm_name)
 
         if algorithm is None:
@@ -36,22 +36,10 @@ def run(algorithm_name, problem, key, dim, pop_size, n_objs, num_iter=100):
             duration = time.perf_counter() - start
             return duration
 
-        if algorithm_name == "NSGA3Origin2":
-            workflow = NonJitWorkflow(
-            algorithm,
-            problem,
-            )
-        else:
-            workflow = StdWorkflow(
-                algorithm,
-                problem,
-            )
+        workflow = StdWorkflow(algorithm, problem)
         state = workflow.init(key)
         start = time.perf_counter()
-        if algorithm_name == "NSGA3Origin2":
-            step_func = workflow.step
-        else:
-            step_func = jax.jit(workflow.step)
+        step_func = jax.jit(workflow.step)
         for _ in range(num_iter):
             state = step_func(state)
             jax.block_until_ready(state)
@@ -66,23 +54,20 @@ if __name__ == "__main__":
     jax.config.update("jax_default_prng_impl", "rbg")
     num_iter = 100
 
-    pop_scale_list = np.round(2 ** np.arange(7, 14)).astype(int)
-    dim_scale_list = np.round(2 ** np.arange(10, 14)).astype(int)
+    pop_scale_list = np.round(2 ** np.arange(15, 16)).astype(int)
+    dim_scale_list = np.round(2 ** np.arange(20, 21)).astype(int)
 
     algorithm_list = ["MOEADOrigin", "PMOEAD", "HypEOrigin", "HypE", "NSGA3Origin", "NSGA3"]
-    algorithm_list = ["MOEADOrigin", "HypEOrigin", "NSGA3Origin"]
-    algorithm_list = ["HypEOrigin", "NSGA3Origin"]
-    algorithm_list = ["NSGA3Origin2"]
+    algorithm_list = ["MOEADOrigin"]
+#     algorithm_list = ["NSGA3"]
 
     device = jax.default_backend()
     problem_list = [problems.numerical.DTLZ1(m=3)]
 
-    num_runs = 10
-    alg_keys = [random.PRNGKey(42), random.PRNGKey(44), random.PRNGKey(46)]
-#     alg_keys = [random.PRNGKey(43), random.PRNGKey(44)]
-    alg_keys = [random.PRNGKey(46)]
+    num_runs = 1
+    alg_keys = [random.PRNGKey(42)]
 
-    directory = f"data/acc_performance"
+    directory = f"../data/acc_performance"
     if not os.path.exists(directory):
         os.makedirs(directory, exist_ok=True)
 
@@ -96,26 +81,47 @@ if __name__ == "__main__":
             dim_scale_durations = []
             key = run_keys[exp_id]
 
+            with open(f"{directory}/{name}_exp{exp_id}_over10000.json", "r") as f:
+                data = json.load(f)
+                pop_ls = data["pop_scale_list"]
+#                 pop_scale_list = data["pop_scale_list"]
+                pop_scale_durations = data["pop_scale"]
+                dim_ls = data["dim_scale_list"]
+#                 dim_scale_list = data["dim_scale_list"]
+                dim_scale_durations = data["dim_scale"]
+            f.close()
+            
             # Collect pop_scale durations
             for pop_size in tqdm(pop_scale_list, desc="Pop size scaling"):
+                break
                 duration = run(algorithm_name, problem_list[0], key, 500, pop_size, 3, num_iter)
-                pop_scale_durations.append(duration)
+                pop_scale_durations[-1] = duration
+                
+                # Organize data in the specified order
+                data = {
+                    "pop_scale_list": pop_ls,
+                    "pop_scale": pop_scale_durations,
+                    "dim_scale_list": dim_ls,
+                    "dim_scale": dim_scale_durations,
+                }
+
+#                 # Save to JSON file
+#                 with open(f"{directory}/{name}_exp{exp_id}_over10000.json", "w") as f:
+#                     json.dump(data, f)
+                
 
             # Collect dim_scale durations
             for dim in tqdm(dim_scale_list, desc="Dimension scaling"):
                 duration = run(algorithm_name, problem_list[0], key, dim, 100, 3, num_iter)
-#                 if np.isnan(duration):
-#                     break
                 dim_scale_durations.append(duration)
+                data = {
+                    "pop_scale_list": pop_ls,
+                    "pop_scale": pop_scale_durations,
+                    "dim_scale_list": dim_ls,
+                    "dim_scale": dim_scale_durations,
+                }
+                print(dim_scale_durations)
 
-            # Organize data in the specified order
-            data = {
-                "pop_scale_list": pop_scale_list.tolist(),
-                "pop_scale": pop_scale_durations,
-                "dim_scale_list": dim_scale_list.tolist(),
-                "dim_scale": dim_scale_durations,
-            }
-
-            # Save to JSON file
-            with open(f"{directory}/{name}_exp{exp_id}_under10000.json", "w") as f:
-                json.dump(data, f)
+#                 # Save to JSON file
+#                 with open(f"{directory}/{name}_exp{exp_id}_over10000.json", "w") as f:
+#                     json.dump(data, f)
