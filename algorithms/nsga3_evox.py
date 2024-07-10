@@ -23,8 +23,6 @@ from evox.operators import (
 from evox import Algorithm, jit_class, State
 from evox.utils import cos_dist
 from jax.experimental.host_callback import id_print
-from jax import vmap
-from jax.numpy import newaxis
 
 
 @jit_class
@@ -35,15 +33,15 @@ class NSGA3(Algorithm):
     """
 
     def __init__(
-            self,
-            lb,
-            ub,
-            n_objs,
-            pop_size,
-            uniform_init=True,
-            selection_op=None,
-            mutation_op=None,
-            crossover_op=None,
+        self,
+        lb,
+        ub,
+        n_objs,
+        pop_size,
+        uniform_init=True,
+        selection_op=None,
+        mutation_op=None,
+        crossover_op=None,
     ):
         self.lb = lb
         self.ub = ub
@@ -70,9 +68,9 @@ class NSGA3(Algorithm):
         initializer = jax.nn.initializers.glorot_normal()
         if self.uniform_init:
             population = (
-                    jax.random.uniform(subkey, shape=(self.pop_size, self.dim))
-                    * (self.ub - self.lb)
-                    + self.lb
+                jax.random.uniform(subkey, shape=(self.pop_size, self.dim))
+                * (self.ub - self.lb)
+                + self.lb
             )
         else:
             population = initializer(subkey, shape=(self.pop_size, self.dim))
@@ -107,8 +105,6 @@ class NSGA3(Algorithm):
         rank = non_dominated_sort(merged_fitness)
         order = jnp.argsort(rank)
         last_rank = rank[order[self.pop_size]]
-        the_selected_one_idx = order[0]
-
         ranked_fitness = jnp.where(
             (rank <= last_rank)[:, None],
             merged_fitness,
@@ -120,10 +116,10 @@ class NSGA3(Algorithm):
         ranked_fitness = ranked_fitness - ideal_points
         weight = jnp.eye(self.n_objs) + 1e-6
 
-        def get_extreme(w):
-            return jnp.nanargmin(jnp.nanmax(ranked_fitness / w, axis=1))
+        def get_extreme(i):
+            return jnp.nanargmin(jnp.nanmax(ranked_fitness / weight[i], axis=1))
 
-        extreme_ind = jax.vmap(get_extreme)(weight)
+        extreme_ind = jax.vmap(get_extreme)(jnp.arange(self.n_objs))
         extreme = ranked_fitness[extreme_ind]
 
         def get_intercept(val):
@@ -146,88 +142,72 @@ class NSGA3(Algorithm):
 
         normalized_fitness = ranked_fitness / nadir_point
         cos_distance = cos_dist(normalized_fitness, state.ref)
-        # dist is matrix with shape is (merged_pop_size, ref_num)
         dist = jnp.linalg.norm(normalized_fitness, axis=-1, keepdims=True) * jnp.sqrt(
-            1 - cos_distance ** 2
+            1 - cos_distance**2
         )
         # Associate each solution with its nearest reference point
         group_id = jnp.nanargmin(dist, axis=1)
         group_id = jnp.where(group_id == -1, len(state.ref), group_id)
+        group_dist = jnp.nanmin(dist, axis=1)
         rho = jnp.bincount(
             jnp.where(rank < last_rank, group_id, len(state.ref)), length=len(state.ref)
         )
         rho_last = jnp.bincount(
             jnp.where(rank == last_rank, group_id, len(state.ref)), length=len(state.ref)
         )
+        group_id = jnp.where(rank == last_rank, group_id, jnp.inf)
+        group_dist = jnp.where(rank == last_rank, group_dist, jnp.inf)
         selected_number = jnp.sum(rho)
         rho = jnp.where(rho_last == 0, jnp.inf, rho)
+        keys = jax.random.split(state.key, self.pop_size + 1)
 
-        # for rho == 0
-        rho_level = 0
-        selected_rho = rho == rho_level
-        dists = jnp.where((rank == last_rank)[:, jnp.newaxis], dist, jnp.inf)
-        selected_idx = jnp.argmin(dists, axis=0)
-        index = jnp.where(selected_rho, selected_idx, jnp.inf)
-        rho_last = jnp.where(selected_rho, rho_last - 1, rho_last)
-        rho = jnp.where(selected_rho, rho_level + 1, rho)
-        rho = jnp.where(rho_last == 0, jnp.inf, rho)
-        the_selected_one_idx = jnp.minimum(jnp.min(index), the_selected_one_idx)
-        real_index = jnp.where(jnp.isinf(index), the_selected_one_idx, index).astype(jnp.int32)
-
-        def update_rank(rank, idx):
-            rank = rank.at[idx].set(last_rank - 1)
-            return rank, idx
-
-        rank, _ = jax.lax.scan(update_rank, rank, real_index)
-        last_num = jnp.sum(selected_rho)
-        selected_number += last_num
-
-        # for rho > 0
+        # Niche
         def select_loop(vals):
-            num, rho_level, rho, rho_last, rank, last_index = vals
-            selected_rho = rho == rho_level
-            dists = jnp.where((rank == last_rank)[:, jnp.newaxis], dist, jnp.inf)
-            # need to do random selection but for simplicity, we just select the first one
-            selected_idx = jnp.argmin(dists, axis=0)
-            index = jnp.where(selected_rho, selected_idx, the_selected_one_idx).astype(jnp.int32)
-            # update matrix
-            rho_level += 1
-            rho_last = jnp.where(selected_rho, rho_last - 1, rho_last)
-            rho = jnp.where(selected_rho, rho_level, rho)
-            rho = jnp.where(rho_last == 0, jnp.inf, rho)
-            
-            rho_level = jnp.min(rho)
-            
-            rank, _ = jax.lax.scan(update_rank, rank, index)
-            last_num = jnp.sum(selected_rho)
-            num += last_num
+            selected_number, rank, group_id, rho, rho_last = vals
+            group = jnp.argmin(rho)
+            candidates = jnp.where(group_id == group, group_dist, jnp.inf)
 
-            return num, rho_level, rho, rho_last, rank, index
+            def get_rand_candidate(candidates):
+                order = jnp.sort(
+                    jnp.where(
+                        jnp.isinf(candidates), jnp.inf, jnp.arange(candidates.size)
+                    )
+                )
+                rand_index = jax.random.randint(
+                    keys[selected_number], (), 0, rho_last[group]
+                )
+                return order[rand_index].astype(jnp.int32)
 
-        selected_number, rho_level, rho, rho_last, rank, last_index = (
-            jax.lax.while_loop(
-                lambda val: val[0] < self.pop_size,
-                select_loop,
-                (selected_number, jnp.min(rho), rho, rho_last, rank, real_index),
+            def get_min_candidate(candidates):
+                return jnp.argmin(candidates)
+
+            candidate = jax.lax.cond(
+                (rho[group] == 0) | (rho_last[group] == 1),
+                get_min_candidate,
+                get_rand_candidate,
+                candidates,
             )
+            rank = rank.at[candidate].set(last_rank - 1)
+            group_id = group_id.at[candidate].set(jnp.nan)
+            rho_last = rho_last.at[group].set(rho_last[group] - 1)
+
+            def update_(vals):
+                idx, matrix = vals
+                return matrix.at[idx].set(jnp.inf)
+
+            def add_(vals):
+                idx, matrix = vals
+                return matrix.at[idx].set(matrix[idx] + 1)
+
+            rho = jax.lax.cond(rho_last[group] == 0, update_, add_, (group, rho))
+            selected_number += 1
+            return selected_number, rank, group_id, rho, rho_last
+
+        selected_number, rank, group_id, rho, rho_last = jax.lax.while_loop(
+            lambda val: jnp.nansum(val[0]) < self.pop_size,
+            select_loop,
+            (selected_number, rank, group_id, rho, rho_last),
         )
-
-        def cut_mask(rank, dif, mask_index):
-            sorted_index = jnp.sort(mask_index)
-            the_drop_one_idx = sorted_index[0]
-            index = jnp.where(
-                jnp.arange(sorted_index.size) < dif, sorted_index, the_drop_one_idx
-            ).astype(jnp.int32)
-
-            def _update_rank(rank, idx):
-                rank = rank.at[idx].set(last_rank)
-                return rank, idx
-
-            rank, _ = jax.lax.scan(_update_rank, rank, index)
-            return rank
-
-        dif = selected_number - self.pop_size
-        rank = cut_mask(rank, dif, last_index)
 
         selected_idx = jnp.sort(
             jnp.where(rank < last_rank, jnp.arange(ranked_fitness.shape[0]), jnp.inf)
@@ -235,5 +215,5 @@ class NSGA3(Algorithm):
         state = state.update(
             population=merged_pop[selected_idx],
             fitness=merged_fitness[selected_idx],
+            key=keys[0],
         )
-        return state

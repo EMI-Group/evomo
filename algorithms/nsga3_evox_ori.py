@@ -148,20 +148,37 @@ class NSGA3Origin(Algorithm):
         #     return dist
         #
         # dist = perpendicular_distance(ranked_fitness, self.ref)
-
         def perpendicular_distance(x, y):
             dist = jnp.zeros((len(x), len(y)))
 
-            def loop_body(i, dist):
-                proj_len = jnp.dot(x[i], y.T) / jnp.sum(y * y, axis=1)
-                proj_vec = proj_len[:, None] * y
-                prep_vec = x[i] - proj_vec
-                norm = jnp.linalg.norm(prep_vec, axis=1)
+            def outer_loop(i, dist):
+                def inner_loop(j, dist):
+                    proj_len = jnp.dot(x[i], y[j]) / jnp.dot(y[j], y[j])
+                    proj_vec = proj_len * y[j]
+                    prep_vec = x[i] - proj_vec
+                    norm = jnp.linalg.norm(prep_vec)
+                    return dist.at[i, j].set(norm)
 
-                return dist.at[i].set(norm)
+                # Use fori_loop for the inner loop
+                return jax.lax.fori_loop(0, len(y), inner_loop, dist)
 
-            dist = jax.lax.fori_loop(0, len(x), loop_body, dist)
+            # Use fori_loop for the outer loop
+            dist = jax.lax.fori_loop(0, len(x), outer_loop, dist)
             return dist
+
+        # def perpendicular_distance(x, y):
+        #     dist = jnp.zeros((len(x), len(y)))
+        #
+        #     def loop_body(i, dist):
+        #         proj_len = jnp.dot(x[i], y.T) / jnp.sum(y * y, axis=1)
+        #         proj_vec = proj_len[:, None] * y
+        #         prep_vec = x[i] - proj_vec
+        #         norm = jnp.linalg.norm(prep_vec, axis=1)
+        #
+        #         return dist.at[i].set(norm)
+        #
+        #     dist = jax.lax.fori_loop(0, len(x), loop_body, dist)
+        #     return dist
 
         dist = perpendicular_distance(ranked_fitness, self.ref)
 
