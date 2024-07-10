@@ -15,16 +15,17 @@ from functools import partial
 
 from evox import jit_class, Algorithm, State
 from evox.operators import selection, mutation, crossover, non_dominated_sort
-
+from jax.experimental.host_callback import id_print
 
 @partial(jax.jit, static_argnums=[2, 3])
 def cal_hv(points, ref, k, n_sample, key):
     n, m = jnp.shape(points)
-
+    id_print(k)
     # hit in alpha relevant partition
     alpha = jnp.cumprod(
         jnp.r_[1, (k - jnp.arange(1, n)) / (n - jnp.arange(1, n))]
     ) / jnp.arange(1, n + 1)
+    alpha = jnp.nan_to_num(alpha)
 
     f_min = jnp.min(points, axis=0)
 
@@ -134,15 +135,15 @@ class HypE(Algorithm):
         merged_pop = jnp.concatenate([state.population, state.next_generation], axis=0)
         merged_obj = jnp.concatenate([state.fitness, fitness], axis=0)
 
-        n = jnp.shape(merged_pop)[0]
+        n = self.pop_size
 
         rank = non_dominated_sort(merged_obj)
         order = jnp.argsort(rank)
         worst_rank = rank[order[n - 1]]
-        mask = rank == worst_rank
+        mask = rank <= worst_rank
 
         key, subkey = jax.random.split(state.key)
-        hv = cal_hv(merged_obj, state.ref_point, n, self.n_sample, subkey)
+        hv = cal_hv(merged_obj, state.ref_point, jnp.sum(mask)-n, self.n_sample, subkey)
 
         dis = jnp.where(mask, hv, -jnp.inf)
 

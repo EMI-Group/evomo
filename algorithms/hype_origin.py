@@ -168,10 +168,10 @@ class HypEOrigin(Algorithm):
         rank = non_dominated_sort(merged_obj)
         order = jnp.argsort(rank)
         worst_rank = rank[order[n - 1]]
-        mask = rank == worst_rank
+        mask = rank <= worst_rank
 
         key, subkey = jax.random.split(state.key)
-        hv = calculate_hv_foriloop(merged_obj, state.ref_point, n, self.n_sample, subkey)
+        hv = calculate_hv_foriloop(merged_obj, state.ref_point, jnp.sum(mask)-n, self.n_sample, subkey)
 
         dis = jnp.where(mask, hv, -jnp.inf)
 
