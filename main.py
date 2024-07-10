@@ -10,24 +10,24 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import time
-from algorithms import TensorMOEAD, MOEAD1, PMOEAD, MOEADOrigin, HypEOrigin, NSGA3, NSGA3Origin
+from algorithms import TensorMOEAD, MOEAD1, PMOEAD, MOEADOrigin, HypEOrigin, NSGA3, NSGA3Origin, HypE
 from evox.utils import cos_dist
 from functools import partial
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from jax.experimental.host_callback import id_print
 from evox.operators import non_dominated_sort
-import pickle
+
 
 def run_moea(algorithm, key):
     monitor = PopMonitor()
     # monitor = StdMOMonitor()
 
-    problem = problems.numerical.DTLZ1(m=3)
+    problem = problems.numerical.DTLZ3(m=3)
     workflow = workflows.StdWorkflow(
         algorithm=algorithm,
         problem=problem,
-        monitor=monitor,
+        # monitor=monitor,
     )
     # workflow = workflows.NonJitWorkflow(
     #     algorithm=algorithm,
@@ -42,18 +42,19 @@ def run_moea(algorithm, key):
     igd = IGD1(true_pf)
     ref = jnp.array([1., 1., 1.])
     ind = HV1(ref=ref)
-    path = "data/states/nsga3.pkl"
-    for i in range(100):
-        # state = state.load(path)
-        print(i)
-        state = workflow.step(state)
-        
-        fit = state.get_child_state("algorithm").fitness
-        pop = state.get_child_state("algorithm").population
 
-        non_nan_rows = fit[~np.isnan(fit).any(axis=1)]
-        non_nan_rows_pop = pop[~jnp.isnan(pop).any(axis=1)]
-        print("igd", igd(non_nan_rows))
+    for i in range(500):
+        print(i)
+        key, subkey = jax.random.split(key)
+        state = workflow.step(state)
+
+        fit = state.get_child_state("algorithm").fitness
+        # pop = state.get_child_state("algorithm").population
+
+        # non_nan_rows = fit[~np.isnan(fit).any(axis=1)]
+        # non_nan_rows_pop = pop[~jnp.isnan(pop).any(axis=1)]
+        # print("igd", igd(non_nan_rows))
+        print("igd", igd(fit))
 
     # fig = monitor.plot()
     # fig.show()
@@ -62,19 +63,23 @@ def run_moea(algorithm, key):
 if __name__ == '__main__':
     print("NSGA3")
 
-    lb = jnp.full(shape=(100,), fill_value=0)
-    ub = jnp.full(shape=(100,), fill_value=1)
+    lb = jnp.full(shape=(12,), fill_value=0)
+    ub = jnp.full(shape=(12,), fill_value=1)
 
-    algorithm = NSGA3Origin(
+    algorithm = TensorMOEAD(
         lb=lb,
         ub=ub,
         n_objs=3,
-        pop_size=1000,
+        pop_size=100,
     )
+    # algorithm = evox.algorithms.HypE(
+    #     lb=lb,
+    #     ub=ub,
+    #     n_objs=3,
+    #     pop_size=10000,
+    # )
     key = jax.random.PRNGKey(42)
 
-    # disable JIT
-    # jax.config.update("jax_disable_jit", True)
     for i in range(1):
         start = time.time()
         run_moea(algorithm, key)

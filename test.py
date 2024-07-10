@@ -11,7 +11,7 @@ from evox.operators import non_dominated_sort
 import os
 
 
-def run(algorithm_name, problem, key, num_iter=100, d=500):
+def run(algorithm_name, problem, key, num_iter=100, d=5000):
     try:
         algorithm = {
             "MOEADOrigin": MOEADOrigin(
@@ -74,8 +74,8 @@ def run(algorithm_name, problem, key, num_iter=100, d=500):
             duration = now - start
             run_time.append(duration)
             obj.append(state.get_child_state("algorithm").fitness)
-            pop.append(state.get_child_state("algorithm").population)
-        return jnp.array(pop), jnp.array(obj), jnp.array(run_time)
+            # pop.append(state.get_child_state("algorithm").population)
+        return jnp.array(obj), jnp.array(run_time)
 
     except Exception as e:
         import traceback
@@ -85,7 +85,7 @@ def run(algorithm_name, problem, key, num_iter=100, d=500):
         return float("nan"), float("nan"), float("nan")
 
 
-def evaluate(x, f, key, pf, alpha, num_iter=100):
+def evaluate(f, key, pf, num_iter=100):
     m = jnp.shape(pf)[1]
     ref = jnp.ones((m,))
     igd = []
@@ -95,14 +95,14 @@ def evaluate(x, f, key, pf, alpha, num_iter=100):
     history_data = []
     for i in range(num_iter):
         key, subkey = jax.random.split(key)
-        current_pop = x[i]
+        # current_pop = x[i]
         current_obj = f[i]
         current_obj = current_obj[~jnp.isnan(current_obj).any(axis=1)]
-        current_pop = current_pop[~jnp.isnan(current_pop).any(axis=1)]
+        # current_pop = current_pop[~jnp.isnan(current_pop).any(axis=1)]
         rank = non_dominated_sort(current_obj)
         pf = rank == 0
         pf_fitness = current_obj[pf]
-        pf_solutions = current_pop[pf]
+        # pf_solutions = current_pop[pf]
         fmax = jnp.max(pf, axis=0)
 
         igd.append(ind1(pf_fitness))
@@ -110,7 +110,7 @@ def evaluate(x, f, key, pf, alpha, num_iter=100):
         if i == num_iter - 1:
             data = {
                 "raw_obj": current_obj.tolist(),
-                "pf_solutions": pf_solutions.tolist(),
+                # "pf_solutions": pf_solutions.tolist(),
                 "pf_fitness": pf_fitness.tolist(),
             }
             history_data.append(data)
@@ -143,10 +143,12 @@ if __name__ == "__main__":
         problems.numerical.LSMOP5(m=3),
         problems.numerical.LSMOP6(m=3),
         problems.numerical.LSMOP7(m=3),
+        problems.numerical.LSMOP8(m=3),
+        problems.numerical.LSMOP9(m=3),
     ]
     alpha_list = [1.5, 1.5, 50, 1.5, 5, 5, 5]
-    num_runs = 31
-    num_pro = 7
+    num_runs = 2
+    num_pro = 9
 
     experiment_stats = []
     key = random.PRNGKey(42)
@@ -159,9 +161,9 @@ if __name__ == "__main__":
     for algorithm_name in algorithm_names:
         for j, problem in enumerate(problem_list):
             #             d = 7 if j == 0 else 12  # Dimension of the decision variables
-            #             if j == 0 or j == 1 or j == 2 or j == 3 or j == 4:
-            #                 continue
-            print(f"Running {algorithm_name} on DTLZ{j + 1} with dimension 500")
+            if j == 0 or j == 1 or j == 2 or j == 3 or j == 4 or j == 5 or j == 6: # or j == 3 or j == 4 or j == 5
+                continue
+            print(f"Running {algorithm_name} on LSMOP{j + 1} with dimension 5000")
 
             pro_key = pro_keys[j]
             run_keys = random.split(pro_key, num_runs)
@@ -170,10 +172,10 @@ if __name__ == "__main__":
                 range(num_runs), desc=f"{algorithm_name} - Problem {j + 1}"
             ):
                 run_key = run_keys[exp_id]
-                pop, obj, t = run(algorithm_name, problem, run_key, num_iter=num_iter)
+                obj, t = run(algorithm_name, problem, run_key, num_iter=num_iter)
 
                 history_data, igd = evaluate(
-                    pop, obj, run_key, pf, alpha_list[j], num_iter=num_iter
+                    obj, run_key, pf, num_iter=num_iter
                 )
 
                 data = {
@@ -182,6 +184,6 @@ if __name__ == "__main__":
                     "time": t.tolist(),
                 }
                 with open(
-                    f"{directory}/{algorithm_name}_DTLZ{j + 1}_exp{exp_id}.json", "w"
+                    f"{directory}/{algorithm_name}_LSMOP{j + 1}_exp{exp_id}.json", "w"
                 ) as f:
                     json.dump(data, f)
