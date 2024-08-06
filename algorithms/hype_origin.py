@@ -30,7 +30,12 @@ def calculate_alpha(N, k):
 @partial(jax.jit, static_argnums=[2, 3])
 def calculate_hv_foriloop(points, ref, k, n_sample, key):
     n, m = jnp.shape(points)
-    alpha = calculate_alpha(n, k)
+    # print(k)
+    # alpha = calculate_alpha(n, k)
+    alpha = jnp.cumprod(
+        jnp.r_[1, (k - jnp.arange(1, n)) / (n - jnp.arange(1, n))]
+    ) / jnp.arange(1, n + 1)
+    alpha = jnp.nan_to_num(alpha)
 
     f_min = jnp.min(points, axis=0)
 
@@ -163,7 +168,7 @@ class HypEOrigin(Algorithm):
         merged_pop = jnp.concatenate([state.population, state.next_generation], axis=0)
         merged_obj = jnp.concatenate([state.fitness, fitness], axis=0)
 
-        n = jnp.shape(merged_pop)[0]
+        n = self.pop_size
 
         rank = non_dominated_sort(merged_obj)
         order = jnp.argsort(rank)
@@ -174,6 +179,24 @@ class HypEOrigin(Algorithm):
         hv = calculate_hv_foriloop(merged_obj, state.ref_point, jnp.sum(mask)-n, self.n_sample, subkey)
 
         dis = jnp.where(mask, hv, -jnp.inf)
+
+        # next = rank <= worst_rank
+        # key = state.key
+        # def body_fun(vals):
+        #     next, key = vals
+        #     key, subkey = jax.random.split(key)
+        #     hv = calculate_hv_foriloop(merged_obj, state.ref_point, jnp.sum(next)-n, self.n_sample, subkey)
+        #     hv = jnp.where(next, hv, jnp.inf)
+        #     min_idx = jnp.argmin(hv)
+        #     next = next.at[min_idx].set(False)
+        #     return next, key
+        #
+        # next, key = jax.lax.while_loop(
+        #     lambda vals: jnp.sum(vals[0]) > n,
+        #     body_fun,
+        #     (next, key),
+        # )
+        # combined_indices = jnp.argsort(~next)[:n]
 
         combined_indices = jnp.lexsort((-dis, rank))[: self.pop_size]
 
