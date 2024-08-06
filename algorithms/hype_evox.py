@@ -20,7 +20,6 @@ from jax.experimental.host_callback import id_print
 @partial(jax.jit, static_argnums=[2, 3])
 def cal_hv(points, ref, k, n_sample, key):
     n, m = jnp.shape(points)
-    id_print(k)
     # hit in alpha relevant partition
     alpha = jnp.cumprod(
         jnp.r_[1, (k - jnp.arange(1, n)) / (n - jnp.arange(1, n))]
