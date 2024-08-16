@@ -66,21 +66,16 @@ if __name__ == "__main__":
     jax.config.update("jax_default_prng_impl", "rbg")
     num_iter = 100
 
-    pop_scale_list = np.round(2 ** np.arange(7, 14)).astype(int)
-    dim_scale_list = np.round(2 ** np.arange(10, 14)).astype(int)
+    pop_scale_list = np.round(2 ** np.arange(7, 16)).astype(int)
+    dim_scale_list = np.round(2 ** np.arange(10, 21)).astype(int)
 
-    algorithm_list = ["MOEADOrigin", "PMOEAD", "HypEOrigin", "HypE", "NSGA3Origin", "NSGA3"]
-    algorithm_list = ["MOEADOrigin", "HypEOrigin", "NSGA3Origin"]
-    algorithm_list = ["HypEOrigin", "NSGA3Origin"]
-    algorithm_list = ["NSGA3Origin2"]
+    algorithm_list = ["MOEADOrigin", "TensorMOEAD", "HypEOrigin", "HypE", "NSGA3Origin", "NSGA3"]
 
     device = jax.default_backend()
     problem_list = [problems.numerical.DTLZ1(m=3)]
 
     num_runs = 10
-    alg_keys = [random.PRNGKey(42), random.PRNGKey(44), random.PRNGKey(46)]
-#     alg_keys = [random.PRNGKey(43), random.PRNGKey(44)]
-    alg_keys = [random.PRNGKey(46)]
+    alg_keys = [random.PRNGKey(42), random.PRNGKey(43), random.PRNGKey(44), random.PRNGKey(45), random.PRNGKey(46), random.PRNGKey(47)]
 
     directory = f"../data/acc_performance"
     if not os.path.exists(directory):
@@ -100,22 +95,32 @@ if __name__ == "__main__":
             for pop_size in tqdm(pop_scale_list, desc="Pop size scaling"):
                 duration = run(algorithm_name, problem_list[0], key, 500, pop_size, 3, num_iter)
                 pop_scale_durations.append(duration)
+                
+                # Organize data in the specified order
+                data = {
+                    "pop_scale_list": pop_scale_list.tolist(),
+                    "pop_scale": pop_scale_durations,
+                    "dim_scale_list": dim_scale_list.tolist(),
+                    "dim_scale": dim_scale_durations,
+                }
+
+                # Save to JSON file
+                with open(f"{directory}/{name}_exp{exp_id}.json", "w") as f:
+                    json.dump(data, f)
+                
 
             # Collect dim_scale durations
             for dim in tqdm(dim_scale_list, desc="Dimension scaling"):
                 duration = run(algorithm_name, problem_list[0], key, dim, 100, 3, num_iter)
-#                 if np.isnan(duration):
-#                     break
+                # Organize data in the specified order
                 dim_scale_durations.append(duration)
+                data = {
+                    "pop_scale_list": pop_scale_list.tolist(),
+                    "pop_scale": pop_scale_durations,
+                    "dim_scale_list": dim_scale_list.tolist(),
+                    "dim_scale": dim_scale_durations,
+                }
 
-            # Organize data in the specified order
-            data = {
-                "pop_scale_list": pop_scale_list.tolist(),
-                "pop_scale": pop_scale_durations,
-                "dim_scale_list": dim_scale_list.tolist(),
-                "dim_scale": dim_scale_durations,
-            }
-
-            # Save to JSON file
-            with open(f"{directory}/{name}_exp{exp_id}_under10000.json", "w") as f:
-                json.dump(data, f)
+                # Save to JSON file
+                with open(f"{directory}/{name}_exp{exp_id}.json", "w") as f:
+                    json.dump(data, f)

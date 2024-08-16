@@ -1,103 +1,171 @@
-import os
-
-# If you want to run on CPU, uncomment the following line
-# os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
-from evox import problems
-from evox.workflows import StdWorkflow
-from algorithms import MOEADOrigin, PMOEAD, HypEOrigin, HypE, NSGA3Origin, NSGA3
+from evox import problems, metrics
+from evox.workflows import StdWorkflow, NonJitWorkflow
+from algorithms import MOEADOrigin, PMOEAD, HypEOrigin, HypE, NSGA3Origin, NSGA3, NSGA3Origin2, TensorMOEAD
 from jax import random
 import jax
 import jax.numpy as jnp
 import time
-import numpy as np
 import json
 from tqdm import tqdm
+from evox.operators import non_dominated_sort
+import os
 
 
-def run(algorithm_name, problem, key, dim, pop_size, n_objs, num_iter=100):
-    try:
-        algorithm = {
-            "MOEADOrigin": MOEADOrigin(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size, problem=problem, key=key, num_generations=100),
-            "PMOEAD": PMOEAD(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
-            "HypEOrigin": HypEOrigin(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
-            "HypE": HypE(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
-            "NSGA3Origin": NSGA3Origin(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
-            "NSGA3": NSGA3(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
-        }.get(algorithm_name)
+def run(algorithm_name, problem, key, num_iter=100, d=5000):
+    algorithm = {
+        "MOEADOrigin": MOEADOrigin(
+            lb=jnp.zeros((d,)),
+            ub=jnp.ones((d,)),
+            n_objs=3,
+            pop_size=10000,
+            problem=problem,
+            key=key,
+            num_generations=100,
+        ),
+        "PMOEAD": PMOEAD(
+            lb=jnp.zeros((d,)), ub=jnp.ones((d,)), n_objs=3, pop_size=10000
+        ),
+        "HypEOrigin": HypEOrigin(
+            lb=jnp.zeros((d,)), ub=jnp.ones((d,)), n_objs=3, pop_size=10000
+        ),
+        "HypE": HypE(
+            lb=jnp.zeros((d,)), ub=jnp.ones((d,)), n_objs=3, pop_size=10000
+        ),
+        "NSGA3Origin": NSGA3Origin(
+            lb=jnp.zeros((d,)), ub=jnp.ones((d,)), n_objs=3, pop_size=10000
+        ),
+        "NSGA3": NSGA3(
+            lb=jnp.zeros((d,)), ub=jnp.ones((d,)), n_objs=3, pop_size=10000
+        ),
+        "NSGA3Origin2": NSGA3Origin2(
+            lb=jnp.zeros((d,)), ub=jnp.ones((d,)), n_objs=3, pop_size=10000
+        ),
+        "TensorMOEAD": TensorMOEAD(lb=jnp.zeros((d,)), ub=jnp.ones((d,)), n_objs=3, pop_size=10000),
+    }.get(algorithm_name)
 
-        if algorithm is None:
-            raise ValueError(f"Unknown algorithm: {algorithm_name}")
-            
-        if algorithm_name == "MOEADOrigin":
-            start = time.perf_counter()
-            algorithm.run()
-            duration = time.perf_counter() - start
-            return duration
+    if algorithm_name == "MOEADOrigin":
+        pop, obj, run_time = algorithm.run()
+        return jnp.array(pop), jnp.array(obj), jnp.array(run_time)
+  
+    if algorithm_name == "NSGA3Origin2":
+        workflow = NonJitWorkflow(
+        algorithm,
+        problem,
+        )
+    else:
+        workflow = StdWorkflow(
+            algorithm,
+            problem,
+        )
+    state = workflow.init(key)
+    if algorithm_name == "NSGA3Origin2":
+        step_func = workflow.step
+    else:
+        step_func = jax.jit(workflow.step).lower(state).compile()
+    state = step_func(state)
+    run_time = []
+    obj = []
+    pop = []
+    start = time.perf_counter()
+    for k in range(num_iter):
+        state = step_func(state)
+        jax.block_until_ready(state)
+        now = time.perf_counter()
+        duration = now - start
+        run_time.append(duration)
+        obj.append(state.get_child_state("algorithm").fitness)
+    return jnp.array(obj), jnp.array(run_time)
 
-        workflow = StdWorkflow(algorithm, problem)
-        state = workflow.init(key)
-        start = time.perf_counter()
-        step_func = jax.jit(workflow.step)
-        for _ in range(num_iter):
-            state = step_func(state)
-            jax.block_until_ready(state)
-        duration = time.perf_counter() - start
-        return duration
-    except Exception as e:
-        print(f"Error running {algorithm_name} with dimension {dim}, pop_size {pop_size}: {e}")
-        return float("nan")
-    
-    
+
+def evaluate(f, key, pf, num_iter=100):
+    m = jnp.shape(pf)[1]
+    ref = jnp.ones((m,))
+    igd = []
+
+    ind1 = metrics.IGD(pf)
+
+    history_data = []
+    for i in range(num_iter):
+        key, subkey = jax.random.split(key)
+        current_obj = f[i]
+        current_obj = current_obj[~jnp.isnan(current_obj).any(axis=1)]
+        rank = non_dominated_sort(current_obj)
+        pf = rank == 0
+        pf_fitness = current_obj[pf]
+        igd.append(ind1(pf_fitness))
+
+        if i == num_iter - 1:
+            data = {
+                "raw_obj": current_obj.tolist(),
+                # "pf_solutions": pf_solutions.tolist(),
+                "pf_fitness": pf_fitness.tolist(),
+            }
+            history_data.append(data)
+
+    return history_data, jnp.array(igd)
+
+
 if __name__ == "__main__":
+
     jax.config.update("jax_default_prng_impl", "rbg")
     num_iter = 100
 
-    pop_scale_list = np.round(2 ** np.arange(7, 14)).astype(int)
-    dim_scale_list = np.round(2 ** np.arange(10, 14)).astype(int)
+    algorithm_names = [
+        "MOEADOrigin",
+        "TensorMOEAD",
+        "HypEOrigin",
+        "HypE",
+        "NSGA3Origin",
+        "NSGA3",
+    ]
 
-    algorithm_list = ["MOEADOrigin", "PMOEAD", "HypEOrigin", "HypE", "NSGA3Origin", "NSGA3"]
-    algorithm_list = ["PMOEAD", "HypE", "NSGA3"]
+    problem_list = [
+        problems.numerical.LSMOP1(m=3),
+        problems.numerical.LSMOP2(m=3),
+        problems.numerical.LSMOP3(m=3),
+        problems.numerical.LSMOP4(m=3),
+        problems.numerical.LSMOP5(m=3),
+        problems.numerical.LSMOP6(m=3),
+        problems.numerical.LSMOP7(m=3),
+        problems.numerical.LSMOP8(m=3),
+        problems.numerical.LSMOP9(m=3),
+    ]
+    num_runs = 31
+    num_pro = 9
 
-    device = jax.default_backend()
-    problem_list = [problems.numerical.DTLZ1(m=3)]
+    experiment_stats = []
+    key = random.PRNGKey(42)
+    pro_keys = random.split(key, num_pro)
 
-    num_runs = 10
-    alg_keys = [random.PRNGKey(43), random.PRNGKey(45), random.PRNGKey(47)]
-
-    directory = f"../data/acc_performance"
+    directory = f"../data/effi_scal"
     if not os.path.exists(directory):
         os.makedirs(directory, exist_ok=True)
 
-    for i, algorithm_name in enumerate(algorithm_list):
-        name = f"{algorithm_name}_DTLZ1_{device}"
-        print(name)
-        key = alg_keys[i]
-        run_keys = random.split(key, num_runs)            
-        for exp_id in tqdm(range(num_runs), desc=f"Running {algorithm_name}"):
-            pop_scale_durations = []
-            dim_scale_durations = []
-            key = run_keys[exp_id]
+    for algorithm_name in algorithm_names:
+        for j, problem in enumerate(problem_list):
+            #  if j == 0 or j == 1 or j == 2 or j == 3 or j == 4 or j == 5 or j == 6 or j == 7 :
+            #      continue
+            print(f"Running {algorithm_name} on LSMOP{j + 1} with dimension 5000")
 
-            # Collect pop_scale durations
-            for pop_size in tqdm(pop_scale_list, desc="Pop size scaling"):
-                duration = run(algorithm_name, problem_list[0], key, 500, pop_size, 3, num_iter)
-                pop_scale_durations.append(duration)
+            pro_key = pro_keys[j]
+            run_keys = random.split(pro_key, num_runs)
+            pf = problem.pf()
+            for exp_id in tqdm(
+                range(num_runs), desc=f"{algorithm_name} - Problem {j + 1}"
+            ):
+                run_key = run_keys[exp_id]
+                obj, t = run(algorithm_name, problem, run_key, num_iter=num_iter)
 
-            # Collect dim_scale durations
-            for dim in tqdm(dim_scale_list, desc="Dimension scaling"):
-                duration = run(algorithm_name, problem_list[0], key, dim, 100, 3, num_iter)
-#                 if np.isnan(duration):
-#                     break
-                dim_scale_durations.append(duration)
+                history_data, igd = evaluate(
+                    obj, run_key, pf, num_iter=num_iter
+                )
 
-            # Organize data in the specified order
-            data = {
-                "pop_scale_list": pop_scale_list.tolist(),
-                "pop_scale": pop_scale_durations,
-                "dim_scale_list": dim_scale_list.tolist(),
-                "dim_scale": dim_scale_durations,
-            }
-
-            # Save to JSON file
-            with open(f"{directory}/{name}_exp{exp_id}_under10000.json", "w") as f:
-                json.dump(data, f)
+                data = {
+                    "history_data": history_data,
+                    "igd": igd.tolist(),
+                    "time": t.tolist(),
+                }
+                with open(
+                    f"{directory}/{algorithm_name}_LSMOP{j + 1}_exp{exp_id}.json", "w"
+                ) as f:
+                    json.dump(data, f)
