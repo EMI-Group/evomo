@@ -173,15 +173,11 @@ class TensorMOEAD(Algorithm):
             return sub
 
         indices_cube = jax.vmap(body, in_axes=(0, 0))(neighbor, obj)
-        id_print(indices_cube, what="indices_cube")
-
-        id_print(indices_cube[:, 0], what="indices_cube1")
 
         def body2(sub_indices, population, pop_obj, w_ind):
             f = jnp.where(sub_indices[:, jnp.newaxis] == -1, obj, pop_obj)
             x = jnp.where(sub_indices[:, jnp.newaxis] == -1, offspring, population)
             idx = jnp.argmin(self.aggregate_func2(f, w_ind[jnp.newaxis, :], z_min, z_max))
-            id_print(idx, what="idx")
             return x[idx], f[idx]
 
         population, pop_obj = jax.vmap(body2, in_axes=(1, 0, 0, 0))(
