@@ -82,7 +82,6 @@ def test_ori_algo(name, algo, config_dict):
 
 
 def tests():
-    # 将变量转换为字典
     config_dict = {
         "n_obj": n_obj,
         "pop_size": pop_size,
@@ -92,7 +91,6 @@ def tests():
         "loop_num": loop_num
     }
 
-    # 使用 SimpleNamespace 将字典转换为结构体
     config = SimpleNamespace(**config_dict)
     test_evox_algo("nsga3_evox", NSGA3Origin_evox_version, config)
     # test_evox_algo("nsga3_evox_1", evox.algorithms.NSGA3, config)

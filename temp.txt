@@ -1,5 +1,0 @@
-Introduction:
-
-exper(1|2), Lexper(1|2)(1|2|3): the 1st experiment.
-exper(3|4|9|10): the 2nd experiment.
-exper(5|6|7|8): the 3rd experiment. 
