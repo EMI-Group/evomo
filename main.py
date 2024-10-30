@@ -23,11 +23,11 @@ def run_moea(algorithm, key):
     monitor = PopMonitor()
     # monitor = StdMOMonitor()
 
-    problem = problems.numerical.DTLZ3(m=3)
+    problem = problems.numerical.DTLZ2(m=3)
     workflow = workflows.StdWorkflow(
         algorithm=algorithm,
         problem=problem,
-        # monitor=monitor,
+        monitor=monitor,
     )
     # workflow = workflows.NonJitWorkflow(
     #     algorithm=algorithm,
@@ -43,7 +43,7 @@ def run_moea(algorithm, key):
     ref = jnp.array([1., 1., 1.])
     ind = HV1(ref=ref)
 
-    for i in range(500):
+    for i in range(100):
         print(i)
         key, subkey = jax.random.split(key)
         state = workflow.step(state)
@@ -61,7 +61,7 @@ def run_moea(algorithm, key):
 
 
 if __name__ == '__main__':
-    print("NSGA3")
+    print("MOEAD")
 
     lb = jnp.full(shape=(12,), fill_value=0)
     ub = jnp.full(shape=(12,), fill_value=1)
