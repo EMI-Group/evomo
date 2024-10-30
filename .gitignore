@@ -169,4 +169,6 @@ algorithms/test.py
 data/
 data/states/
 data/states/nsga3.pkl
+test.py
 test[1-6].py
+example.py
