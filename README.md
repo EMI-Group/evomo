@@ -1,5 +1,5 @@
-# tensoremo
-GPU-accelerated Evolutionary Multiobjective Optimization.
+# TensorEMOA
+Bridging Evolutionary Multiobjective Optimization and GPU Acceleration via Tensorization.
 
 ## Requirements
 - evox (version == 0.8.1)
