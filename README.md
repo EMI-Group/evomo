@@ -1,4 +1,4 @@
-# TensorEMOA
+# EvoMO
 Bridging Evolutionary Multiobjective Optimization and GPU Acceleration via Tensorization.
 
 ## Requirements
