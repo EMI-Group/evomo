@@ -1,6 +1,7 @@
 # EvoMO
 Bridging Evolutionary Multiobjective Optimization and GPU Acceleration via Tensorization.
 
+
 ## Requirements
 - evox (version == 0.8.1)
 - jax (version >= 0.4.16)
