@@ -1,5 +1,4 @@
 import os
-# os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.75"
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE']='false'
 from evox import workflows, problems
 import evox
@@ -8,14 +7,10 @@ from evox.metrics import IGD as IGD1
 from evox.metrics import HV as HV1
 import jax
 import jax.numpy as jnp
-import numpy as np
 import time
 from algorithms import TensorMOEAD, MOEAD1, PMOEAD, MOEADOrigin, HypEOrigin, NSGA3, NSGA3Origin, HypE
 from evox.utils import cos_dist
 from functools import partial
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-from jax.experimental.host_callback import id_print
 from evox.operators import non_dominated_sort
 
 
@@ -61,23 +56,18 @@ def run_moea(algorithm, key):
 
 
 if __name__ == '__main__':
-    print("MOEAD")
+    print("HypE")
 
     lb = jnp.full(shape=(12,), fill_value=0)
     ub = jnp.full(shape=(12,), fill_value=1)
 
-    algorithm = TensorMOEAD(
+    algorithm = HypE(
         lb=lb,
         ub=ub,
         n_objs=3,
         pop_size=100,
     )
-    # algorithm = evox.algorithms.HypE(
-    #     lb=lb,
-    #     ub=ub,
-    #     n_objs=3,
-    #     pop_size=10000,
-    # )
+
     key = jax.random.PRNGKey(42)
 
     for i in range(1):
