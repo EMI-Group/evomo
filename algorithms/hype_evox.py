@@ -15,9 +15,9 @@ from functools import partial
 
 from evox import jit_class, Algorithm, State
 from evox.operators import selection, mutation, crossover, non_dominated_sort
-from jax.experimental.host_callback import id_print
 
-@partial(jax.jit, static_argnums=[2, 3])
+
+@partial(jax.jit, static_argnums=[3])
 def cal_hv(points, ref, k, n_sample, key):
     n, m = jnp.shape(points)
     # hit in alpha relevant partition
@@ -142,7 +142,7 @@ class HypE(Algorithm):
         mask = rank <= worst_rank
 
         key, subkey = jax.random.split(state.key)
-        hv = cal_hv(merged_obj, state.ref_point, jnp.sum(mask)-n, self.n_sample, subkey)
+        hv = cal_hv(merged_obj, state.ref_point, jnp.sum(mask) - n, self.n_sample, subkey)
 
         dis = jnp.where(mask, hv, -jnp.inf)
 
