@@ -1,4 +1,4 @@
-from algorithms import PMOEAD, TensorHypE, TensorNSGA3, MORandom, TensorMOEAD
+from algorithms import TensorHypE, TensorNSGA3, MORandom, TensorMOEAD
 from evox.workflows import StdWorkflow
 from problems import MoBrax, Obs_Normalizer
 from jax import random
@@ -19,9 +19,8 @@ def get_algorithm(algorithm_name, center, n_objs, pop_size):
     bounds = jnp.full_like(center, -5), jnp.full_like(center, 5)
     return {
         "Random": MORandom(*bounds, n_objs=n_objs, pop_size=pop_size),
-        "NSGAIII": TensorNSGA3(*bounds, n_objs=n_objs, pop_size=pop_size, uniform_init=False, ),
-        "HYPE": TensorHypE(*bounds, n_objs=n_objs, pop_size=pop_size, uniform_init=False, ),
-        "PMOEAD": PMOEAD(*bounds, n_objs=n_objs, pop_size=pop_size, uniform_init=False,),
+        "TensorNSGA3": TensorNSGA3(*bounds, n_objs=n_objs, pop_size=pop_size, uniform_init=False, ),
+        "TensorHypE": TensorHypE(*bounds, n_objs=n_objs, pop_size=pop_size, uniform_init=False, ),
         "TensorMOEAD": TensorMOEAD(*bounds, n_objs=n_objs, pop_size=pop_size, uniform_init=False,),
     }.get(algorithm_name, None)
 
@@ -78,7 +77,7 @@ def run_workflow(
 def main():
     jax.config.update("jax_default_prng_impl", "rbg")
     num_iter, num_runs = 100, 10
-    algorithm_list = ["Random", "NSGAIII", "TensorMOEAD", "HYPE"]
+    algorithm_list = ["Random", "TensorNSGA3", "TensorMOEAD", "TensorHYPE"]
     envs = [
         {
             "name": "mo_halfcheetah",
@@ -229,7 +228,7 @@ def main():
                 problem = MoBrax(
                     policy=jax.jit(model.apply),
                     env_name=env["name"],
-                    cap_episode=1000,  # 500
+                    cap_episode=1000, 
                     obs_norm=obs_norm,
                     num_obj=env["num_obj"],
                 )

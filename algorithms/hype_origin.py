@@ -27,7 +27,7 @@ def calculate_alpha(N, k):
     return alpha
 
 
-@partial(jax.jit, static_argnums=[2, 3])
+@partial(jax.jit, static_argnums=[3])
 def calculate_hv_foriloop(points, ref, k, n_sample, key):
     n, m = jnp.shape(points)
     # print(k)

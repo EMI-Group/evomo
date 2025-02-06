@@ -1,6 +1,6 @@
 from evox import problems, metrics
 from evox.workflows import StdWorkflow, NonJitWorkflow
-from algorithms import MOEAD, PMOEAD, HypE, TensorHypE, NSGA3, TensorNSGA3, NSGA3Origin2, TensorMOEAD
+from algorithms import MOEAD, HypE, NSGA3, TensorMOEAD, TensorHypE, TensorNSGA3
 from jax import random
 import jax
 import jax.numpy as jnp
@@ -13,7 +13,7 @@ import os
 
 def run(algorithm_name, problem, key, num_iter=100, d=5000):
     algorithm = {
-        "MOEADOrigin": MOEAD(
+        "MOEAD": MOEAD(
             lb=jnp.zeros((d,)),
             ub=jnp.ones((d,)),
             n_objs=3,
@@ -22,46 +22,33 @@ def run(algorithm_name, problem, key, num_iter=100, d=5000):
             key=key,
             num_generations=100,
         ),
-        "PMOEAD": PMOEAD(
+        "TensorMOEAD": TensorMOEAD(
             lb=jnp.zeros((d,)), ub=jnp.ones((d,)), n_objs=3, pop_size=10000
         ),
-        "HypEOrigin": HypE(
+        "HypE": HypE(
             lb=jnp.zeros((d,)), ub=jnp.ones((d,)), n_objs=3, pop_size=10000
         ),
-        "HypE": TensorHypE(
+        "TensorHypE": TensorHypE(
             lb=jnp.zeros((d,)), ub=jnp.ones((d,)), n_objs=3, pop_size=10000
         ),
-        "NSGA3Origin": NSGA3(
+        "NSGA3": NSGA3(
             lb=jnp.zeros((d,)), ub=jnp.ones((d,)), n_objs=3, pop_size=10000
         ),
-        "NSGA3": TensorNSGA3(
+        "TensorNSGA3": TensorNSGA3(
             lb=jnp.zeros((d,)), ub=jnp.ones((d,)), n_objs=3, pop_size=10000
         ),
-        "NSGA3Origin2": NSGA3Origin2(
-            lb=jnp.zeros((d,)), ub=jnp.ones((d,)), n_objs=3, pop_size=10000
-        ),
-        "TensorMOEAD": TensorMOEAD(lb=jnp.zeros((d,)), ub=jnp.ones((d,)), n_objs=3, pop_size=10000),
     }.get(algorithm_name)
 
-    if algorithm_name == "MOEADOrigin":
+    if algorithm_name == "MOEAD":
         pop, obj, run_time = algorithm.run()
         return jnp.array(pop), jnp.array(obj), jnp.array(run_time)
   
-    if algorithm_name == "NSGA3Origin2":
-        workflow = NonJitWorkflow(
+    workflow = StdWorkflow(
         algorithm,
         problem,
-        )
-    else:
-        workflow = StdWorkflow(
-            algorithm,
-            problem,
-        )
+    )
     state = workflow.init(key)
-    if algorithm_name == "NSGA3Origin2":
-        step_func = workflow.step
-    else:
-        step_func = jax.jit(workflow.step).lower(state).compile()
+    step_func = jax.jit(workflow.step).lower(state).compile()
     state = step_func(state)
     run_time = []
     obj = []
@@ -77,16 +64,12 @@ def run(algorithm_name, problem, key, num_iter=100, d=5000):
     return jnp.array(obj), jnp.array(run_time)
 
 
-def evaluate(f, key, pf, num_iter=100):
-    m = jnp.shape(pf)[1]
-    ref = jnp.ones((m,))
+def evaluate(f, pf, num_iter=100):
     igd = []
-
     ind1 = metrics.IGD(pf)
 
     history_data = []
     for i in range(num_iter):
-        key, subkey = jax.random.split(key)
         current_obj = f[i]
         current_obj = current_obj[~jnp.isnan(current_obj).any(axis=1)]
         rank = non_dominated_sort(current_obj)
@@ -97,7 +80,6 @@ def evaluate(f, key, pf, num_iter=100):
         if i == num_iter - 1:
             data = {
                 "raw_obj": current_obj.tolist(),
-                # "pf_solutions": pf_solutions.tolist(),
                 "pf_fitness": pf_fitness.tolist(),
             }
             history_data.append(data)
@@ -111,12 +93,12 @@ if __name__ == "__main__":
     num_iter = 100
 
     algorithm_names = [
-        "MOEADOrigin",
+        "MOEAD",
         "TensorMOEAD",
-        "HypEOrigin",
         "HypE",
-        "NSGA3Origin",
+        "TensorHypE",
         "NSGA3",
+        "TensorNSGA3",
     ]
 
     problem_list = [
@@ -157,7 +139,7 @@ if __name__ == "__main__":
                 obj, t = run(algorithm_name, problem, run_key, num_iter=num_iter)
 
                 history_data, igd = evaluate(
-                    obj, run_key, pf, num_iter=num_iter
+                    f=obj, pf=pf, num_iter=num_iter
                 )
 
                 data = {
