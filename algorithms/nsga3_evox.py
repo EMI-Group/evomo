@@ -20,7 +20,6 @@ from evox.operators import (
 )
 from evox import Algorithm, jit_class, State
 from evox.utils import cos_dist
-from jax.experimental.host_callback import id_print
 from jax import vmap
 
 @jit_class
@@ -155,7 +154,6 @@ class NSGA3(Algorithm):
 
         # use vmap to vectorize the selection
         selected_idx = jax.vmap(select_from_index_by_min)(selected_rho)
-        id_print(selected_idx)
 
         # selected_rho_matrix = selected_rho[:, None]
         # group_mask = (group_id[None, :] == selected_rho_matrix)
@@ -165,7 +163,6 @@ class NSGA3(Algorithm):
 
         the_selected_one_idx = jnp.minimum(jnp.min(selected_idx), the_selected_one_idx)
         selected_idx = jnp.where(selected_idx == upper_bound, the_selected_one_idx, selected_idx)
-        id_print(selected_idx, what="1111")
         # rho_last = jnp.where(rho == rho_level, rho_last - 1, rho_last)
         last_num = jnp.sum(rho == rho_level)
         # rho = jnp.where(rho == rho_level, rho_level + 1, rho)

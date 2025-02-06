@@ -15,7 +15,7 @@ from functools import partial
 
 from evox import jit_class, Algorithm, State
 from evox.operators import selection, mutation, crossover, non_dominated_sort
-from jax.experimental.host_callback import id_print
+
 
 @partial(jax.jit, static_argnums=[0, 1])
 def calculate_alpha(N, k):

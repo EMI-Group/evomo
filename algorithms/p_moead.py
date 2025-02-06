@@ -13,7 +13,6 @@ from evox import Algorithm, State, jit_class
 from evox.operators import crossover, mutation
 from evox.operators.sampling import UniformSampling
 from evox.utils import pairwise_euclidean_dist
-from jax.experimental.host_callback import id_print
 
 
 @jit_class

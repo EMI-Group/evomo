@@ -10,7 +10,7 @@ from evox import problems
 import math
 import time
 from evox.metrics import IGD
-from jax.experimental.host_callback import id_print
+
 
 
 @jit_class
