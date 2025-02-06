@@ -23,7 +23,7 @@ from evox.utils import cos_dist
 from jax import vmap
 
 @jit_class
-class NSGA3(Algorithm):
+class TensorNSGA3(Algorithm):
     """NSGA-III algorithm
     link: https://ieeexplore.ieee.org/document/6600851
     """
@@ -146,7 +146,7 @@ class NSGA3(Algorithm):
         group_id = jnp.where(rank == last_rank, group_id, upper_bound)
         # for rho == 0
         rho_level = 0
-        # selected_rho = rho == rho_level
+
         selected_rho = jnp.where(rho == rho_level, jnp.arange(rho.size), upper_bound)
         def select_from_index_by_min(idx):
             return jnp.where(idx == upper_bound, upper_bound,
@@ -155,46 +155,12 @@ class NSGA3(Algorithm):
         # use vmap to vectorize the selection
         selected_idx = jax.vmap(select_from_index_by_min)(selected_rho)
 
-        # selected_rho_matrix = selected_rho[:, None]
-        # group_mask = (group_id[None, :] == selected_rho_matrix)
-        # masked_group_dist = jnp.where(group_mask, group_dist, jnp.inf)
-        # selected_idx1 = jnp.argmin(masked_group_dist, axis=1)
-        # selected_idx1 = jnp.where(selected_rho == upper_bound, upper_bound, selected_idx1)
-
         the_selected_one_idx = jnp.minimum(jnp.min(selected_idx), the_selected_one_idx)
         selected_idx = jnp.where(selected_idx == upper_bound, the_selected_one_idx, selected_idx)
-        # rho_last = jnp.where(rho == rho_level, rho_last - 1, rho_last)
         last_num = jnp.sum(rho == rho_level)
-        # rho = jnp.where(rho == rho_level, rho_level + 1, rho)
-        # rho = jnp.where(rho_last == 0, upper_bound, rho)  # redundant?
 
         rank = rank.at[selected_idx].set(last_rank - 1)
         selected_number += last_num
-        
-        # def cut_mask(vals):
-        #     rank, dif, mask_index = vals
-        #     dif = -dif
-        #     mask_index = jnp.where(mask_index == the_selected_one_idx, upper_bound, mask_index)
-        #     sorted_index = jnp.sort(mask_index)
-        #     the_drop_one_idx = sorted_index[0]
-        #     index = jnp.where(
-        #         jnp.arange(sorted_index.size) < dif, sorted_index, the_drop_one_idx
-        #     )
-        #     rank = rank.at[index].set(last_rank)
-        #     return rank
-        #
-        # def add_dif(vals):
-        #     rank, dif, selected_idx = vals
-        #     selected_idx = jnp.where(rank == last_rank, jnp.arange(rank.size), upper_bound)
-        #     sorted_index = jnp.sort(selected_idx)
-        #     sorted_index = jnp.where(
-        #         jnp.arange(sorted_index.size) < dif, sorted_index, the_selected_one_idx
-        #     )
-        #     rank = rank.at[sorted_index].set(last_rank - 1)
-        #     return rank
-
-        # dif = self.pop_size - selected_number
-        # rank = jax.lax.cond(dif < 0, cut_mask, add_dif, (rank0, dif, selected_idx))
 
         def update_rank(vals, dif):
             rank, mask_index = vals

@@ -1,6 +1,6 @@
 from evox import problems, metrics
 from evox.workflows import StdWorkflow, NonJitWorkflow
-from algorithms import MOEADOrigin, PMOEAD, HypEOrigin, HypE, NSGA3Origin, NSGA3, NSGA3Origin2, TensorMOEAD
+from algorithms import MOEAD, PMOEAD, HypE, TensorHypE, NSGA3, TensorNSGA3, NSGA3Origin2, TensorMOEAD
 from jax import random
 import jax
 import jax.numpy as jnp
@@ -13,7 +13,7 @@ import os
 
 def run(algorithm_name, problem, key, num_iter=100, d=5000):
     algorithm = {
-        "MOEADOrigin": MOEADOrigin(
+        "MOEADOrigin": MOEAD(
             lb=jnp.zeros((d,)),
             ub=jnp.ones((d,)),
             n_objs=3,
@@ -25,16 +25,16 @@ def run(algorithm_name, problem, key, num_iter=100, d=5000):
         "PMOEAD": PMOEAD(
             lb=jnp.zeros((d,)), ub=jnp.ones((d,)), n_objs=3, pop_size=10000
         ),
-        "HypEOrigin": HypEOrigin(
+        "HypEOrigin": HypE(
             lb=jnp.zeros((d,)), ub=jnp.ones((d,)), n_objs=3, pop_size=10000
         ),
-        "HypE": HypE(
+        "HypE": TensorHypE(
             lb=jnp.zeros((d,)), ub=jnp.ones((d,)), n_objs=3, pop_size=10000
         ),
-        "NSGA3Origin": NSGA3Origin(
+        "NSGA3Origin": NSGA3(
             lb=jnp.zeros((d,)), ub=jnp.ones((d,)), n_objs=3, pop_size=10000
         ),
-        "NSGA3": NSGA3(
+        "NSGA3": TensorNSGA3(
             lb=jnp.zeros((d,)), ub=jnp.ones((d,)), n_objs=3, pop_size=10000
         ),
         "NSGA3Origin2": NSGA3Origin2(

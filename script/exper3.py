@@ -1,4 +1,4 @@
-from algorithms import PMOEAD, HypE, NSGA3, MORandom, TensorMOEAD
+from algorithms import PMOEAD, TensorHypE, TensorNSGA3, MORandom, TensorMOEAD
 from evox.workflows import StdWorkflow
 from problems import MoBrax, Obs_Normalizer
 from jax import random
@@ -19,8 +19,8 @@ def get_algorithm(algorithm_name, center, n_objs, pop_size):
     bounds = jnp.full_like(center, -5), jnp.full_like(center, 5)
     return {
         "Random": MORandom(*bounds, n_objs=n_objs, pop_size=pop_size),
-        "NSGAIII": NSGA3(*bounds, n_objs=n_objs, pop_size=pop_size, uniform_init=False,),
-        "HYPE": HypE(*bounds, n_objs=n_objs, pop_size=pop_size, uniform_init=False,),
+        "NSGAIII": TensorNSGA3(*bounds, n_objs=n_objs, pop_size=pop_size, uniform_init=False, ),
+        "HYPE": TensorHypE(*bounds, n_objs=n_objs, pop_size=pop_size, uniform_init=False, ),
         "PMOEAD": PMOEAD(*bounds, n_objs=n_objs, pop_size=pop_size, uniform_init=False,),
         "TensorMOEAD": TensorMOEAD(*bounds, n_objs=n_objs, pop_size=pop_size, uniform_init=False,),
     }.get(algorithm_name, None)

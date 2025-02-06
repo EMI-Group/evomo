@@ -53,7 +53,7 @@ def cal_hv(points, ref, k, n_sample, key):
 
 
 @jit_class
-class HypE(Algorithm):
+class TensorHypE(Algorithm):
     """HypE algorithm
 
     link: https://direct.mit.edu/evco/article-abstract/19/1/45/1363/HypE-An-Algorithm-for-Fast-Hypervolume-Based-Many

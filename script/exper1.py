@@ -4,7 +4,7 @@ import os
 # os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 from evox import problems
 from evox.workflows import StdWorkflow, NonJitWorkflow
-from algorithms import MOEADOrigin, PMOEAD, HypEOrigin, HypE, NSGA3Origin, NSGA3, TensorMOEAD, NSGA3Origin2
+from algorithms import MOEAD, PMOEAD, HypE, TensorHypE, NSGA3, TensorNSGA3, TensorMOEAD, NSGA3Origin2
 from jax import random
 import jax
 import jax.numpy as jnp
@@ -17,12 +17,12 @@ from tqdm import tqdm
 def run(algorithm_name, problem, key, dim, pop_size, n_objs, num_iter=100):
     try:
         algorithm = {
-            "MOEADOrigin": MOEADOrigin(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size, problem=problem, key=key, num_generations=100),
+            "MOEADOrigin": MOEAD(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size, problem=problem, key=key, num_generations=100),
             "PMOEAD": PMOEAD(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
-            "HypEOrigin": HypEOrigin(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
-            "HypE": HypE(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
-            "NSGA3Origin": NSGA3Origin(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
-            "NSGA3": NSGA3(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
+            "HypEOrigin": HypE(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
+            "HypE": TensorHypE(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
+            "NSGA3Origin": NSGA3(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
+            "NSGA3": TensorNSGA3(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
             "TensorMOEAD": TensorMOEAD(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
             "NSGA3Origin2": NSGA3Origin2(lb=jnp.zeros((dim,)), ub=jnp.ones((dim,)), n_objs=n_objs, pop_size=pop_size),
         }.get(algorithm_name)

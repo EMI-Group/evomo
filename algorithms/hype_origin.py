@@ -94,7 +94,7 @@ def calculate_hv_for(points, bounds, k, n_sample, key):
     f = f * jnp.prod(bounds - f_min) / n_sample
     return f
 
-class HypEOrigin(Algorithm):
+class HypE(Algorithm):
     """HypE algorithm
 
     link: https://direct.mit.edu/evco/article-abstract/19/1/45/1363/HypE-An-Algorithm-for-Fast-Hypervolume-Based-Many

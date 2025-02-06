@@ -54,7 +54,7 @@ class AggregationFunction:
         return self.function(*args, **kwargs)
 
 
-class MOEADOrigin:
+class MOEAD:
     def __init__(
         self,
         lb,
@@ -217,5 +217,5 @@ if __name__ == "__main__":
     lb = jnp.full(shape=(12,), fill_value=0)
     ub = jnp.full(shape=(12,), fill_value=1)
 
-    moead = MOEADOrigin(lb, ub, pop_size, n_objs, num_generations, problem, key)
+    moead = MOEAD(lb, ub, pop_size, n_objs, num_generations, problem, key)
     moead.run()

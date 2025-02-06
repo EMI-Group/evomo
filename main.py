@@ -8,7 +8,7 @@ from evox.metrics import HV as HV1
 import jax
 import jax.numpy as jnp
 import time
-from algorithms import TensorMOEAD, MOEAD1, PMOEAD, MOEADOrigin, HypEOrigin, NSGA3, NSGA3Origin, HypE
+from algorithms import TensorMOEAD, MOEAD1, PMOEAD, MOEAD, HypE, TensorNSGA3, NSGA3, TensorHypE
 from evox.utils import cos_dist
 from functools import partial
 from evox.operators import non_dominated_sort
@@ -61,7 +61,7 @@ if __name__ == '__main__':
     lb = jnp.full(shape=(12,), fill_value=0)
     ub = jnp.full(shape=(12,), fill_value=1)
 
-    algorithm = HypE(
+    algorithm = TensorHypE(
         lb=lb,
         ub=ub,
         n_objs=3,
