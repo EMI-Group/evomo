@@ -1,6 +1,6 @@
 from algorithms import TensorHypE, TensorNSGA3, MORandom, TensorMOEAD
 from evox.workflows import StdWorkflow
-from problems import MoBrax, Obs_Normalizer
+from problems import MoRobtrol, Obs_Normalizer
 from jax import random
 import jax
 import jax.numpy as jnp
@@ -225,7 +225,7 @@ def main():
                 adapter = TreeAndVector(params)
                 center = adapter.to_vector(params)
                 obs_norm = Obs_Normalizer(observation_shape=env["observation_shape"], useless=False)
-                problem = MoBrax(
+                problem = MoRobtrol(
                     policy=jax.jit(model.apply),
                     env_name=env["name"],
                     cap_episode=1000, 
