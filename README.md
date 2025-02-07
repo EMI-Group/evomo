@@ -49,7 +49,7 @@ EvoMO is a high-performance framework that pioneers the integration of evolution
 ## Requirements
 
 - Python 3.12 or later
-- evox (version == 0.8.1)
+- evox (version == 0.9.0)
 - jax (version >= 0.4.16)
 - jaxlib (version >= 0.3.0)
 - brax (version == 0.10.3)
