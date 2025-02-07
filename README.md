@@ -30,7 +30,7 @@
 
 ## Overview  
 
-EvoMO is a high-performance library that integrates evolutionary multiobjective optimization (EMO) with GPU acceleration via tensorization. By converting key data structures and operations into tensor representations, it enables concise mathematical modeling and significant speedups. Designed for scalability, EvoMO efficiently handles large populations and complex optimization tasks. EvoMO is a sister project of [EvoX](https://github.com/EMI-Group/evox).  
+EvoMO is a GPU-accelerated library for evolutionary multiobjective optimization (EMO) via advanced tensorization. By converting key data structures and operations into tensor representations, it enables concise mathematical modeling and significant speedups. Designed for scalability, EvoMO efficiently handles large populations and complex optimization tasks. EvoMO is a sister project of [EvoX](https://github.com/EMI-Group/evox).  
 
 ## Key Features  
 
