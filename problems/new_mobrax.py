@@ -147,7 +147,7 @@ class MoBraxProblem(Problem):
         else:
             self.obs_norm = obs_norm
         self.obs_param=self.obs_norm.generate_init_params()
-        # valid_mask = jnp.ones((self.max_episode_length, batch_size))
+        self.valid_mask = jnp.ones((self.max_episode_length, pop_size))
 
     def evaluate(self, pop_params: Dict[str, nn.Parameter]) -> torch.Tensor:
         """Evaluate the final rewards of a population (batch) of model parameters.
@@ -229,13 +229,15 @@ class MoBraxProblem(Problem):
             brax_state = brax_state.replace(obs=norm_obs)
 
             brax_state = brax_step(brax_state, to_jax_array(action))
-            done = brax_state.done * (1 - done)
-            total_reward += (1 - done) * brax_state.reward
+            done = jnp.tile(brax_state.done[:, jnp.newaxis], (1, self.num_obj))
+            reward = jnp.nan_to_num(brax_state.reward)
+            total_reward += (1 - done) * reward
+            self.valid_mask = (1 - brax_state.done.ravel()) * self.valid_mask
             counter += 1
 
             if not self.obs_norm._useless:
                 self.obs_param = self.obs_norm.norm_params_update(
-                    obs_buf=brax_state.obs, obs_mask=valid_mask, obs_params=self.obs_param)
+                    obs_buf=brax_state.obs, obs_mask=self.valid_mask, obs_params=self.obs_param)
             if record_trajectory:
                 trajectory.append(brax_state.pipeline_state)
         # Return
