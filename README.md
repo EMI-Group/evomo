@@ -58,7 +58,7 @@ EvoMO is a high-performance framework that pioneers the integration of evolution
 
 ## Examples
 
-Below is a basic example demonstrating how one might utilize the tensorized NSGA-III algorithm within EvoMO. (Note: The import paths and API details are placeholders and will be updated once the package is officially released.)
+Below is a basic example demonstrating how one might utilize the tensorized HypE algorithm within EvoMO. 
 
 ```python
 from evox import workflows, problems
