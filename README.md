@@ -28,23 +28,23 @@
 6. [Community & Support](#community--support)
 
 
-## Overview
+## Overview  
 
-EvoMO is a high-performance framework that pioneers the integration of evolutionary multiobjective optimization (EMO) with GPU acceleration through advanced tensorization techniques. By transforming key data structures (e.g., candidate solutions and objective values) and operations (e.g., crossover, mutation, and selection) into tensor representations, EvoMO establishes concise yet versatile mathematical models that unlock significant computational speedups. This framework is designed to efficiently scale to large population sizes and tackle complex, computationally intensive problems.
+EvoMO is a high-performance library that integrates EMO with GPU acceleration via advanced tensorization. By converting key data structures and operations into tensor representations, it enables concise mathematical modeling and significant speedups. Designed for scalability, EvoMO efficiently handles large populations and complex optimization tasks. EvoMO is a sister project of EvoX.  
 
-## Key Features
+## Key Features  
 
 - **General Tensorization Methodology:**  
-  EvoMO introduces a comprehensive tensorization approach that converts key data structures and operations of EMO algorithms into tensor representations. This concise and versatile mathematical model enables efficient GPU acceleration.
+  EvoMO adopts a unified tensorization approach that restructures EMO algorithms into tensor-based representations, enabling efficient GPU acceleration.  
 
-- **Application to Representative Algorithms:**  
-  The tensorization methodology is applied to three state-of-the-art EMO algorithms: **NSGA-III**, **MOEA/D**, and **HypE**. These tensorized implementations maintain solution quality while achieving up to a **1113× speedup** compared to their CPU-based counterparts.
+- **Optimized State-of-the-Art Algorithms:**  
+  Supports **NSGA-II**, **NSGA-III**, **MOEA/D**, **RVEA**, and **HypE**, achieving up to **1113× speedup** while preserving solution quality.  
 
 - **Scalability:**  
-  Designed to handle large-scale problems, EvoMO efficiently scales population sizes to hundreds of thousands, making it suitable for tackling computationally intensive optimization tasks.
+  Handles large populations, scaling to hundreds of thousands for complex optimization tasks.  
 
-- **Challenging Benchmark – MoRobtrol:**  
-  EvoMO includes a novel multiobjective robot control benchmark called **MoRobtrol**. This benchmark simulates a complex black-box environment, demonstrating the ability of tensorized EMO algorithms to generate diverse, high-quality solutions under demanding conditions.
+- **MoRobtrol Benchmark:**  
+  Includes **MoRobtrol**, a multiobjective robot control benchmark for testing tensorized EMO algorithms in challenging black-box environments.  
 
 ## Requirements
 
