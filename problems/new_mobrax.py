@@ -11,7 +11,7 @@ import torch.utils.dlpack
 from brax import envs
 from brax.io import html, image
 
-from evox import Problem, jit_class
+from evox.core import Problem, jit_class
 from evox.problems.neuroevolution.utils import get_vmap_model_state_forward
 
 from .obs_new import Obs_Normalizer

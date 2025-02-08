@@ -21,10 +21,10 @@ from evox.utils import ParamsAndVector
 
 import json
 # from tqdm import tqdm
-from evox.utils import TreeAndVector
-from evox.operators import non_dominated_sort
+# from evox.utils import TreeAndVector
+# from evox.operators import non_dominated_sort
 # from tensorboardX import SummaryWriter
-from evox.metrics import HV
+# from evox.metrics import HV
 
 class SimpleMLP(nn.Module):
     def __init__(self):
