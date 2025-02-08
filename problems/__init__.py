@@ -1,4 +1,4 @@
-from .mo_rob_trol import MoRobtrol
+# from .mo_rob_trol import MoRobtrol
 from .morobtrol import (
     mo_half_cheetah,
     mo_swimmer,
@@ -12,5 +12,6 @@ from .morobtrol import (
     mo_reacher,
     mo_pusher,
 )
+from .new_mobrax import MoBraxProblem
 
 from .obs_new import Obs_Normalizer

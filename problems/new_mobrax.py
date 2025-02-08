@@ -204,7 +204,7 @@ class MoBraxProblem(Problem):
             keys = jax.random.split(eval_key, self.num_episodes)
             keys = jnp.broadcast_to(keys, (pop_size, *keys.shape)).reshape(pop_size * self.num_episodes, -1)
             done = jnp.zeros((pop_size * self.num_episodes,), dtype=bool)
-            total_reward = jnp.zeros((pop_size * self.num_episodes,))
+            total_reward = jnp.zeros(((pop_size, self.num_obj) * self.num_episodes,))
         counter = 0
         brax_state = brax_reset(keys)
         if record_trajectory:
