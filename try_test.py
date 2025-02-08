@@ -79,6 +79,7 @@ problem = MoBraxProblem(
     num_episodes=3,
     pop_size=POP_SIZE,
     device=device,
+    backend="generalized",
 )
 
 # set an monitor, and it can record the top 3 best fitnesses
