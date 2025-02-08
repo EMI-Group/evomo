@@ -35,6 +35,7 @@ __brax_data__: Dict[
 
 @jit_class
 class MoBraxProblem(Problem):
+    # __constants__ = ['obs_norm', 'obs_param']
     """The Brax problem wrapper."""
 
     def __init__(
@@ -49,7 +50,7 @@ class MoBraxProblem(Problem):
         backend: str | None = None,
         device: torch.device | None = None,
         num_obj: int = 1,
-        obs_norm: Obs_Normalizer = None,
+        # obs_norm: Obs_Normalizer = None,
     ):
         """Construct a Brax-based problem.
         Firstly, you need to define a policy model.
@@ -140,14 +141,14 @@ class MoBraxProblem(Problem):
         self.pop_size = pop_size
         self.rotate_key = rotate_key
         self.reduce_fn = reduce_fn
-
         self.num_obj = num_obj
-        if obs_norm is None:
-            self.obs_norm = Obs_Normalizer(observation_shape=0, useless=True)
-        else:
-            self.obs_norm = obs_norm
-        self.obs_param=self.obs_norm.generate_init_params()
-        self.valid_mask = jnp.ones((self.max_episode_length, pop_size))
+
+        # if obs_norm is None:
+        #     self.obs_norm = Obs_Normalizer(observation_shape=0, useless=True)
+        # else:
+        #     self.obs_norm = obs_norm
+        # self.obs_param=self.obs_norm.generate_init_params()
+        # self.valid_mask = jnp.ones((self.max_episode_length, pop_size))
 
     def evaluate(self, pop_params: Dict[str, nn.Parameter]) -> torch.Tensor:
         """Evaluate the final rewards of a population (batch) of model parameters.
@@ -163,7 +164,7 @@ class MoBraxProblem(Problem):
         rand_key = model_state.pop("key")
         # Brax environment evaluation
         model_state, rewards = self._evaluate_brax(model_state, rand_key, False)
-        rewards = self.reduce_fn(rewards, dim=-1)
+        # rewards = self.reduce_fn(rewards, dim=-1)
         # Update buffers
         self._vmap_model_buffers = {key: model_state[key] for key in self._vmap_model_buffers}
         # Return
@@ -204,7 +205,7 @@ class MoBraxProblem(Problem):
             keys = jax.random.split(eval_key, self.num_episodes)
             keys = jnp.broadcast_to(keys, (pop_size, *keys.shape)).reshape(pop_size * self.num_episodes, -1)
             done = jnp.zeros((pop_size * self.num_episodes,), dtype=bool)
-            total_reward = jnp.zeros(((pop_size, self.num_obj) * self.num_episodes,))
+            total_reward = jnp.zeros((pop_size * self.num_episodes, self.num_obj),)
         counter = 0
         brax_state = brax_reset(keys)
         if record_trajectory:
@@ -224,29 +225,32 @@ class MoBraxProblem(Problem):
                 )
                 action = action.view(pop_size * self.num_episodes, -1)
             
-            origin_obs = brax_state.obs
-            norm_obs = self.obs_norm.obs_normalize(origin_obs, self.obs_param)
-            brax_state = brax_state.replace(obs=norm_obs)
+            # origin_obs = brax_state.obs
+            # norm_obs = self.obs_norm.obs_normalize(origin_obs, self.obs_param)
+            # brax_state = brax_state.replace(obs=norm_obs)
 
             brax_state = brax_step(brax_state, to_jax_array(action))
             done = jnp.tile(brax_state.done[:, jnp.newaxis], (1, self.num_obj))
             reward = jnp.nan_to_num(brax_state.reward)
             total_reward += (1 - done) * reward
-            self.valid_mask = (1 - brax_state.done.ravel()) * self.valid_mask
+            # self.valid_mask = (1 - brax_state.done.ravel()) * self.valid_mask
             counter += 1
 
-            if not self.obs_norm._useless:
-                self.obs_param = self.obs_norm.norm_params_update(
-                    obs_buf=brax_state.obs, obs_mask=self.valid_mask, obs_params=self.obs_param)
+            # if not self.obs_norm._useless:
+            #     self.obs_param = self.obs_norm.norm_params_update(
+            #         obs_buf=brax_state.obs, obs_mask=self.valid_mask, obs_params=self.obs_param)
             if record_trajectory:
                 trajectory.append(brax_state.pipeline_state)
         # Return
+        total_reward = total_reward.reshape(pop_size, self.num_episodes, self.num_obj)
+        # 按 episode 维度取平均，得到最终每个个体的奖励，shape 为 (pop_size, self.num_obj)
+        total_reward = jnp.mean(total_reward, axis=1)
         model_state["key"] = from_jax_array(key)
         total_reward = from_jax_array(total_reward)
         if record_trajectory:
             return model_state, total_reward, trajectory
         else:
-            total_reward = total_reward.view(pop_size, self.num_episodes)
+            # total_reward = total_reward.view(pop_size, self.num_episodes)
             return model_state, total_reward
 
     @torch.jit.ignore

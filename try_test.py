@@ -7,9 +7,9 @@ if current_directory not in sys.path:
     sys.path.append(current_directory)
 
 from evox.workflows import StdWorkflow, EvalMonitor
-from evox.algorithms import PSO
+from evox.algorithms import PSO, NSGA2
 # from problems import MoRobtrol, Obs_Normalizer, MoBraxProblem
-from problems import MoBraxProblem
+from problems import MoBraxProblem, Obs_Normalizer
 from jax import random
 import jax
 import jax.numpy as jnp
@@ -37,6 +37,7 @@ class SimpleMLP(nn.Module):
         
 # Make sure that the model is on the same device, better to be on the GPU
 device = "cuda" if torch.cuda.is_available() else "cpu"
+device = "cpu"
 # Reset the random seed
 seed = 1234
 torch.manual_seed(seed)
@@ -48,22 +49,17 @@ model = SimpleMLP().to(device)
 adapter = ParamsAndVector(dummy_model=model)
 
 # Set the population size
-POP_SIZE = 1024
+POP_SIZE = 8
+OBJS = 2
 
-# Get the bound of the PSO algorithm
 model_params = dict(model.named_parameters())
 pop_center = adapter.to_vector(model_params)
 lower_bound = torch.full_like(pop_center, -5)
 upper_bound = torch.full_like(pop_center, 5)
 
-# params = model.init(random.PRNGKey(43), jnp.zeros((8,)))
-# adapter = TreeAndVector(params)
-# center = adapter.to_vector(params)
-# bounds = jnp.full_like(center, -5), jnp.full_like(center, 5)
-# algorithm = TensorNSGA3(*bounds, n_objs=2, pop_size=POP_SIZE, uniform_init=False, ),
-# Initialize the PSO, and you can also use any other algorithms
-algorithm = PSO(
+algorithm = NSGA2(
     pop_size=POP_SIZE,
+    n_objs=OBJS,
     lb=lower_bound,
     ub=upper_bound,
     device=device,
@@ -72,6 +68,7 @@ algorithm.setup()
 
 
 # Initialize the Brax problem
+obs_norm = Obs_Normalizer(observation_shape=8, useless=False)
 problem = MoBraxProblem(
     policy=model,
     env_name="mo_swimmer",
@@ -80,6 +77,8 @@ problem = MoBraxProblem(
     pop_size=POP_SIZE,
     device=device,
     backend="generalized",
+    num_obj=OBJS,
+    # obs_norm=obs_norm,
 )
 
 # set an monitor, and it can record the top 3 best fitnesses
