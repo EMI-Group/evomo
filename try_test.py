@@ -83,7 +83,7 @@ problem = MoBraxProblem(
 
 # set an monitor, and it can record the top 3 best fitnesses
 monitor = EvalMonitor(
-    topk=3,
+    # topk=3,
     device=device,
 )
 monitor.setup()
@@ -107,6 +107,6 @@ for i in range(max_generation):
     workflow.step()
 
 monitor = workflow.get_submodule("monitor")
-print(f"Top fitness: {monitor.get_best_fitness()}")
-best_params = adapter.to_params(monitor.get_best_solution())
-print(f"Best params: {best_params}")
+print(f"Solution history: {monitor.get_solution_history()}")
+# best_params = adapter.to_params(monitor.get_best_solution())
+print(f"Fitness history: {monitor.get_fitness_history()}")
