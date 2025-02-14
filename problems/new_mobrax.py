@@ -164,7 +164,7 @@ class MoBraxProblem(Problem):
         rand_key = model_state.pop("key")
         # Brax environment evaluation
         model_state, rewards = self._evaluate_brax(model_state, rand_key, False)
-        # rewards = self.reduce_fn(rewards, dim=-1)
+        rewards = self.reduce_fn(rewards, dim=1)
         # Update buffers
         self._vmap_model_buffers = {key: model_state[key] for key in self._vmap_model_buffers}
         # Return
@@ -244,7 +244,7 @@ class MoBraxProblem(Problem):
         # Return
         total_reward = total_reward.reshape(pop_size, self.num_episodes, self.num_obj)
         # 按 episode 维度取平均，得到最终每个个体的奖励，shape 为 (pop_size, self.num_obj)
-        total_reward = jnp.mean(total_reward, axis=1)
+        # total_reward = jnp.mean(total_reward, axis=1)
         model_state["key"] = from_jax_array(key)
         total_reward = from_jax_array(total_reward)
         if record_trajectory:
