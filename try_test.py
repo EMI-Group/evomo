@@ -50,7 +50,7 @@ adapter = ParamsAndVector(dummy_model=model)
 
 # Set the population size
 POP_SIZE = 8
-OBJS = 2
+OBJs = 2
 
 model_params = dict(model.named_parameters())
 pop_center = adapter.to_vector(model_params)
@@ -59,16 +59,19 @@ upper_bound = torch.full_like(pop_center, 5)
 
 algorithm = NSGA2(
     pop_size=POP_SIZE,
-    n_objs=OBJS,
+    n_objs=OBJs,
     lb=lower_bound,
     ub=upper_bound,
     device=device,
 )
 algorithm.setup()
 
+obs_norm = {"clip_val": 5.0,
+            "std_min": 1e-6,
+            "std_max": 1e6,}
 
 # Initialize the Brax problem
-obs_norm = Obs_Normalizer(observation_shape=8, useless=False)
+# obs_norm = Obs_Normalizer(observation_shape=8, useless=False)
 problem = MoBraxProblem(
     policy=model,
     env_name="mo_swimmer",
@@ -77,8 +80,10 @@ problem = MoBraxProblem(
     pop_size=POP_SIZE,
     device=device,
     backend="generalized",
-    num_obj=OBJS,
-    # obs_norm=obs_norm,
+    num_obj=OBJs,
+    observation_shape=8,
+    obs_norm=obs_norm,
+    useless=False,
 )
 
 # set an monitor, and it can record the top 3 best fitnesses
