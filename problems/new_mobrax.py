@@ -153,7 +153,8 @@ class MoBraxProblem(Problem):
         else:
             self.obs_norm = obs_norm
         self.obs_param = from_jax_array(jnp.zeros(1 + max(self.observation_shape, 1) * 2))
-        self.valid_mask = from_jax_array(jnp.ones((self.max_episode_length, pop_size)))
+        self.valid_mask = from_jax_array(jnp.ones((self.max_episode_length, pop_size * self.num_episodes)))
+        self.obs_buf = from_jax_array(jnp.zeros((self.max_episode_length, pop_size * self.num_episodes, self.observation_shape)))
         self.useless = useless
 
     def evaluate(self, pop_params: Dict[str, nn.Parameter]) -> torch.Tensor:
@@ -246,29 +247,30 @@ class MoBraxProblem(Problem):
               brax_state = brax_state.replace(obs=norm_obs)
 
             brax_state = brax_step(brax_state, to_jax_array(action))
+            self.obs_buf[counter] = from_jax_array(brax_state.obs)
             done = jnp.tile(brax_state.done[:, jnp.newaxis], (1, self.num_obj))
             reward = jnp.nan_to_num(brax_state.reward)
             total_reward += (1 - done) * reward
-            jax_vm = to_jax_array(self.valid_mask)
-            self.valid_mask = from_jax_array((1 - brax_state.done.ravel()) * jax_vm)
+            jax_vm = to_jax_array(self.valid_mask)[counter]
+            self.valid_mask[counter] = from_jax_array((1 - brax_state.done.ravel()) * jax_vm)
             counter += 1
 
             if not self.useless:
-                obs_buf = brax_state.obs
+                obs_b = to_jax_array(self.obs_buf)
                 # obs_mas = to_jax_array(self.valid_mask)
                 obs_p = to_jax_array(self.obs_param)
                 obs_step = obs_p[0]
                 run_var, run_mean = jnp.split(obs_p[1:], 2)
                 new_mask = to_jax_array(self.valid_mask)
-                if new_mask.ndim != obs_buf.ndim:
+                if new_mask.ndim != obs_b.ndim:
                     new_mask = new_mask.reshape(
-                        new_mask.shape + (1,) * (obs_buf.ndim - new_mask.ndim)
+                        new_mask.shape + (1,) * (obs_b.ndim - new_mask.ndim)
                     )
                 new_total_step = obs_step + jnp.sum(new_mask)
 
-                old_mean = (obs_buf - run_mean) * new_mask
+                old_mean = (obs_b - run_mean) * new_mask
                 new_mean = run_mean + jnp.sum(old_mean / new_total_step, axis=(0, 1))
-                temp_new_mean = (obs_buf - new_mean) * new_mask
+                temp_new_mean = (obs_b - new_mean) * new_mask
                 new_var = run_var + jnp.sum(old_mean * temp_new_mean, axis=(0, 1))
 
                 self.obs_param = from_jax_array(jnp.concatenate([jnp.ones(1) * new_total_step, new_var, new_mean]))
