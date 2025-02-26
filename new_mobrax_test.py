@@ -1,30 +1,11 @@
-# from algorithms import TensorHypE, TensorNSGA3, MORandom, TensorMOEAD
-import os
-import sys
-
-current_directory = os.getcwd()
-if current_directory not in sys.path:
-    sys.path.append(current_directory)
-
 from evox.workflows import StdWorkflow, EvalMonitor
-from evox.algorithms import PSO, NSGA2
-# from problems import MoRobtrol, Obs_Normalizer, MoBraxProblem
-from problems import MoBraxProblem, Obs_Normalizer
-from jax import random
-import jax
-import jax.numpy as jnp
+from evox.algorithms import NSGA2
+from problems import MoBraxProblem
 import time
-# from flax import linen as nn
 import torch
 import torch.nn as nn
 from evox.utils import ParamsAndVector
 
-import json
-# from tqdm import tqdm
-# from evox.utils import TreeAndVector
-# from evox.operators import non_dominated_sort
-# from tensorboardX import SummaryWriter
-# from evox.metrics import HV
 
 class SimpleMLP(nn.Module):
     def __init__(self):
@@ -37,7 +18,8 @@ class SimpleMLP(nn.Module):
         
 # Make sure that the model is on the same device, better to be on the GPU
 device = "cuda" if torch.cuda.is_available() else "cpu"
-device = "cpu"
+# device = "cpu"
+
 # Reset the random seed
 seed = 1234
 torch.manual_seed(seed)
@@ -71,7 +53,6 @@ obs_norm = {"clip_val": 5.0,
             "std_max": 1e6,}
 
 # Initialize the Brax problem
-# obs_norm = Obs_Normalizer(observation_shape=8, useless=False)
 problem = MoBraxProblem(
     policy=model,
     env_name="mo_swimmer",
@@ -88,7 +69,6 @@ problem = MoBraxProblem(
 
 # set an monitor, and it can record the top 3 best fitnesses
 monitor = EvalMonitor(
-    # topk=3,
     device=device,
 )
 monitor.setup()
@@ -105,13 +85,15 @@ workflow.setup(
 # Set the maximum number of generations
 max_generation = 50
 
+times = []
+start_time = time.perf_counter()
 # Run the workflow
 for i in range(max_generation):
     if i % 10 == 0:
         print(f"Generation {i}")
     workflow.step()
+    times.append(time.perf_counter() - start_time)
 
 monitor = workflow.get_submodule("monitor")
-print(f"Solution history: {monitor.get_solution_history()}")
-# best_params = adapter.to_params(monitor.get_best_solution())
+print(f"Time history: {times}")
 print(f"Fitness history: {monitor.get_fitness_history()}")
