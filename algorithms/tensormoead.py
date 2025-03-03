@@ -158,17 +158,13 @@ class TensorMOEAD(Algorithm):
         z_max = jnp.max(pop_obj, axis=0)
 
         sub_pop_indices = jnp.arange(0, self.pop_size)
+        update_mask = jnp.zeros((self.pop_size, ), dtype=bool)
 
         def body(ind_p, ind_obj):
             g_old = self.aggregate_func1(pop_obj[ind_p], w[ind_p], z_min, z_max)
-            g_new = self.aggregate_func1(
-                jnp.tile(ind_obj, (self.n_neighbor, 1)), w[ind_p], z_min, z_max
-            )
-
-            neighbor_indices = jnp.where(g_old > g_new, ind_p, -1)
-            sub = sub_pop_indices.at[neighbor_indices].set(
-                jnp.where(neighbor_indices == -1, sub_pop_indices[neighbor_indices], -1)
-            )
+            g_new = self.aggregate_func1(ind_obj, w[ind_p], z_min, z_max)
+            temp_mask = update_mask.at[ind_p].set(g_old > g_new)
+            sub = jnp.where(temp_mask, -1, sub_pop_indices)
             return sub
 
         indices_cube = jax.vmap(body, in_axes=(0, 0))(neighbor, obj)

@@ -1,6 +1,6 @@
 from evox import workflows, problems
 from evox.metrics import IGD
-from algorithms import TensorHypE
+from algorithms import TensorHypE, TensorMOEAD
 import jax
 import jax.numpy as jnp
 import time
@@ -27,12 +27,12 @@ def run_moea(algorithm, key):
 
 
 if __name__ == "__main__":
-    print("TensorHypE")
+    print("TensorMOEAD")
 
     lb = jnp.full(shape=(12,), fill_value=0)
     ub = jnp.full(shape=(12,), fill_value=1)
 
-    algorithm = TensorHypE(
+    algorithm = TensorMOEAD(
         lb=lb,
         ub=ub,
         n_objs=3,
