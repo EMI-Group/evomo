@@ -58,12 +58,12 @@ EvoMO is a GPU-accelerated library for evolutionary multiobjective optimization 
 
 ## Examples
 
-Below is a basic example demonstrating how one might utilize the tensorized HypE algorithm within EvoMO. 
+Below is a basic example demonstrating how one might utilize the tensorized HypE algorithm within EvoMO.
 
 ```python
 from evox import workflows, problems
 from evox.metrics import IGD
-from algorithms import TensorHypE
+from legacy.algorithms import TensorHypE
 import jax
 import jax.numpy as jnp
 import time

@@ -1,6 +1,6 @@
 from evox import workflows, problems
 from evox.metrics import IGD
-from algorithms import TensorHypE, TensorMOEAD
+from legacy.algorithms import TensorMOEAD
 import jax
 import jax.numpy as jnp
 import time

@@ -1,6 +1,6 @@
-from algorithms import TensorHypE, TensorNSGA3, MORandom, TensorMOEAD
+from legacy.algorithms import TensorHypE, TensorNSGA3, MORandom, TensorMOEAD
 from evox.workflows import StdWorkflow
-from problems import MoRobtrol, Obs_Normalizer
+from legacy.problems import MoRobtrol, Obs_Normalizer
 from jax import random
 import jax
 import jax.numpy as jnp

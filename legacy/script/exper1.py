@@ -4,7 +4,7 @@ import os
 # os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 from evox import problems
 from evox.workflows import StdWorkflow
-from algorithms import MOEAD, HypE, NSGA3, TensorMOEAD, TensorHypE, TensorNSGA3
+from legacy.algorithms import MOEAD, HypE, NSGA3, TensorMOEAD, TensorHypE, TensorNSGA3
 from jax import random
 import jax
 import jax.numpy as jnp
