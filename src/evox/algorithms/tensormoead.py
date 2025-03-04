@@ -3,12 +3,11 @@ from typing import Callable, Optional
 
 import torch
 
-from evox.core import Algorithm, Mutable
+from evox.core import Algorithm, Mutable, vmap
 from evox.operators.crossover import simulated_binary_half
 from evox.operators.mutation import polynomial_mutation
-from evox.utils import clamp
 from evox.operators.sampling import uniform_sampling
-from evox.core import vmap
+from evox.utils import clamp
 
 
 def pbi(f, w, z):
@@ -153,7 +152,6 @@ class TensorMOEAD(Algorithm):
         off_fit = self.evaluate(offspring)
 
         self.z = torch.min(self.z, torch.min(off_fit, dim=0)[0])
-        z_max = torch.max(self.fit, dim=0)[0]
 
         sub_pop_indices = torch.arange(0, self.pop_size)
         update_mask = torch.zeros((self.pop_size,), dtype=torch.bool)
