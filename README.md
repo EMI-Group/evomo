@@ -48,12 +48,9 @@ EvoMO is a GPU-accelerated library for evolutionary multiobjective optimization 
 
 ## Requirements
 
-- Python 3.12 or later
-- evox (version == 0.9.0)
-- jax (version >= 0.4.16)
-- jaxlib (version >= 0.3.0)
-- brax (version == 0.10.3)
-- flax
+- Python 3.10 or later
+- evox (version >= 1.1.0)
+- torch (version >= 2.5.0)
 - Visualization tools: plotly, pandas
 
 ## Examples
