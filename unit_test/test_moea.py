@@ -2,11 +2,10 @@ from unittest import TestCase
 
 import torch
 
-from evox.algorithms import MOEAD, NSGA2, NSGA3, RVEA, HypE
+from evox.algorithms import MOEAD, NSGA2, NSGA3, RVEA, HypE, TensorMOEAD
 from evox.core import Algorithm, use_state, vmap
 from evox.problems.numerical import DTLZ2
 from evox.workflows import StdWorkflow
-from src.evox.algorithms import TensorMOEAD
 
 # torch.set_default_device("cuda" if torch.cuda.is_available() else "cpu")
 
