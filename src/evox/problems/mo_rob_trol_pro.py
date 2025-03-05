@@ -1,4 +1,4 @@
-__all__ = ["MoBraxProblem"]
+__all__ = ["MoRobtrolPro"]
 
 import weakref
 from typing import Callable, Dict, Tuple
@@ -34,7 +34,7 @@ __brax_data__: Dict[
 
 
 @jit_class
-class MoBraxProblem(Problem):
+class MoRobtrolPro(Problem):
     # __constants__ = ['obs_norm', 'obs_param']
     """The Brax problem wrapper."""
 

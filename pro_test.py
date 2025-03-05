@@ -1,6 +1,6 @@
 from evox.workflows import StdWorkflow, EvalMonitor
 from evox.algorithms import NSGA2
-from problems import MoBraxProblem
+from src.evox.problems import MoRobtrolPro
 import time
 import torch
 import torch.nn as nn
@@ -53,7 +53,7 @@ obs_norm = {"clip_val": 5.0,
             "std_max": 1e6,}
 
 # Initialize the Brax problem
-problem = MoBraxProblem(
+problem = MoRobtrolPro(
     policy=model,
     env_name="mo_swimmer",
     max_episode_length=1000,
