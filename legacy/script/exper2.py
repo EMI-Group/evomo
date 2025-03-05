@@ -1,6 +1,6 @@
 from evox import problems, metrics
-from evox.workflows import StdWorkflow, NonJitWorkflow
-from algorithms import MOEAD, HypE, NSGA3, TensorMOEAD, TensorHypE, TensorNSGA3
+from evox.workflows import StdWorkflow
+from legacy.algorithms import MOEAD, HypE, NSGA3, TensorMOEAD, TensorHypE, TensorNSGA3
 from jax import random
 import jax
 import jax.numpy as jnp

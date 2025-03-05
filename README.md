@@ -48,68 +48,42 @@ EvoMO is a GPU-accelerated library for evolutionary multiobjective optimization 
 
 ## Requirements
 
-- Python 3.12 or later
-- evox (version == 0.9.0)
-- jax (version >= 0.4.16)
-- jaxlib (version >= 0.3.0)
-- brax (version == 0.10.3)
-- flax
+- Python 3.10 or later
+- evox (version >= 1.1.0)
+- torch (version >= 2.5.0)
 - Visualization tools: plotly, pandas
 
 ## Examples
 
-Below is a basic example demonstrating how one might utilize the tensorized HypE algorithm within EvoMO. 
+Below is a basic example demonstrating how one might utilize the tensorized HypE algorithm within EvoMO.
 
 ```python
-from evox import workflows, problems
-from evox.metrics import IGD
-from algorithms import TensorHypE
-import jax
-import jax.numpy as jnp
 import time
-
-
-def run_moea(algorithm, key):
-    problem = problems.numerical.DTLZ2(m=3)
-    workflow = workflows.StdWorkflow(
-        algorithm=algorithm,
-        problem=problem,
-    )
-
-    state = workflow.init(key)
-
-    true_pf = problem.pf()
-    igd = IGD(true_pf)
-
-    for i in range(100):
-        print("Generation", i + 1)
-        key, subkey = jax.random.split(key)
-        state = workflow.step(state)
-        fit = state.get_child_state("algorithm").fitness
-        print("IGD:", igd(fit))
-
+import torch
+from evox.workflows import StdWorkflow
+from evox.algorithms import TensorMOEAD
+from evox.problems.numerical import DTLZ2
+from evox.metrics import igd
 
 if __name__ == "__main__":
-    print("TensorHypE")
+    torch.set_default_device("cuda" if torch.cuda.is_available() else "cpu")
 
-    lb = jnp.full(shape=(12,), fill_value=0)
-    ub = jnp.full(shape=(12,), fill_value=1)
+    algo = TensorMOEAD(pop_size=100, n_objs=3, lb=-torch.zeros(12), ub=torch.ones(12))
+    prob = DTLZ2(m=3)
+    pf = prob.pf()
+    workflow = StdWorkflow(algo, prob)
+    workflow.init_step()
+    jit_state_step = torch.compile(workflow.step)
 
-    algorithm = TensorHypE(
-        lb=lb,
-        ub=ub,
-        n_objs=3,
-        pop_size=100,
-    )
+    t = time.time()
+    for i in range(100):
+        print(i)
+        jit_state_step()
+        fit = workflow.algorithm.fit
+        fit = fit[~torch.any(torch.isnan(fit), dim=1)]
+        print(f"Generation {i + 1} IGD: {igd(fit, pf)}")
 
-    key = jax.random.PRNGKey(42)
-
-    for i in range(1):
-        start = time.time()
-        run_moea(algorithm, key)
-        end = time.time()
-        print("Time:", end - start)
-        key, subkey = jax.random.split(key)
+    print(f"Total time: {time.time() - t} seconds")
 ```
 
 ## Community & Support

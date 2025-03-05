@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "evomo"
+version = "0.1.0"
+authors = [
+  { name = "Zhenyu Liang", email = "zhenyuliang97@gmail.com" },
+]
+description = "evomo"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: GNU General Public License v3.0",
+  "Intended Audience :: Science/Research",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+  "torch >= 2.5.0",
+  "evox >= 1.1.0",
+]
+
+[project.optional-dependencies]
+vis = [
+  "plotly >= 5.0.0",
+  "pandas >= 2.0.0",
+]
+
+neuroevolution = [
+  "torchvision >= 0.16.0",
+  "brax >= 0.12.0",
+]
+
+test = [
+  "torchvision >= 0.16.0",
+  "brax >= 0.12.0",
+  "plotly >= 5.0.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/EMI-Group/evomo"
+"Bug Tracker" = "https://github.com/EMI-Group/evomo/issues"
+
+[tool.ruff]
+exclude = ["legacy/*"]
+# Allow lines to be as long as 128. (default: 88)
+line-length = 128
+# Use `\n` line endings for all files
+format.line-ending = "lf"
+# F: Pyflakes / E, W: pycodestyle / I: isort / NPY: numpy
+lint.select = ["F", "E", "W", "I", "NPY"]
+lint.ignore = ["E501"] # Ignore line length error
+lint.per-file-ignores = {"*.ipynb" = ["I001"]}
