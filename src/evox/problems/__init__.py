@@ -13,7 +13,6 @@ __all__ = [
   "mo_pusher",
 ]
 
-from .mo_rob_trol_pro import MoRobtrolPro
 from .morobtrol import (
   mo_ant,
   mo_half_cheetah,
@@ -27,3 +26,4 @@ from .morobtrol import (
   mo_swimmer,
   mo_walker2d,
 )
+from .morobtrol_pro import MoRobtrolPro
