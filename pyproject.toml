@@ -21,7 +21,7 @@ classifiers = [
 
 dependencies = [
   "torch >= 2.5.0",
-  "git+https://github.com/EMI-Group/evox.git",
+  "evox >= 1.1.0",
 ]
 
 [project.optional-dependencies]
