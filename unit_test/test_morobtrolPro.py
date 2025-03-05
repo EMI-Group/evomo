@@ -7,10 +7,10 @@ import unittest
 
 import torch
 import torch.nn as nn
-
 from evox.algorithms import NSGA2
 from evox.utils import ParamsAndVector
 from evox.workflows import EvalMonitor, StdWorkflow
+
 from src.evox.problems import MoRobtrolPro
 
 

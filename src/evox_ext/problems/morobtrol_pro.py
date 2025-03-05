@@ -10,7 +10,6 @@ import torch.nn as nn
 import torch.utils.dlpack
 from brax import envs
 from brax.io import html, image
-
 from evox.core import Problem, jit_class
 from evox.problems.neuroevolution.utils import get_vmap_model_state_forward
 

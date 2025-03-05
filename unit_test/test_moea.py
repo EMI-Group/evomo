@@ -1,7 +1,6 @@
 from unittest import TestCase
 
 import torch
-
 from evox.algorithms import TensorMOEAD
 from evox.core import Algorithm, use_state, vmap
 from evox.problems.numerical import DTLZ2
