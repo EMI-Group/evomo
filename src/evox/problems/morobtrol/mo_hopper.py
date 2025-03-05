@@ -1,5 +1,5 @@
-from brax.envs.hopper import Hopper
 import jax.numpy as jnp
+from brax.envs.hopper import Hopper
 
 
 class MoHopper(Hopper):

@@ -1,7 +1,7 @@
 import jax
+import jax.numpy as jnp
 from brax.envs.ant import Ant
 from brax.envs.base import State
-import jax.numpy as jnp
 
 
 class MoAnt(Ant):

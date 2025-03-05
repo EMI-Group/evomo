@@ -1,10 +1,12 @@
-from evox.workflows import StdWorkflow, EvalMonitor
-from evox.algorithms import NSGA2
-from src.evox.problems import MoRobtrolPro
 import time
+
 import torch
 import torch.nn as nn
+
+from evox.algorithms import NSGA2
 from evox.utils import ParamsAndVector
+from evox.workflows import EvalMonitor, StdWorkflow
+from src.evox.problems import MoRobtrolPro
 
 
 class SimpleMLP(nn.Module):
@@ -15,10 +17,10 @@ class SimpleMLP(nn.Module):
     def forward(self, x):
         x = self.features(x)
         return torch.tanh(x)
-        
+
 # Make sure that the model is on the same device, better to be on the GPU
 device = "cuda" if torch.cuda.is_available() else "cpu"
-# device = "cpu"
+device = "cpu"
 
 # Reset the random seed
 seed = 1234
@@ -83,13 +85,13 @@ workflow.setup(
 )
 
 # Set the maximum number of generations
-max_generation = 50
+max_generation = 1
 
 times = []
 start_time = time.perf_counter()
 # Run the workflow
 for i in range(max_generation):
-    if i % 10 == 0:
+    if i % 1 == 0:
         print(f"Generation {i}")
     workflow.step()
     times.append(time.perf_counter() - start_time)

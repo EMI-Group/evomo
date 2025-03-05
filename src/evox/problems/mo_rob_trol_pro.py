@@ -217,7 +217,7 @@ class MoRobtrolPro(Problem):
         brax_state = brax_reset(keys)
         if record_trajectory:
             trajectory = [brax_state.pipeline_state]
-        while counter < self.max_episode_length and ~done.all():
+        while (counter < self.max_episode_length) and ~done.all():
             if record_trajectory:
                 model_state, action = self._model_forward(
                     model_state,
@@ -231,7 +231,7 @@ class MoRobtrolPro(Problem):
                     from_jax_array(brax_state.obs).view(pop_size, self.num_episodes, -1),
                 )
                 action = action.view(pop_size * self.num_episodes, -1)
-            
+
             if not self.useless:
               origin_obs = brax_state.obs
               obs_par = to_jax_array(self.obs_param)

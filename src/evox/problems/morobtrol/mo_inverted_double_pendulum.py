@@ -1,6 +1,6 @@
+import jax.numpy as jnp
 from brax import base
 from brax.envs.inverted_double_pendulum import InvertedDoublePendulum
-import jax.numpy as jnp
 
 
 class MoInvertedDoublePendulum(InvertedDoublePendulum):
@@ -22,20 +22,16 @@ class MoInvertedDoublePendulum(InvertedDoublePendulum):
         """Run one timestep of the environment's dynamics."""
         pipeline_state = self.pipeline_step(state.pipeline_state, action)
 
-        tip = base.Transform.create(pos=jnp.array([0.0, 0.0, 0.6])).do(
-            pipeline_state.x.take(2)
-        )
+        tip = base.Transform.create(pos=jnp.array([0.0, 0.0, 0.6])).do(pipeline_state.x.take(2))
         x, _, y = tip.pos
-        dist_penalty = 0.01 * x ** 2 + (y - 2) ** 2
+        dist_penalty = 0.01 * x**2 + (y - 2) ** 2
         v1, v2 = pipeline_state.qd[1:]
-        vel_penalty = 1e-3 * v1 ** 2 + 5e-3 * v2 ** 2
+        vel_penalty = 1e-3 * v1**2 + 5e-3 * v2**2
         alive_bonus = 10
 
         obs = self._get_obs(pipeline_state)
         # reward = alive_bonus - dist_penalty - vel_penalty
         done = jnp.where(y <= 1, jnp.float32(1), jnp.float32(0))
 
-        mo_reward = jnp.array([alive_bonus-dist_penalty, alive_bonus-vel_penalty])
-        return state.replace(
-            pipeline_state=pipeline_state, obs=obs, reward=mo_reward, done=done
-        )
+        mo_reward = jnp.array([alive_bonus - dist_penalty, alive_bonus - vel_penalty])
+        return state.replace(pipeline_state=pipeline_state, obs=obs, reward=mo_reward, done=done)
