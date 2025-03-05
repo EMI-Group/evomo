@@ -1,5 +1,3 @@
-__all__ = ["MoRobtrolPro"]
-
 import weakref
 from typing import Callable, Dict, Tuple
 
@@ -10,7 +8,7 @@ import torch.nn as nn
 import torch.utils.dlpack
 from brax import envs
 from brax.io import html, image
-from evox.core import Problem, jit_class
+from evox.core import Problem
 from evox.problems.neuroevolution.utils import get_vmap_model_state_forward
 
 # from .obs_new import Obs_Normalizer
@@ -32,8 +30,7 @@ __brax_data__: Dict[
 ] = {}  # Cannot be a weakref.WeakValueDictionary because the values are only stored here
 
 
-@jit_class
-class MoRobtrolPro(Problem):
+class MoRobtrol(Problem):
     # __constants__ = ['obs_norm', 'obs_param']
     """The Brax problem wrapper."""
 
@@ -79,7 +76,7 @@ class MoRobtrolPro(Problem):
         This problem does NOT support HPO wrapper (`problems.hpo_wrapper.HPOProblemWrapper`), i.e., the workflow containing this problem CANNOT be vmapped.
 
         ## Examples
-        >>> from evox import problems
+        >>> from evox_ext import problems
         >>> problem = problems.neuroevolution.Brax(
         ...    env_name="swimmer",
         ...    policy=model,

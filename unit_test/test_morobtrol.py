@@ -1,8 +1,3 @@
-import os
-import sys
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
 import unittest
 
 import torch
@@ -11,7 +6,7 @@ from evox.algorithms import NSGA2
 from evox.utils import ParamsAndVector
 from evox.workflows import EvalMonitor, StdWorkflow
 
-from src.evox.problems import MoRobtrolPro
+from evox_ext.problems import MoRobtrol
 
 
 class SimpleMLP(nn.Module):
@@ -55,7 +50,7 @@ class TestProTest(unittest.TestCase):
 
         self.obs_norm = {"clip_val": 5.0, "std_min": 1e-6, "std_max": 1e6}
 
-        self.problem = MoRobtrolPro(
+        self.problem = MoRobtrol(
             policy=self.model,
             env_name="mo_swimmer",
             max_episode_length=1000,

@@ -1,6 +1,6 @@
 from brax.envs import register_environment
 
-from src.evox.problems.morobtrol import (
+from evox_ext.problems.morobtrol import (
     mo_ant,
     mo_half_cheetah,
     mo_hopper,
