@@ -1,7 +1,7 @@
 import jax
-from brax.envs.walker2d import Walker2d
-from brax.envs.base import State
 import jax.numpy as jnp
+from brax.envs.base import State
+from brax.envs.walker2d import Walker2d
 
 
 class MoWalker2d(Walker2d):

@@ -1,14 +1,18 @@
 from brax.envs import register_environment
-from legacy.problems.morobtrol import (
+
+from src.evox.problems.morobtrol import (
+    mo_ant,
     mo_half_cheetah,
     mo_hopper,
     mo_hopper_m3,
     mo_humanoid,
-    mo_ant,
+    mo_humanoidstandup,
+    mo_inverted_double_pendulum,
+    mo_pusher,
     mo_reacher,
+    mo_swimmer,
+    mo_walker2d,
 )
-from legacy.problems.morobtrol import mo_humanoidstandup, mo_inverted_double_pendulum, mo_pusher, mo_swimmer, \
-    mo_walker2d
 
 register_environment("mo_halfcheetah", mo_half_cheetah.MoHalfcheetah)
 register_environment("mo_hopper_m2", mo_hopper.MoHopper)

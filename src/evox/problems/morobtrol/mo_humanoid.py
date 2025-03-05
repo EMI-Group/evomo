@@ -1,7 +1,7 @@
 import jax
-from brax.envs.humanoid import Humanoid
-from brax.envs.base import State
 import jax.numpy as jnp
+from brax.envs.base import State
+from brax.envs.humanoid import Humanoid
 
 
 class MoHumanoid(Humanoid):
