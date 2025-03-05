@@ -1,5 +1,5 @@
-from brax.envs.swimmer import Swimmer
 import jax.numpy as jnp
+from brax.envs.swimmer import Swimmer
 
 
 class MoSwimmer(Swimmer):

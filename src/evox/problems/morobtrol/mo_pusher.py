@@ -1,6 +1,5 @@
-import brax
-from brax.envs.pusher import Pusher
 import jax.numpy as jnp
+from brax.envs.pusher import Pusher
 
 
 class MoPusher(Pusher):
