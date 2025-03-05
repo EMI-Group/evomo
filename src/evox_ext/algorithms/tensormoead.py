@@ -2,7 +2,6 @@ import math
 from typing import Callable, Optional
 
 import torch
-
 from evox.core import Algorithm, Mutable, vmap
 from evox.operators.crossover import simulated_binary_half
 from evox.operators.mutation import polynomial_mutation
