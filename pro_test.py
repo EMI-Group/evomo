@@ -6,7 +6,11 @@ import torch.nn as nn
 from evox.algorithms import NSGA2
 from evox.utils import ParamsAndVector
 from evox.workflows import EvalMonitor, StdWorkflow
-from src.evox.problems import MoRobtrolPro
+from src.evox.problems import MoRobtrolProTP
+
+# import sys
+# sys.stdout.reconfigure(encoding='utf-8')
+# sys.stderr.reconfigure(encoding='utf-8')
 
 
 class SimpleMLP(nn.Module):
@@ -55,14 +59,13 @@ obs_norm = {"clip_val": 5.0,
             "std_max": 1e6,}
 
 # Initialize the Brax problem
-problem = MoRobtrolPro(
+problem = MoRobtrolProTP(
     policy=model,
     env_name="mo_swimmer",
     max_episode_length=1000,
     num_episodes=3,
     pop_size=POP_SIZE,
     device=device,
-    backend="generalized",
     num_obj=OBJs,
     observation_shape=8,
     obs_norm=obs_norm,
@@ -73,19 +76,18 @@ problem = MoRobtrolPro(
 monitor = EvalMonitor(
     device=device,
 )
-monitor.setup()
 
-workflow = StdWorkflow(opt_direction="max")
-workflow.setup(
+workflow = StdWorkflow(
     algorithm=algorithm,
     problem=problem,
-    solution_transform=adapter,
     monitor=monitor,
+    opt_direction="max",
+    solution_transform=adapter,
     device=device,
 )
 
 # Set the maximum number of generations
-max_generation = 1
+max_generation = 3
 
 times = []
 start_time = time.perf_counter()
