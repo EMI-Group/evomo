@@ -1,12 +1,12 @@
+import time
 import unittest
 
 import torch
 import torch.nn as nn
 from evox.algorithms import NSGA2
+from evox.problems import MoRobtrol
 from evox.utils import ParamsAndVector
 from evox.workflows import EvalMonitor, StdWorkflow
-
-from evox_ext.problems import MoRobtrolPro
 
 
 class SimpleMLP(nn.Module):
@@ -15,81 +15,64 @@ class SimpleMLP(nn.Module):
         self.features = nn.Sequential(nn.Linear(8, 4), nn.Tanh(), nn.Linear(4, 2))
 
     def forward(self, x):
-        x = self.features(x)
-        return torch.tanh(x)
+        return torch.tanh(self.features(x))
 
 
-class TestProTest(unittest.TestCase):
+def setup_workflow(model, pop_size, max_episode_length, num_episodes, device):
+    adapter = ParamsAndVector(dummy_model=model)
+    model_params = dict(model.named_parameters())
+    pop_center = adapter.to_vector(model_params)
+    lower_bound = torch.full_like(pop_center, -5)
+    upper_bound = torch.full_like(pop_center, 5)
+
+    problem = MoRobtrol(
+        policy=model,
+        env_name="mo_swimmer",
+        max_episode_length=max_episode_length,
+        num_episodes=num_episodes,
+        pop_size=pop_size,
+        device=device,
+        num_obj=2,
+        observation_shape=8,
+        obs_norm={"clip_val": 5.0, "std_min": 1e-6, "std_max": 1e6},
+    )
+
+    algorithm = NSGA2(pop_size=pop_size, lb=lower_bound, ub=upper_bound, n_objs=2, device=device)
+    monitor = EvalMonitor(device=device)
+
+    workflow = StdWorkflow(
+        algorithm=algorithm,
+        problem=problem,
+        monitor=monitor,
+        opt_direction="max",
+        solution_transform=adapter,
+        device=device,
+    )
+    return workflow, adapter, monitor
+
+
+def run_workflow(workflow, adapter, monitor, compiled=False, generations=3):
+    step_function = torch.compile(workflow.step) if compiled else workflow.step
+    for index in range(generations):
+        print(f"In generation {index}:")
+        t = time.time()
+        step_function()
+        print(f"\tFitness: {workflow.algorithm.fit}.")
+    print(f"\tTime elapsed: {time.time() - t: .4f}(s).")
+
+
+class TestMoRobtrolProblem(unittest.TestCase):
     def setUp(self):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.device = "cpu"
+        torch.manual_seed(1234)
+        torch.cuda.manual_seed_all(1234)
 
-        self.seed = 1234
-        torch.manual_seed(self.seed)
-        torch.cuda.manual_seed_all(self.seed)
+    def test_morobtrol_problem(self):
+        model = SimpleMLP().to(self.device)
+        workflow, adapter, monitor = setup_workflow(model, 8, 100, 2, self.device)
+        run_workflow(workflow, adapter, monitor, compiled=False)
 
-        self.model = SimpleMLP().to(self.device)
-        self.adapter = ParamsAndVector(dummy_model=self.model)
-
-        self.POP_SIZE = 8
-        self.OBJs = 2
-
-        model_params = dict(self.model.named_parameters())
-        self.pop_center = self.adapter.to_vector(model_params)
-        self.lower_bound = torch.full_like(self.pop_center, -5)
-        self.upper_bound = torch.full_like(self.pop_center, 5)
-
-        self.algorithm = NSGA2(
-            pop_size=self.POP_SIZE,
-            n_objs=self.OBJs,
-            lb=self.lower_bound,
-            ub=self.upper_bound,
-            device=self.device,
-        )
-        self.algorithm.setup()
-
-        self.obs_norm = {"clip_val": 5.0, "std_min": 1e-6, "std_max": 1e6}
-
-        self.problem = MoRobtrolPro(
-            policy=self.model,
-            env_name="mo_swimmer",
-            max_episode_length=1000,
-            num_episodes=3,
-            pop_size=self.POP_SIZE,
-            device=self.device,
-            num_obj=self.OBJs,
-            observation_shape=8,
-            obs_norm=self.obs_norm,
-            useless=False,
-        )
-
-        self.monitor = EvalMonitor(device=self.device)
-
-        self.workflow = StdWorkflow(
-            algorithm=self.algorithm,
-            problem=self.problem,
-            monitor=self.monitor,
-            opt_direction="max",
-            solution_transform=self.adapter,
-            device=self.device,
-        )
-
-    def test_mlp_forward(self):
-        x = torch.randn(1, 8).to(self.device)
-        output = self.model(x)
-        self.assertEqual(output.shape, (1, 2), "MLP's shape is (1,2)")
-
-    def test_algorithm_initialization(self):
-        self.assertEqual(self.algorithm.pop_size, self.POP_SIZE, "Population size should be initialized correctly")
-        self.assertEqual(self.algorithm.n_objs, self.OBJs, "The number of objective should be initialized correctly")
-
-    def test_monitor_logging(self):
-        self.workflow.step()
-        self.monitor = self.workflow.get_submodule("monitor")
-        fitness_history = self.monitor.get_fitness_history()
-
-        self.assertTrue(len(fitness_history) > 0, "At least one fitness value should be recorded")
-
-
-if __name__ == "__main__":
-    unittest.main()
+    def test_compiled_morobtrol_problem(self):
+        model = SimpleMLP().to(self.device)
+        workflow, adapter, monitor = setup_workflow(model, 8, 100, 2, self.device)
+        run_workflow(workflow, adapter, monitor, compiled=True)

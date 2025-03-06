@@ -1,5 +1,3 @@
-__all__ = ["MoRobtrolPro"]
-
 import copy
 from typing import Callable, Dict, Optional, Tuple
 
@@ -12,6 +10,7 @@ from brax import envs
 from brax.io import html, image
 from evox.core import Problem, use_state
 from evox.problems.neuroevolution.utils import get_vmap_model_state_forward
+from evox.utils import clamp
 
 
 # to_dlpack is not necessary for torch.Tensor and jax.Array
@@ -29,7 +28,7 @@ def from_jax_array(x: jax.Array, device: Optional[torch.device] = None) -> torch
     return torch.utils.dlpack.from_dlpack(x).to(device)
 
 
-class MoRobtrolPro(Problem):
+class MoRobtrol(Problem):
     """The Brax problem wrapper."""
 
     def __init__(
@@ -135,9 +134,9 @@ class MoRobtrolPro(Problem):
                             "std_max": 1e6,}
         else:
             self.obs_norm = obs_norm
-        self.obs_param = torch.zeros(1 + max(self.observation_shape, 1) * 2).to(self.device)
-        self.valid_mask = torch.ones((self.max_episode_length, pop_size * self.num_episodes)).to(self.device)
-        self.obs_buf = torch.zeros((self.max_episode_length, pop_size * self.num_episodes, self.observation_shape)).to(self.device)
+        self.obs_param = torch.zeros(1 + max(self.observation_shape, 1) * 2, device=device)
+        self.valid_mask = torch.ones((self.max_episode_length, pop_size * self.num_episodes), device=device)
+        self.obs_buf = torch.zeros((self.max_episode_length, pop_size * self.num_episodes, self.observation_shape), device=device)
         self.useless = useless
 
     # disable torch.compile for JAX code
@@ -196,8 +195,8 @@ class MoRobtrolPro(Problem):
                     run_var = run_var.view((self.observation_shape,))
                     run_mean = run_mean.view((self.observation_shape,))
                     variance = run_var / (obs_step + 1.0)
-                    variance = torch.clip(variance, self.obs_norm["std_min"], self.obs_norm["std_max"])
-                    norm_obs = torch.clip(
+                    variance = clamp(variance, self.obs_norm["std_min"], self.obs_norm["std_max"])
+                    norm_obs = clamp(
                       (origin_obs - run_mean) / torch.sqrt(variance), -self.obs_norm["clip_val"], self.obs_norm["clip_val"]
                     )
                     brax_state = brax_state.replace(obs=to_jax_array(norm_obs))
@@ -224,7 +223,7 @@ class MoRobtrolPro(Problem):
                 temp_new_mean = (self.obs_buf - new_mean) * self.valid_mask
                 new_var = run_var + torch.sum(old_mean * temp_new_mean, dim=(0, 1))
 
-                self.obs_param = torch.concatenate([torch.ones(1) * new_total_step, new_var, new_mean], dim=0)
+                self.obs_param = torch.concatenate([torch.ones(1, device=new_var.device) * new_total_step, new_var, new_mean], dim=0)
             if record_trajectory:
                 trajectory.append(brax_state.pipeline_state)
         # Return
