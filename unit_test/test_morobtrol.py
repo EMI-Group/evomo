@@ -6,7 +6,7 @@ from evox.algorithms import NSGA2
 from evox.utils import ParamsAndVector
 from evox.workflows import EvalMonitor, StdWorkflow
 
-from evox_ext.problems import MoRobtrol
+from evox_ext.problems import MoRobtrolPro
 
 
 class SimpleMLP(nn.Module):
@@ -50,14 +50,13 @@ class TestProTest(unittest.TestCase):
 
         self.obs_norm = {"clip_val": 5.0, "std_min": 1e-6, "std_max": 1e6}
 
-        self.problem = MoRobtrol(
+        self.problem = MoRobtrolPro(
             policy=self.model,
             env_name="mo_swimmer",
             max_episode_length=1000,
             num_episodes=3,
             pop_size=self.POP_SIZE,
             device=self.device,
-            backend="generalized",
             num_obj=self.OBJs,
             observation_shape=8,
             obs_norm=self.obs_norm,
@@ -65,14 +64,13 @@ class TestProTest(unittest.TestCase):
         )
 
         self.monitor = EvalMonitor(device=self.device)
-        self.monitor.setup()
 
-        self.workflow = StdWorkflow(opt_direction="max")
-        self.workflow.setup(
+        self.workflow = StdWorkflow(
             algorithm=self.algorithm,
             problem=self.problem,
-            solution_transform=self.adapter,
             monitor=self.monitor,
+            opt_direction="max",
+            solution_transform=self.adapter,
             device=self.device,
         )
 

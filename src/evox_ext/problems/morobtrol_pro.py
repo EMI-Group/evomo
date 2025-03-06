@@ -1,5 +1,7 @@
-import weakref
-from typing import Callable, Dict, Tuple
+__all__ = ["MoRobtrolPro"]
+
+import copy
+from typing import Callable, Dict, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
@@ -8,30 +10,26 @@ import torch.nn as nn
 import torch.utils.dlpack
 from brax import envs
 from brax.io import html, image
-from evox.core import Problem
+from evox.core import Problem, use_state
 from evox.problems.neuroevolution.utils import get_vmap_model_state_forward
-
-# from .obs_new import Obs_Normalizer
 
 
 # to_dlpack is not necessary for torch.Tensor and jax.Array
 # because they have a __dlpack__ method, which is called by their respective from_dlpack methods.
 def to_jax_array(x: torch.Tensor) -> jax.Array:
+    # When the torch has GPU support but the jax does not, we need to move the tensor to CPU first.
+    if x.device.type != "cpu" and jax.default_backend() == "cpu":
+        return jax.dlpack.from_dlpack(x.detach().cpu())
     return jax.dlpack.from_dlpack(x.detach())
 
 
-def from_jax_array(x: jax.Array) -> torch.Tensor:
-    return torch.utils.dlpack.from_dlpack(x)
+def from_jax_array(x: jax.Array, device: Optional[torch.device] = None) -> torch.Tensor:
+    if device is None:
+        device = torch.get_default_device()
+    return torch.utils.dlpack.from_dlpack(x).to(device)
 
 
-__brax_data__: Dict[
-    int,
-    Tuple[Callable[[jax.Array], envs.State], Callable[[envs.State, jax.Array], envs.State]],
-] = {}  # Cannot be a weakref.WeakValueDictionary because the values are only stored here
-
-
-class MoRobtrol(Problem):
-    # __constants__ = ['obs_norm', 'obs_param']
+class MoRobtrolPro(Problem):
     """The Brax problem wrapper."""
 
     def __init__(
@@ -40,6 +38,7 @@ class MoRobtrol(Problem):
         env_name: str,
         max_episode_length: int,
         num_episodes: int,
+        seed: int = None,
         pop_size: int | None = None,
         rotate_key: bool = True,
         reduce_fn: Callable[[torch.Tensor, int], torch.Tensor] = torch.mean,
@@ -63,6 +62,7 @@ class MoRobtrol(Problem):
         :param env_name: The environment name.
         :param max_episode_length: The maximum number of time steps of each episode.
         :param num_episodes: The number of episodes to evaluate for each individual.
+        :param seed: The seed used to create a PRNGKey for the brax environment. When None, randomly select one. Default to None.
         :param pop_size: The size of the population to be evaluated. If None, we expect the input to have a population size of 1.
         :param rotate_key: Indicates whether to rotate the random key for each iteration (default is True). <br/> If True, the random key will rotate after each iteration, resulting in non-deterministic and potentially noisy fitness evaluations. This means that identical policy weights may yield different fitness values across iterations. <br/> If False, the random key remains the same for all iterations, ensuring consistent fitness evaluations.
         :param reduce_fn: The function to reduce the rewards of multiple episodes. Default to `torch.mean`.
@@ -73,10 +73,11 @@ class MoRobtrol(Problem):
         The initial key is obtained from `torch.random.get_rng_state()`.
 
         ## Warning
-        This problem does NOT support HPO wrapper (`problems.hpo_wrapper.HPOProblemWrapper`), i.e., the workflow containing this problem CANNOT be vmapped.
+        This problem does NOT support HPO wrapper (`problems.hpo_wrapper.HPOProblemWrapper`) out-of-box, i.e., the workflow containing this problem CANNOT be vmapped.
+        *However*, by setting `pop_size` to the multiplication of inner population size and outer population size, you can still use this problem in a HPO workflow.
 
         ## Examples
-        >>> from evox_ext import problems
+        >>> from evox import problems
         >>> problem = problems.neuroevolution.Brax(
         ...    env_name="swimmer",
         ...    policy=model,
@@ -97,97 +98,64 @@ class MoRobtrol(Problem):
         )
         vmap_env = envs.wrappers.training.VmapWrapper(env)
         # Compile Brax environment
-        brax_reset = jax.jit(env.reset)
-        brax_step = jax.jit(env.step)
-        vmap_brax_reset = jax.jit(vmap_env.reset)
-        vmap_brax_step = jax.jit(vmap_env.step)
-        global __brax_data__
-        __brax_data__[id(self)] = (brax_reset, brax_step, vmap_brax_reset, vmap_brax_step, env.sys)
-        weakref.finalize(self, __brax_data__.pop, id(self), None)
-        self._index_id_ = id(self)
+        self.brax_reset = jax.jit(env.reset)
+        self.brax_step = jax.jit(env.step)
+        self.vmap_brax_reset = jax.jit(vmap_env.reset)
+        self.vmap_brax_step = jax.jit(vmap_env.step)
         # JIT stateful model forward
-        dummy_obs = torch.empty(pop_size, num_episodes, vmap_env.observation_size, device=device)
-        dummy_single_obs = torch.empty(env.observation_size, device=device)
-        non_vmap_result, vmap_result = get_vmap_model_state_forward(
+        self.vmap_init_state, self.vmap_state_forward = get_vmap_model_state_forward(
             model=policy,
             pop_size=pop_size,
-            dummy_inputs=dummy_obs,
-            dummy_single_inputs=dummy_single_obs,
-            check_output=lambda x: (
-                isinstance(x, torch.Tensor)
-                and x.ndim == 3
-                and x.shape[0] == pop_size
-                and x.shape[1] == num_episodes
-                and x.shape[2] == vmap_env.action_size
-            ),
-            check_single_output=lambda x: (isinstance(x, torch.Tensor) and x.ndim == 1 and x.shape[0] == env.action_size),
+            in_dims=(0, 0),
             device=device,
-            vmap_in_dims=(0, 0),
-            get_non_vmap=True,
         )
-        model_init_state, jit_state_forward, dummy_single_logits, param_to_state_key_map, model_buffer = non_vmap_result
-        vmap_model_init_state, jit_vmap_state_forward, dummy_vmap_logits, _, vmap_model_buffers = vmap_result
-        self._jit_state_forward = jit_state_forward
-        self._jit_vmap_state_forward = jit_vmap_state_forward
-        self._param_to_state_key_map = param_to_state_key_map
-        vmap_model_buffers["key"] = torch.random.get_rng_state().view(dtype=torch.uint32)[:2].detach().clone().to(device=device)
-        self._vmap_model_buffers = vmap_model_buffers
-        self._model_buffers = model_buffer
-        # Set constants
-        self.max_episode_length = max_episode_length
-        self.num_episodes = num_episodes
-        self.pop_size = pop_size
-        self.rotate_key = rotate_key
-        self.reduce_fn = reduce_fn
-        self.num_obj = num_obj
-        self.observation_shape = observation_shape
+        self.state_forward = torch.compile(use_state(policy))
+        if seed is None:
+            seed = torch.randint(0, 2**31, (1,)).item()
+        self.key = from_jax_array(jax.random.PRNGKey(seed), device)
 
+        copied_policy = copy.deepcopy(policy).to(device)
+        self.init_state = copied_policy.state_dict()
+        for _name, value in self.init_state.items():
+            value.requires_grad = False
+
+        self.reduce_fn = reduce_fn
+        self.rotate_key = rotate_key
+        self.pop_size = pop_size
+        self.num_episodes = num_episodes
+        self.max_episode_length = max_episode_length
+        self.env_sys = env.sys
+        self.device = device
+
+        self.observation_shape = observation_shape
+        self.num_obj = num_obj
         if obs_norm is None:
             self.obs_norm ={"clip_val": 5.0,
                             "std_min": 1e-6,
                             "std_max": 1e6,}
         else:
             self.obs_norm = obs_norm
-        self.obs_param = from_jax_array(jnp.zeros(1 + max(self.observation_shape, 1) * 2))
-        self.valid_mask = from_jax_array(jnp.ones((self.max_episode_length, pop_size * self.num_episodes)))
-        self.obs_buf = from_jax_array(jnp.zeros((self.max_episode_length, pop_size * self.num_episodes, self.observation_shape)))
+        self.obs_param = torch.zeros(1 + max(self.observation_shape, 1) * 2).to(self.device)
+        self.valid_mask = torch.ones((self.max_episode_length, pop_size * self.num_episodes)).to(self.device)
+        self.obs_buf = torch.zeros((self.max_episode_length, pop_size * self.num_episodes, self.observation_shape)).to(self.device)
         self.useless = useless
 
-    def evaluate(self, pop_params: Dict[str, nn.Parameter]) -> torch.Tensor:
-        """Evaluate the final rewards of a population (batch) of model parameters.
-
-        :param pop_params: A dictionary of parameters where each key is a parameter name and each value is a tensor of shape (batch_size, *param_shape) representing the batched parameters of batched models.
-
-        :return: A tensor of shape (batch_size,) containing the reward of each sample in the population.
-        """
-        # Unpack parameters and buffers
-        state_params = {self._param_to_state_key_map[key]: value for key, value in pop_params.items()}
-        model_state = dict(self._vmap_model_buffers)
-        model_state.update(state_params)
-        rand_key = model_state.pop("key")
-        # Brax environment evaluation
-        model_state, rewards = self._evaluate_brax(model_state, rand_key, False)
-        rewards = self.reduce_fn(rewards, dim=1)
-        # Update buffers
-        self._vmap_model_buffers = {key: model_state[key] for key in self._vmap_model_buffers}
-        # Return
-        return rewards
-
-    def _model_forward(
-        self, model_state: Dict[str, torch.Tensor], obs: torch.Tensor, record_trajectory: bool = False
-    ) -> Tuple[Dict[str, torch.Tensor], torch.Tensor]:
-        if record_trajectory:
-            return self._jit_state_forward(model_state, obs)
-        else:
-            return self._jit_vmap_state_forward(model_state, obs)
-
-    @torch.jit.ignore
+    # disable torch.compile for JAX code
+    @torch.compiler.disable
     def _evaluate_brax(
-        self, model_state: Dict[str, torch.Tensor], rand_key: torch.Tensor, record_trajectory: bool = False
+        self,
+        model_state: Dict[str, torch.Tensor],
+        record_trajectory: bool = False,
     ) -> Tuple[Dict[str, torch.Tensor], torch.Tensor]:
-        # Get from torch
-        pop_size = list(model_state.values())[0].shape[0]
-        key = to_jax_array(rand_key)
+        if not record_trajectory:
+            # check the pop_size in the inputs
+            # Take a parameter and check its size
+            pop_size = next(iter(model_state.values())).size(0)
+            assert pop_size == self.pop_size, (
+                f"The actual population size must match the pop_size parameter when creating BraxProblem. Expected: {self.pop_size}, Actual: {pop_size}"
+            )
+
+        key = to_jax_array(self.key)
         # For each episode, we need a different random key.
         # For each individual in the population, we need the same set of keys.
         # Loop until environment stops
@@ -196,95 +164,92 @@ class MoRobtrol(Problem):
         else:
             key, eval_key = key, key
 
-        global __brax_data__
-        if record_trajectory is True:
-            brax_reset, brax_step, _, _, _ = __brax_data__[self._index_id_]
+        if record_trajectory:
             keys = eval_key
             done = jnp.zeros((), dtype=bool)
             total_reward = jnp.zeros(())
         else:
-            assert pop_size == self.pop_size
-            _, _, brax_reset, brax_step, _ = __brax_data__[self._index_id_]
             keys = jax.random.split(eval_key, self.num_episodes)
             keys = jnp.broadcast_to(keys, (pop_size, *keys.shape)).reshape(pop_size * self.num_episodes, -1)
             done = jnp.zeros((pop_size * self.num_episodes,), dtype=bool)
-            total_reward = jnp.zeros((pop_size * self.num_episodes, self.num_obj),)
+            total_reward = jnp.zeros((pop_size * self.num_episodes, self.num_obj))
         counter = 0
-        brax_state = brax_reset(keys)
         if record_trajectory:
+            brax_state = self.brax_reset(keys)
             trajectory = [brax_state.pipeline_state]
+        else:
+            brax_state = self.vmap_brax_reset(keys)
+
         while (counter < self.max_episode_length) and ~done.all():
             if record_trajectory:
-                model_state, action = self._model_forward(
-                    model_state,
-                    from_jax_array(brax_state.obs),
-                    record_trajectory=True,
-                )
-                action = action
+                model_state, action = self.state_forward(model_state, from_jax_array(brax_state.obs, self.device))
+                brax_state = self.brax_step(brax_state, to_jax_array(action))
             else:
-                model_state, action = self._model_forward(
-                    model_state,
-                    from_jax_array(brax_state.obs).view(pop_size, self.num_episodes, -1),
+                model_state, action = self.vmap_state_forward(
+                    model_state, from_jax_array(brax_state.obs, self.device).view(pop_size, self.num_episodes, -1)
                 )
                 action = action.view(pop_size * self.num_episodes, -1)
+                if not self.useless:
+                    origin_obs = from_jax_array(brax_state.obs, self.device)
+                    obs_step = self.obs_param[0]
+                    run_var, run_mean = torch.chunk(self.obs_param[1:], 2)
+                    run_var = run_var.view((self.observation_shape,))
+                    run_mean = run_mean.view((self.observation_shape,))
+                    variance = run_var / (obs_step + 1.0)
+                    variance = torch.clip(variance, self.obs_norm["std_min"], self.obs_norm["std_max"])
+                    norm_obs = torch.clip(
+                      (origin_obs - run_mean) / torch.sqrt(variance), -self.obs_norm["clip_val"], self.obs_norm["clip_val"]
+                    )
+                    brax_state = brax_state.replace(obs=to_jax_array(norm_obs))
+                brax_state = self.vmap_brax_step(brax_state, to_jax_array(action))
 
-            if not self.useless:
-              origin_obs = brax_state.obs
-              obs_par = to_jax_array(self.obs_param)
-              obs_step = obs_par[0]
-              run_var, run_mean = jnp.split(obs_par[1:], 2)
-              run_var = run_var.reshape((self.observation_shape,))
-              run_mean = run_mean.reshape((self.observation_shape,))
-              variance = run_var / (obs_step + 1.0)
-              variance = jnp.clip(variance, self.obs_norm["std_min"], self.obs_norm["std_max"])
-              norm_obs = jnp.clip(
-                (origin_obs - run_mean) / jnp.sqrt(variance), -self.obs_norm["clip_val"], self.obs_norm["clip_val"]
-              )
-              brax_state = brax_state.replace(obs=norm_obs)
-
-            brax_state = brax_step(brax_state, to_jax_array(action))
             self.obs_buf[counter] = from_jax_array(brax_state.obs)
             done = jnp.tile(brax_state.done[:, jnp.newaxis], (1, self.num_obj))
             reward = jnp.nan_to_num(brax_state.reward)
             total_reward += (1 - done) * reward
-            jax_vm = to_jax_array(self.valid_mask)[counter]
-            self.valid_mask[counter] = from_jax_array((1 - brax_state.done.ravel()) * jax_vm)
+            jax_vm = to_jax_array(self.valid_mask[counter])
+            self.valid_mask[counter] = from_jax_array((1 - brax_state.done.ravel()).reshape(jax_vm.shape) * jax_vm)
             counter += 1
-
             if not self.useless:
-                obs_b = to_jax_array(self.obs_buf)
-                # obs_mas = to_jax_array(self.valid_mask)
-                obs_p = to_jax_array(self.obs_param)
-                obs_step = obs_p[0]
-                run_var, run_mean = jnp.split(obs_p[1:], 2)
-                new_mask = to_jax_array(self.valid_mask)
-                if new_mask.ndim != obs_b.ndim:
-                    new_mask = new_mask.reshape(
-                        new_mask.shape + (1,) * (obs_b.ndim - new_mask.ndim)
+                obs_step = self.obs_param[0]
+                run_var, run_mean = torch.chunk(self.obs_param[1:], 2)
+                if self.valid_mask.ndim != self.obs_buf.ndim:
+                    self.valid_mask = self.valid_mask.view(
+                        self.valid_mask.shape + (1,) * (self.obs_buf.ndim - self.valid_mask.ndim)
                     )
-                new_total_step = obs_step + jnp.sum(new_mask)
+                new_total_step = obs_step + torch.sum(self.valid_mask)
 
-                old_mean = (obs_b - run_mean) * new_mask
-                new_mean = run_mean + jnp.sum(old_mean / new_total_step, axis=(0, 1))
-                temp_new_mean = (obs_b - new_mean) * new_mask
-                new_var = run_var + jnp.sum(old_mean * temp_new_mean, axis=(0, 1))
+                old_mean = (self.obs_buf - run_mean) * self.valid_mask
+                new_mean = run_mean + torch.sum(old_mean / new_total_step, dim=(0, 1))
+                temp_new_mean = (self.obs_buf - new_mean) * self.valid_mask
+                new_var = run_var + torch.sum(old_mean * temp_new_mean, dim=(0, 1))
 
-                self.obs_param = from_jax_array(jnp.concatenate([jnp.ones(1) * new_total_step, new_var, new_mean]))
+                self.obs_param = torch.concatenate([torch.ones(1) * new_total_step, new_var, new_mean], dim=0)
             if record_trajectory:
                 trajectory.append(brax_state.pipeline_state)
         # Return
-        total_reward = total_reward.reshape(pop_size, self.num_episodes, self.num_obj)
-        # 按 episode 维度取平均，得到最终每个个体的奖励，shape 为 (pop_size, self.num_obj)
-        # total_reward = jnp.mean(total_reward, axis=1)
-        model_state["key"] = from_jax_array(key)
-        total_reward = from_jax_array(total_reward)
+        self.key = from_jax_array(key, self.device)
+        total_reward = from_jax_array(total_reward, self.device)
         if record_trajectory:
             return model_state, total_reward, trajectory
         else:
-            # total_reward = total_reward.view(pop_size, self.num_episodes)
+            total_reward = total_reward.view(pop_size, self.num_episodes, self.num_obj)
             return model_state, total_reward
 
-    @torch.jit.ignore
+    def evaluate(self, pop_params: Dict[str, nn.Parameter]) -> torch.Tensor:
+        """Evaluate the final rewards of a population (batch) of model parameters.
+
+        :param pop_params: A dictionary of parameters where each key is a parameter name and each value is a tensor of shape (batch_size, *param_shape) representing the batched parameters of batched models.
+
+        :return: A tensor of shape (batch_size,) containing the reward of each sample in the population.
+        """
+        # Merge the given parameters into the initial parameters
+        model_state = self.vmap_init_state | pop_params
+        # Brax environment evaluation
+        model_state, rewards = self._evaluate_brax(model_state)
+        rewards = self.reduce_fn(rewards, dim=1)
+        return rewards
+
     def visualize(
         self,
         weights: Dict[str, nn.Parameter],
@@ -304,17 +269,12 @@ class MoRobtrol(Problem):
             "HTML",
             "rgb_array",
         ], "output_type must be either HTML or rgb_array"
-        # Unpack parameters and buffers
-        state_params = {self._param_to_state_key_map[key]: value for key, value in weights.items()}
-        model_state = dict(self._model_buffers)
-        model_state.update(state_params)
+        model_state = self.init_state | weights
         # Brax environment evaluation
-        rand_key = from_jax_array(jax.random.PRNGKey(seed))
-        model_state, rewards, trajectory = self._evaluate_brax(model_state, rand_key, record_trajectory=True)
+        model_state, _rewards, trajectory = self._evaluate_brax(model_state, record_trajectory=True)
         trajectory = [brax_state for brax_state in trajectory]
-
-        _, _, _, _, env_sys = __brax_data__[self._index_id_]
         if output_type == "HTML":
-            return html.render(env_sys, trajectory, *args, **kwargs)
+            return html.render(self.env_sys, trajectory, *args, **kwargs)
         else:
-            return image.render_array(env_sys, trajectory, **kwargs)
+            return image.render_array(self.env_sys, trajectory, **kwargs)
+
