@@ -1,6 +1,21 @@
+__all__ = [
+    "mo_ant",
+    "mo_half_cheetah",
+    "mo_hopper",
+    "mo_hopper_m3",
+    "mo_humanoid",
+    "mo_humanoidstandup",
+    "mo_inverted_double_pendulum",
+    "mo_pusher",
+    "mo_reacher",
+    "mo_swimmer",
+    "mo_walker2d",
+    "register_environment"
+]
+
 from brax.envs import register_environment
 
-from src.evox.problems.morobtrol import (
+from evox_ext.problems.morobtrol import (
     mo_ant,
     mo_half_cheetah,
     mo_hopper,

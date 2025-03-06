@@ -2,7 +2,6 @@ import math
 from typing import Callable, Optional
 
 import torch
-
 from evox.core import Algorithm, Mutable, vmap
 from evox.operators.crossover import simulated_binary_half
 from evox.operators.mutation import polynomial_mutation
@@ -66,7 +65,7 @@ class TensorMOEAD(Algorithm):
         crossover_op: Optional[Callable] = None,
         device: torch.device | None = None,
     ):
-        """Initializes the NSGA-II algorithm.
+        """Initializes the TensorMOEA/D algorithm.
 
         :param pop_size: The size of the population.
         :param n_objs: The number of objective functions in the optimization problem.

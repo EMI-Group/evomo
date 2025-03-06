@@ -1,5 +1,5 @@
 __all__ = [
-  "MoRobtrolPro",
+  "MoRobtrol",
   "mo_half_cheetah",
   "mo_swimmer",
   "mo_hopper",
@@ -26,4 +26,4 @@ from .morobtrol import (
   mo_swimmer,
   mo_walker2d,
 )
-from .morobtrol_pro import MoRobtrolPro
+from .morobtrol_pro import MoRobtrol
