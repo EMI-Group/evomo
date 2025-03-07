@@ -1,19 +1,15 @@
 import torch
 from typing import Callable, Optional
 
-from evox.operators import selection, mutation, crossover
 from evox.core import Algorithm, Mutable,Parameter
 from evox.operators.crossover import simulated_binary
 from evox.operators.mutation import polynomial_mutation
-from evox.operators.selection import non_dominate_rank, tournament_selection
+from evox.operators.selection import tournament_selection
 from evox.utils import clamp
 
 
 def cal_max(pop_obj1, pop_obj2):
     """Calculates the maximum difference between elements of two objective tensors."""
-    n1 = pop_obj1.shape[0]
-    n2 = pop_obj2.shape[0]
-    m = pop_obj1.shape[1]
     diff = pop_obj1.unsqueeze(1) - pop_obj2.unsqueeze(0)
     return torch.max(diff, dim=2)[0]
 
