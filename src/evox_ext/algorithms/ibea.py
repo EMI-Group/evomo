@@ -121,11 +121,12 @@ class IBEA(Algorithm):
 
     def cal_fitness(self, pop_obj, kappa):
         """Calculate the indicator-based fitness, indicator matrix, and scaling factor."""
-        
         pop_obj_normalized = (pop_obj - pop_obj.min(dim=0).values) / (
             pop_obj.max(dim=0).values - pop_obj.min(dim=0).values
         )
         indicator_matrix = cal_max(pop_obj_normalized, pop_obj_normalized)
         C = torch.max(torch.abs(indicator_matrix), dim=0)[0]
-        fit = torch.sum(-torch.exp(-indicator_matrix / C.unsqueeze(0) / kappa), dim=0) + 1
+        fit = (
+            torch.sum(-torch.exp(-indicator_matrix / C.unsqueeze(0) / kappa), dim=0) + 1
+        )
         return fit, indicator_matrix, C
