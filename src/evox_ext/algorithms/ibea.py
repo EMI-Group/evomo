@@ -1,6 +1,6 @@
-import torch
 from typing import Callable, Optional
 
+import torch
 from evox.core import Algorithm, Mutable, Parameter
 from evox.operators.crossover import simulated_binary
 from evox.operators.mutation import polynomial_mutation
