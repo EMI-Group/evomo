@@ -1,7 +1,7 @@
 import torch
 from typing import Callable, Optional
 
-from evox.core import Algorithm, Mutable,Parameter
+from evox.core import Algorithm, Mutable, Parameter
 from evox.operators.crossover import simulated_binary
 from evox.operators.mutation import polynomial_mutation
 from evox.operators.selection import tournament_selection
@@ -17,12 +17,13 @@ def cal_max(pop_obj1, pop_obj2):
 class IBEA(Algorithm):
     """The tensoried version of IBEA algorithm.
 
-        IBEA algorithm is described in the following papers:
+    IBEA algorithm is described in the following papers:
 
-        Title: Indicator-Based Selection in Multiobjective Search
-        Link: https://link.springer.com/chapter/10.1007/978-3-540-30217-9_84
+    Title: Indicator-Based Selection in Multiobjective Search
+    Link: https://link.springer.com/chapter/10.1007/978-3-540-30217-9_84
 
     """
+
     def __init__(
         self,
         n_objs: int,
@@ -48,7 +49,7 @@ class IBEA(Algorithm):
         super().__init__()
         if device is None:
             device = torch.get_default_device()
-        
+
         assert lb.shape == ub.shape and lb.ndim == 1 and ub.ndim == 1
         assert lb.dtype == ub.dtype and lb.device == ub.device
         self.dim = lb.shape[0]
@@ -68,11 +69,12 @@ class IBEA(Algorithm):
         if self.crossover is None:
             self.crossover = simulated_binary
 
-       
         population = torch.rand(self.pop_size, self.dim, device=device)
-        population=population * (self.ub - self.lb) + self.lb
+        population = population * (self.ub - self.lb) + self.lb
         self.pop = Mutable(population)
-        self.fit = Mutable(torch.empty((self.pop_size, self.n_objs), device=device).fill_(torch.inf))
+        self.fit = Mutable(
+            torch.empty((self.pop_size, self.n_objs), device=device).fill_(torch.inf)
+        )
         self.next_generation = Mutable(self.pop.clone())
 
     def init_step(self):
@@ -81,35 +83,30 @@ class IBEA(Algorithm):
 
         Calls the `init_step` of the algorithm if overwritten; otherwise, its `step` method will be invoked.
         """
-        self.fit = self.evaluate(self.pop) 
+        self.fit = self.evaluate(self.pop)
 
     def step(self):
         """Perform the optimization step of the workflow."""
-        
-        fit, _, _ = self.cal_fitness(
-            self.fit.clone().detach(), self.kappa
-        )
-        selected = self.selection(n_round=self.pop_size,fitness=-fit)
+
+        fit, _, _ = self.cal_fitness(self.fit.clone().detach(), self.kappa)
+        selected = self.selection(n_round=self.pop_size, fitness=-fit)
         crossovered = self.crossover(self.pop[selected])
         next_generation = self.mutation(crossovered, self.lb, self.ub)
         next_generation = clamp(next_generation, self.lb, self.ub)
         self.next_generation = next_generation
 
-        
         next_gen_fitness = self.evaluate(self.next_generation)
 
         merged_pop = torch.cat([self.pop, self.next_generation], dim=0)
         merged_obj = torch.cat([self.fit, next_gen_fitness], dim=0)
-        merged_fitness, I, C = self.cal_fitness(
-            merged_obj, self.kappa
-        )  
+        merged_fitness, indicator_matrix, C = self.cal_fitness(merged_obj, self.kappa)
 
         n = merged_pop.shape[0]
         next_ind = torch.arange(n)
 
         for _ in range(self.pop_size):
             x = torch.argmin(merged_fitness)
-            merged_fitness += torch.exp(-I[x, :] / C[x] / self.kappa)
+            merged_fitness += torch.exp(-indicator_matrix[x, :] / C[x] / self.kappa)
             merged_fitness[x] = torch.max(merged_fitness)
             next_ind[x] = -1
 
@@ -119,17 +116,16 @@ class IBEA(Algorithm):
         survivor = merged_pop[next_ind]
         survivor_fitness = merged_obj[next_ind]
 
-
         self.pop = survivor
         self.fit = Mutable(survivor_fitness)
 
     def cal_fitness(self, pop_obj, kappa):
-        """Calculate the indicator-based fitness, indicator matrix, and scaling factor."""       
-        n = pop_obj.shape[0]
+        """Calculate the indicator-based fitness, indicator matrix, and scaling factor."""
+        
         pop_obj_normalized = (pop_obj - pop_obj.min(dim=0).values) / (
             pop_obj.max(dim=0).values - pop_obj.min(dim=0).values
         )
-        I = cal_max(pop_obj_normalized, pop_obj_normalized)
-        C = torch.max(torch.abs(I), dim=0)[0]
-        fit = torch.sum(-torch.exp(-I / C.unsqueeze(0) / kappa), dim=0) + 1
-        return fit, I, C
+        indicator_matrix = cal_max(pop_obj_normalized, pop_obj_normalized)
+        C = torch.max(torch.abs(indicator_matrix), dim=0)[0]
+        fit = torch.sum(-torch.exp(-indicator_matrix / C.unsqueeze(0) / kappa), dim=0) + 1
+        return fit, indicator_matrix, C
