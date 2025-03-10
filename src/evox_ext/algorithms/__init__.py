@@ -1,3 +1,4 @@
-__all__ = ["TensorMOEAD"]
+__all__ = ["TensorMOEAD", "IBEA"]
 
+from .ibea import IBEA
 from .tensormoead import TensorMOEAD
