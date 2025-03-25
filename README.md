@@ -23,7 +23,7 @@
 
 1. [Overview](#Overview)
 2. [Key Features](#key-features)
-3. [Requirements](#requirements)
+3. [Installation Guide](#installation-guide)
 4. [Examples](#examples)
 6. [Community & Support](#community--support)
 
@@ -46,12 +46,8 @@ EvoMO is a GPU-accelerated library for evolutionary multiobjective optimization 
 - **MoRobtrol Benchmark 🤖:**  
   Includes **MoRobtrol**, a multiobjective robot control benchmark for testing tensorized EMO algorithms in challenging black-box environments.  
 
-## Requirements
+## Installation Guide
 
-- Python 3.10 or later
-- evox (version >= 1.1.0)
-- torch (version >= 2.5.0)
-- Visualization tools: plotly, pandas
 
 ## Examples
 
@@ -97,8 +93,9 @@ We welcome contributions and look forward to your feedback!
 If you use EvoMO in your research and want to cite it in your work, please use:
 ```
 @article{evomo,
-  title = {Bridging Evolutionary Multiobjective Optimization and GPU Acceleration via Tensorization},
+  title = {Bridging Evolutionary Multiobjective Optimization and {GPU} Acceleration via Tensorization},
   author = {Zhenyu Liang, Hao Li, Naiwei Yu, Kebin Sun, and Ran Cheng},
-  year = {2025},
+  journal = {IEEE Transactions on Evolutionary Computation},
+  year = 2024,
 }
 ```
