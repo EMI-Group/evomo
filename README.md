@@ -96,6 +96,6 @@ If you use EvoMO in your research and want to cite it in your work, please use:
   title = {Bridging Evolutionary Multiobjective Optimization and {GPU} Acceleration via Tensorization},
   author = {Liang, Zhenyu and Li, Hao and Yu, Naiwei and Sun, Kebin and Cheng, Ran},
   journal = {IEEE Transactions on Evolutionary Computation},
-  year = 2024,
+  year = 2025,
 }
 ```
