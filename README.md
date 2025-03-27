@@ -13,11 +13,11 @@
 🌟 EvoMO: Bridging Evolutionary Multiobjective Optimization and GPU Acceleration via Tensorization 🌟
 </h2>
 
-<p align="center">
+<div align="center">
   <a href="http://arxiv.org/abs/2503.20286">
     <img src="https://img.shields.io/badge/paper-arxiv-red?style=for-the-badge" alt="EvoMO Paper on arXiv">
   </a>
-</p>
+</div>
 
 ## Table of Contents
 
