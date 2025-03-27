@@ -9,9 +9,9 @@
   <br>
 </h1>
 
-<p align="center">
+<h2 align="center">
 🌟 EvoMO: Bridging Evolutionary Multiobjective Optimization and GPU Acceleration via Tensorization 🌟
-</p>
+</h2>
 
 <p align="center">
   <a href="http://arxiv.org/abs/2503.20286">
