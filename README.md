@@ -46,41 +46,33 @@ EvoMO is a GPU-accelerated library for evolutionary multiobjective optimization 
 - **MoRobtrol Benchmark 🤖:**  
   Includes **MoRobtrol**, a multiobjective robot control benchmark for testing tensorized EMO algorithms in challenging black-box environments.  
 
-[//]: # (## Installation Guide)
+## Installation Guide
 
-[//]: # ()
-[//]: # (To install EvoMO, you need to install EvoX first. )
 
-[//]: # ()
-[//]: # (1. Install EvoX:)
+To install EvoMO, you need to install EvoX first. 
 
-[//]: # (```bash)
 
-[//]: # (pip install evox)
+1. Install EvoX:
 
-[//]: # (```)
+```bash
+pip install evox
+```
 
-[//]: # (   )
-[//]: # (2. Install EvoMO:)
+   
+2. Install EvoMO:
 
-[//]: # (```bash)
+```bash
+pip install evomo
+```
 
-[//]: # (pip install evomo)
 
-[//]: # (```)
+For the latest development version, you can install from the source:
 
-[//]: # ()
-[//]: # (For the latest development version, you can install from the source:)
-
-[//]: # (```bash)
-
-[//]: # (git clone https://github.com/yourusername/evomo.git)
-
-[//]: # (cd evomo)
-
-[//]: # (pip install -e.)
-
-[//]: # (```)
+```bash
+git clone https://github.com/yourusername/evomo.git
+cd evomo
+pip install -e.
+```
 
 ## Examples
 
