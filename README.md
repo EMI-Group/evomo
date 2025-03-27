@@ -32,19 +32,24 @@
 
 EvoMO is a GPU-accelerated library for evolutionary multiobjective optimization (EMO) via advanced tensorization. By converting key data structures and operations into tensor representations, it enables concise mathematical modeling and significant speedups. Designed for scalability, EvoMO efficiently handles large populations and complex optimization tasks. EvoMO is a sister project of [EvoX](https://github.com/EMI-Group/evox).  
 
-## Key Features  
+## Key Features
 
-- **General Tensorization Methodology ⚡:**  
-  EvoMO adopts a unified tensorization approach that restructures EMO algorithms into tensor-based representations, enabling efficient GPU acceleration.  
+### 💻 High-Performance Computing
 
-- **Optimized State-of-the-Art Algorithms 🚀:**  
-  Supports **NSGA-II**, **NSGA-III**, **MOEA/D**, **RVEA**, and **HypE**, achieving up to **1113× speedup** while preserving solution quality.  
+#### 🚀 General Tensorization Methodology
+- **EvoMO** adopts a unified tensorization approach, restructuring EMO algorithms into tensor representations, enabling efficient GPU acceleration.
 
-- **Scalability 📈:**  
-  Handles large populations, scaling to hundreds of thousands for complex optimization tasks.  
+#### ⚡ Ultra Performance
+- Supports **NSGA-II**, **NSGA-III**, **MOEA/D**, **RVEA**, and **HypE**, achieving up to **1113× speedup** while preserving solution quality.
 
-- **MoRobtrol Benchmark 🤖:**  
-  Includes **MoRobtrol**, a multiobjective robot control benchmark for testing tensorized EMO algorithms in challenging black-box environments.  
+#### 📈 Scalability
+- Handles large populations, scaling to hundreds of thousands for complex optimization tasks, ensuring scalability for real-world applications.
+
+
+### 📊 Benchmarking and Evaluation
+
+#### 🤖 MoRobtrol Benchmark
+- Includes **MoRobtrol**, a multiobjective robot control benchmark, for testing tensorized EMO algorithms in challenging black-box environments.
 
 ## Installation Guide
 
