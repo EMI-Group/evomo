@@ -46,7 +46,7 @@ EvoMO is a GPU-accelerated library for evolutionary multiobjective optimization 
 - Handles large populations, scaling to hundreds of thousands for complex optimization tasks, ensuring scalability for real-world applications.
 
 
-### 📊 Benchmarking and Evaluation
+### 📊 Benchmarking
 
 #### 🤖 MoRobtrol Benchmark
 - Includes **MoRobtrol**, a multiobjective robot control benchmark, for testing tensorized EMO algorithms in challenging black-box environments.
