@@ -152,8 +152,8 @@ class TensorMOEAD(Algorithm):
 
         self.z = torch.min(self.z, torch.min(off_fit, dim=0)[0])
 
-        sub_pop_indices = torch.arange(0, self.pop_size)
-        update_mask = torch.zeros((self.pop_size,), dtype=torch.bool)
+        sub_pop_indices = torch.arange(0, self.pop_size, device=self.pop.device)
+        update_mask = torch.zeros((self.pop_size,), dtype=torch.bool, device=self.pop.device)
 
         def body(ind_p, ind_obj):
             g_old = self.aggregate_func1(self.fit[ind_p], self.w[ind_p], self.z)
