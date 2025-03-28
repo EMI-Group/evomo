@@ -1,4 +1,3 @@
-import time
 import unittest
 
 import torch
@@ -54,12 +53,7 @@ def setup_workflow(model, pop_size, max_episode_length, num_episodes, device):
 def run_workflow(workflow, adapter, monitor, compiled=False, generations=3):
     step_function = torch.compile(workflow.step) if compiled else workflow.step
     for index in range(generations):
-        print(f"In generation {index}:")
-        t = time.time()
         step_function()
-        print(f"\tFitness: {workflow.algorithm.fit}.")
-    print(f"\tTime elapsed: {time.time() - t: .4f}(s).")
-
 
 class TestMoRobtrolProblem(unittest.TestCase):
     def setUp(self):

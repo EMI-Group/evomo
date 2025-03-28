@@ -6,7 +6,6 @@ from evox.core import Algorithm, use_state, vmap
 from evox.problems.numerical import DTLZ2
 from evox.workflows import StdWorkflow
 
-# torch.set_default_device("cuda" if torch.cuda.is_available() else "cpu")
 
 class MOTestBase(TestCase):
     def run_algorithm(self, algo: Algorithm):
@@ -43,17 +42,12 @@ class TestMOVariants(MOTestBase):
         lb = -torch.ones(dim)
         ub = torch.ones(dim)
         self.algo = [
-            # NSGA2(pop_size=pop_size, n_objs=3, lb=lb, ub=ub),
-            # NSGA3(pop_size=pop_size, n_objs=3, lb=lb, ub=ub),
-            # RVEA(pop_size=pop_size, n_objs=3, lb=lb, ub=ub),
-            # MOEAD(pop_size=pop_size, n_objs=3, lb=lb, ub=ub),
-            # HypE(pop_size=pop_size, n_objs=3, lb=lb, ub=ub),
             TensorMOEAD(pop_size=pop_size, n_objs=3, lb=lb, ub=ub),
-            IBEA(pop_size=100, n_objs=3, lb=-torch.zeros(12), ub=torch.ones(12))
+            IBEA(pop_size=pop_size, n_objs=3, lb=lb, ub=ub)
         ]
 
     def test_moea_variants(self):
         for algo in self.algo:
             self.run_algorithm(algo)
             self.run_compiled_algorithm(algo)
-            # self.run_vmap_algorithm(algo)
+            self.run_vmap_algorithm(algo)
