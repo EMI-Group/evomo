@@ -103,6 +103,7 @@ class TensorMOEAD(Algorithm):
         w = w.to(device=device)
 
         self.pop_size = w.size(0)
+        assert self.pop_size > 10, "Population size must be greater than 10. Please reset the population size."
         self.n_neighbor = int(math.ceil(self.pop_size / 10))
 
         length = ub - lb
