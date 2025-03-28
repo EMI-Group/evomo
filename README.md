@@ -40,7 +40,7 @@ EvoMO is a GPU-accelerated library for evolutionary multiobjective optimization 
 - **EvoMO** adopts a unified tensorization approach, restructuring EMO algorithms into tensor representations, enabling efficient GPU acceleration.
 
 #### ⚡ Ultra Performance
-- Supports **NSGA-II**, **NSGA-III**, **MOEA/D**, **RVEA**, and **HypE**, achieving up to **1113× speedup** while preserving solution quality.
+- Supports tensorized implementations of **NSGA-II**, **NSGA-III**, **MOEA/D**, **RVEA**, **HypE**, and more, achieving up to **1113× speedup** while preserving solution quality.
 
 #### 📈 Scalability
 - Handles large populations, scaling to hundreds of thousands for complex optimization tasks, ensuring scalability for real-world applications.
@@ -50,6 +50,11 @@ EvoMO is a GPU-accelerated library for evolutionary multiobjective optimization 
 
 #### 🤖 MoRobtrol Benchmark
 - Includes **MoRobtrol**, a multiobjective robot control benchmark, for testing tensorized EMO algorithms in challenging black-box environments.
+
+### 🔧 Easy-to-Use Integration
+
+#### 🔄 Shared Name with EvoX
+- After installation, you can directly import EvoMO algorithms using `import evox`, making it seamless to access both EvoX and EvoMO algorithms with a unified interface.
 
 ## Installation Guide
 
