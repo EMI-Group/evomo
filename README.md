@@ -30,8 +30,11 @@
 
 ## Overview  
 
-EvoMO is a GPU-accelerated library for evolutionary multiobjective optimization (EMO) via advanced tensorization. By converting key data structures and operations into tensor representations, it enables concise mathematical modeling and significant speedups. Designed for scalability, EvoMO efficiently handles large populations and complex optimization tasks. EvoMO is a sister project of [EvoX](https://github.com/EMI-Group/evox).  
+EvoMO is a GPU-accelerated library for evolutionary multiobjective optimization (EMO) that leverages advanced tensorization techniques. By transforming key data structures and operations into tensor representations, EvoMO enables more efficient mathematical modeling and delivers significant performance improvements. Designed with scalability in mind, EvoMO can efficiently handle large populations and complex optimization tasks. Additionally, EvoMO includes MoRobtrol, a multiobjective robot control benchmark suite, providing a platform for testing tensorized EMO algorithms in real-world, black-box environments. EvoMO is a sister project of [EvoX](https://github.com/EMI-Group/evox).  
 
+> [!NOTE]
+> To use the JAX version of EvoMO, you can switch to the `v0.0.1-dev` branch. This branch is fully compatible with EvoX version 0.9.0.
+> 
 ## Key Features
 
 ### 💻 High-Performance Computing
@@ -185,7 +188,7 @@ def run_workflow(workflow, compiled=True, generations=10):
         print(f"In generation {index}:")
         t = time.time()
         step_function()
-        print(f"\tFitness: {workflow.algorithm.fit}.")
+        print(f"\tFitness: {-workflow.algorithm.fit}.")
     print(f"\tTime elapsed: {time.time() - t: .4f}(s).")
 
 
