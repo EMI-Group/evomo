@@ -86,7 +86,9 @@ pip install -e.
 
 ## Examples
 
-Below is a basic example demonstrating how one might utilize the tensorized HypE algorithm within EvoMO.
+### Numerical optimization problem
+
+Solve the DTLZ2 problem using the TensorMOEA/D algorithm:
 
 ```python
 import time
@@ -117,13 +119,16 @@ if __name__ == "__main__":
     print(f"Total time: {time.time() - t} seconds")
 ```
 
-Below is a basic example about how to use the tensorized NSGA-II algorithm to train a Brax problem.
+### MoRobtrol
+
+Solve the MoSwimmer problem in MoRobtrol using the TensorMOEA/D algorithm:
+
 ```python
 import time
 
 import torch
 import torch.nn as nn
-from evox.algorithms import NSGA2
+from evox.algorithms import TensorMOEAD
 from evox.problems import MoRobtrol
 from evox.utils import ParamsAndVector
 from evox.workflows import EvalMonitor, StdWorkflow
@@ -157,7 +162,7 @@ def setup_workflow(model, pop_size, max_episode_length, num_episodes, device):
         obs_norm={"clip_val": 5.0, "std_min": 1e-6, "std_max": 1e6},
     )
 
-    algorithm = NSGA2(
+    algorithm = TensorMOEAD(
         pop_size=pop_size, lb=lower_bound, ub=upper_bound, n_objs=2, device=device
     )
     monitor = EvalMonitor(device=device)
@@ -173,7 +178,8 @@ def setup_workflow(model, pop_size, max_episode_length, num_episodes, device):
     return workflow
 
 
-def run_workflow(workflow, compiled=False, generations=3):
+def run_workflow(workflow, compiled=True, generations=10):
+    workflow.init_step()
     step_function = torch.compile(workflow.step) if compiled else workflow.step
     for index in range(generations):
         print(f"In generation {index}:")
@@ -183,12 +189,12 @@ def run_workflow(workflow, compiled=False, generations=3):
     print(f"\tTime elapsed: {time.time() - t: .4f}(s).")
 
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-torch.manual_seed(1234)
-torch.cuda.manual_seed_all(1234)
-model = SimpleMLP().to(device)
-workflow = setup_workflow(model, 8, 100, 2, device)
-run_workflow(workflow, compiled=False)
+if __name__ == "__main__":
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    model = SimpleMLP().to(device)
+    workflow = setup_workflow(model, 12, 100, 2, device)
+    run_workflow(workflow)
 
 ```
 
