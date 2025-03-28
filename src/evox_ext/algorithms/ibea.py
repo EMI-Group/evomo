@@ -72,9 +72,8 @@ class IBEA(Algorithm):
         population = torch.rand(self.pop_size, self.dim, device=device)
         population = population * (self.ub - self.lb) + self.lb
         self.pop = Mutable(population)
-        self.fit = Mutable(
-            torch.empty((self.pop_size, self.n_objs), device=device).fill_(torch.inf)
-        )
+        self.fit = Mutable(torch.full((self.pop_size, self.n_objs), torch.inf, device=device))
+
         self.next_generation = Mutable(self.pop.clone())
 
     def init_step(self):
@@ -101,23 +100,23 @@ class IBEA(Algorithm):
         merged_obj = torch.cat([self.fit, next_gen_fitness], dim=0)
         merged_fitness, indicator_matrix, C = self.cal_fitness(merged_obj, self.kappa)
 
-        n = merged_pop.shape[0]
-        next_ind = torch.arange(n)
+        n = merged_pop.size(0)
+        next_ind = torch.arange(n, device=merged_pop.device)
 
         for _ in range(self.pop_size):
             x = torch.argmin(merged_fitness)
-            merged_fitness += torch.exp(-indicator_matrix[x, :] / C[x] / self.kappa)
+            merged_fitness += torch.exp(-indicator_matrix[x] / C[x] / self.kappa)
             merged_fitness[x] = torch.max(merged_fitness)
-            next_ind[x] = -1
+            next_ind = next_ind.index_put((x,), torch.tensor(n, device=merged_pop.device))
 
-        next_ind = next_ind[next_ind != -1]
+        next_ind = torch.argsort(next_ind, stable=True)
         next_ind = next_ind[: self.pop_size]
 
         survivor = merged_pop[next_ind]
         survivor_fitness = merged_obj[next_ind]
 
         self.pop = survivor
-        self.fit = Mutable(survivor_fitness)
+        self.fit = survivor_fitness
 
     def cal_fitness(self, pop_obj, kappa):
         """Calculate the indicator-based fitness, indicator matrix, and scaling factor."""
@@ -126,7 +125,5 @@ class IBEA(Algorithm):
         )
         indicator_matrix = cal_max(pop_obj_normalized, pop_obj_normalized)
         C = torch.max(torch.abs(indicator_matrix), dim=0)[0]
-        fit = (
-            torch.sum(-torch.exp(-indicator_matrix / C.unsqueeze(0) / kappa), dim=0) + 1
-        )
+        fit = torch.sum(-torch.exp(-indicator_matrix / C.unsqueeze(0) / kappa), dim=0) + 1
         return fit, indicator_matrix, C
