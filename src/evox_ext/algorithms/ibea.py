@@ -15,13 +15,13 @@ def cal_max(pop_obj1, pop_obj2):
 
 
 class IBEA(Algorithm):
-    """The tensoried version of IBEA algorithm.
+    """
+    The tensorized version of IBEA algorithm.
 
-    IBEA algorithm is described in the following papers:
-
-    Title: Indicator-Based Selection in Multiobjective Search
-    Link: https://link.springer.com/chapter/10.1007/978-3-540-30217-9_84
-
+    :references:
+        [1] E. Zitzler and S. Künzli, "Indicator-based selection in multiobjective search," in Proceedings of the International
+            Conference on Parallel Problem Solving from Nature, 2004, pp. 832-842. Available:
+            https://link.springer.com/chapter/10.1007/978-3-540-30217-9_84
     """
 
     def __init__(

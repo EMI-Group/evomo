@@ -51,6 +51,21 @@ def shuffle_rows(matrix: torch.Tensor) -> torch.Tensor:
 class TensorMOEAD(Algorithm):
     """
     TensorMOEA/D
+
+    This is a tensorized implementation of the original MOEA/D algorithm, which incorporates GPU acceleration
+    for improved computational performance in solving multi-objective optimization problems.
+
+    :references:
+        [1] Q. Zhang and H. Li, "MOEA/D: A Multiobjective Evolutionary Algorithm Based on Decomposition,"
+            IEEE Transactions on Evolutionary Computation, vol. 11, no. 6, pp. 712-731, 2007. Available:
+            https://ieeexplore.ieee.org/document/4358754
+
+        [2] Z. Liang, H. Li, N. Yu, K. Sun, and R. Cheng, "Bridging Evolutionary Multiobjective Optimization and
+            GPU Acceleration via Tensorization," IEEE Transactions on Evolutionary Computation, 2025. Available:
+            https://ieeexplore.ieee.org/document/10944658
+
+    :note: This implementation differs from the original MOEA/D algorithm by incorporating tensorization for
+            GPU acceleration, significantly improving performance for large-scale optimization tasks.
     """
 
     def __init__(
