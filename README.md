@@ -82,7 +82,7 @@ pip install evomo
 For the latest development version, you can install from the source:
 
 ```bash
-git clone https://github.com/yourusername/evomo.git
+git clone https://github.com/EMI-Group/evomo.git
 cd evomo
 pip install -e.
 ```
