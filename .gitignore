@@ -163,5 +163,4 @@ cython_debug/
 .vscode
 
 # Test
-test*.py
-!test*_*.py
+test[1-6].py
