@@ -58,7 +58,7 @@ def _evaluate_brax_main(
     useless: bool,
     obs_param: torch.Tensor,
     observation_shape: int,
-    obs_norm: Dict[str, Any],
+    obs_norm: torch.Tensor,
     obs_buf: torch.Tensor,
     valid_mask: torch.Tensor,
 ) -> Tuple[torch.Tensor, List[torch.Tensor], torch.Tensor]:
@@ -98,6 +98,9 @@ def _evaluate_brax_main(
             from_jax_array(brax_state.obs, device).view(pop_size, num_episodes, -1),
         )
         action = action.view(pop_size * num_episodes, -1)
+        clip_val = obs_norm[0]
+        std_min = obs_norm[1]
+        std_max = obs_norm[2]
         if not useless:
             origin_obs = from_jax_array(brax_state.obs, device)
             obs_step = obs_param[0]
@@ -105,11 +108,11 @@ def _evaluate_brax_main(
             run_var = run_var.view((observation_shape,))
             run_mean = run_mean.view((observation_shape,))
             variance = run_var / (obs_step + 1.0)
-            variance = clamp(variance, obs_norm["std_min"], obs_norm["std_max"])
+            variance = clamp(variance, std_min, std_max)
             norm_obs = clamp(
                 (origin_obs - run_mean) / torch.sqrt(variance),
-                -obs_norm["clip_val"],
-                obs_norm["clip_val"],
+                -clip_val,
+                clip_val,
             )
             brax_state = brax_state.replace(obs=to_jax_array(norm_obs))
         brax_state = vmap_brax_step(brax_state, to_jax_array(action))
@@ -167,7 +170,7 @@ def _evaluate_brax(
     useless: bool,
     obs_param: torch.Tensor,
     observation_shape: int,
-    obs_norm: Dict[str, Any],
+    obs_norm: torch.Tensor,
     obs_buf: torch.Tensor,
     valid_mask: torch.Tensor,
 ) -> Tuple[torch.Tensor, List[torch.Tensor], torch.Tensor]:
@@ -221,7 +224,7 @@ def _evaluate_brax_vmap_main(
     useless: bool,
     obs_param: torch.Tensor,
     observation_shape: int,
-    obs_norm: Dict[str, Any],
+    obs_norm: torch.Tensor,
     obs_buf: torch.Tensor,
     valid_mask: torch.Tensor,
 ) -> Tuple[torch.Tensor, List[torch.Tensor], torch.Tensor]:
@@ -321,7 +324,7 @@ class MoRobtrol(Problem):
         device: torch.device | None = None,
         num_obj: int = 1,
         observation_shape: int = 0,
-        obs_norm: Dict[str, float] = None,
+        obs_norm: torch.Tensor = None,
         useless: bool = True,
     ):
         """Construct a Brax-based problem.
@@ -416,11 +419,7 @@ class MoRobtrol(Problem):
         self.observation_shape = observation_shape
         self.num_obj = num_obj
         if obs_norm is None:
-            self.obs_norm = {
-                "clip_val": 5.0,
-                "std_min": 1e-6,
-                "std_max": 1e6,
-            }
+            self.obs_norm = torch.tensor([5.0, 1e-6, 1e6], device=device)
         else:
             self.obs_norm = obs_norm
         self.obs_param = torch.zeros(
