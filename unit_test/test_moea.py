@@ -1,7 +1,7 @@
 from unittest import TestCase
 
 import torch
-from evox.algorithms import IBEA, TensorMOEAD
+from evox.algorithms import IBEA, LMOCSO, TensorMOEAD
 from evox.core import Algorithm, use_state, vmap
 from evox.problems.numerical import DTLZ2
 from evox.workflows import StdWorkflow
@@ -43,7 +43,8 @@ class TestMOVariants(MOTestBase):
         ub = torch.ones(dim)
         self.algo = [
             TensorMOEAD(pop_size=pop_size, n_objs=3, lb=lb, ub=ub),
-            IBEA(pop_size=pop_size, n_objs=3, lb=lb, ub=ub)
+            IBEA(pop_size=pop_size, n_objs=3, lb=lb, ub=ub),
+            LMOCSO(pop_size=pop_size, n_objs=3, lb=lb, ub=ub)
         ]
 
     def test_moea_variants(self):
