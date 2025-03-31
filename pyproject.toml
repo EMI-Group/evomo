@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "evomo"
-version = "0.1.0rc2"
+version = "0.1.0rc3"
 authors = [
   { name = "Zhenyu Liang", email = "zhenyuliang97@gmail.com" },
   { name = "Naiwei Yu", email = "yunaiweiyn@gmail.com" },
@@ -16,7 +16,7 @@ license = { file = "LICENSE" }
 requires-python = ">=3.10"
 classifiers = [
   "Programming Language :: Python :: 3",
-  "License :: OSI Approved :: GNU General Public License v3",
+  "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
   "Intended Audience :: Science/Research",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
