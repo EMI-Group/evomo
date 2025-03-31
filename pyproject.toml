@@ -22,7 +22,7 @@ classifiers = [
 ]
 
 dependencies = [
-  "torch >= 2.5.0",
+  "torch >= 2.6.0",
   "evox >= 1.1.1",
 ]
 
@@ -48,7 +48,6 @@ test = [
 "Bug Tracker" = "https://github.com/EMI-Group/evomo/issues"
 
 [tool.ruff]
-exclude = ["legacy/*"]
 # Allow lines to be as long as 128. (default: 88)
 line-length = 128
 # Use `\n` line endings for all files
