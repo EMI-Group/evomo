@@ -58,7 +58,7 @@ def _evaluate_brax_main(
     useless: bool,
     obs_param: torch.Tensor,
     observation_shape: int,
-    obs_norm: Dict,
+    obs_norm: Dict[str, Any],
     obs_buf: torch.Tensor,
     valid_mask: torch.Tensor,
 ) -> Tuple[torch.Tensor, List[torch.Tensor], torch.Tensor]:
@@ -167,7 +167,7 @@ def _evaluate_brax(
     useless: bool,
     obs_param: torch.Tensor,
     observation_shape: int,
-    obs_norm: Dict,
+    obs_norm: Dict[str, Any],
     obs_buf: torch.Tensor,
     valid_mask: torch.Tensor,
 ) -> Tuple[torch.Tensor, List[torch.Tensor], torch.Tensor]:
@@ -221,7 +221,7 @@ def _evaluate_brax_vmap_main(
     useless: bool,
     obs_param: torch.Tensor,
     observation_shape: int,
-    obs_norm: Dict,
+    obs_norm: Dict[str, Any],
     obs_buf: torch.Tensor,
     valid_mask: torch.Tensor,
 ) -> Tuple[torch.Tensor, List[torch.Tensor], torch.Tensor]:
