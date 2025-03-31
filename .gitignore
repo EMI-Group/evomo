@@ -159,15 +159,9 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 .idea/
 
-*template.sh
-*.out
+# VS
+.vscode
 
-**/old*.py
-*.sh
-
-data/
-data/states/
-data/states/nsga3.pkl
-test.py
-test[1-6].py
-example.py
+# Test
+test*.py
+!test*_*.py
