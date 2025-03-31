@@ -11,9 +11,8 @@ from brax import envs
 from brax.io import html, image
 from evox.core import Problem, use_state
 from evox.problems.neuroevolution.utils import get_vmap_model_state_forward
-from evox.utils import VmapInfo
+from evox.utils import VmapInfo, clamp
 from torch._C._functorch import get_unwrapped, is_batchedtensor
-from evox.utils import clamp
 
 
 # to_dlpack is not necessary for torch.Tensor and jax.Array
