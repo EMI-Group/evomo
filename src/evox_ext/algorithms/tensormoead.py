@@ -51,6 +51,21 @@ def shuffle_rows(matrix: torch.Tensor) -> torch.Tensor:
 class TensorMOEAD(Algorithm):
     """
     TensorMOEA/D
+
+    This is a tensorized implementation of the original MOEA/D algorithm, which incorporates GPU acceleration
+    for improved computational performance in solving multi-objective optimization problems.
+
+    :references:
+        [1] Q. Zhang and H. Li, "MOEA/D: A Multiobjective Evolutionary Algorithm Based on Decomposition,"
+            IEEE Transactions on Evolutionary Computation, vol. 11, no. 6, pp. 712-731, 2007. Available:
+            https://ieeexplore.ieee.org/document/4358754
+
+        [2] Z. Liang, H. Li, N. Yu, K. Sun, and R. Cheng, "Bridging Evolutionary Multiobjective Optimization and
+            GPU Acceleration via Tensorization," IEEE Transactions on Evolutionary Computation, 2025. Available:
+            https://ieeexplore.ieee.org/document/10944658
+
+    :note: This implementation differs from the original MOEA/D algorithm by incorporating tensorization for
+            GPU acceleration, significantly improving performance for large-scale optimization tasks.
     """
 
     def __init__(
@@ -100,8 +115,10 @@ class TensorMOEAD(Algorithm):
             self.crossover = simulated_binary_half
 
         w, _ = uniform_sampling(self.pop_size, self.n_objs)
+        w = w.to(device=device)
 
         self.pop_size = w.size(0)
+        assert self.pop_size > 10, "Population size must be greater than 10. Please reset the population size."
         self.n_neighbor = int(math.ceil(self.pop_size / 10))
 
         length = ub - lb
@@ -152,8 +169,8 @@ class TensorMOEAD(Algorithm):
 
         self.z = torch.min(self.z, torch.min(off_fit, dim=0)[0])
 
-        sub_pop_indices = torch.arange(0, self.pop_size)
-        update_mask = torch.zeros((self.pop_size,), dtype=torch.bool)
+        sub_pop_indices = torch.arange(0, self.pop_size, device=self.pop.device)
+        update_mask = torch.zeros((self.pop_size,), dtype=torch.bool, device=self.pop.device)
 
         def body(ind_p, ind_obj):
             g_old = self.aggregate_func1(self.fit[ind_p], self.w[ind_p], self.z)
