@@ -14,3 +14,5 @@ from .morobtrol import (
 )
 
 from .obs_new import Obs_Normalizer
+from .knapsack import MOKnapsack
+from .mnklandscape import MNKLandscape
