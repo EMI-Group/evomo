@@ -11,8 +11,10 @@ __all__ = [
   "mo_walker2d",
   "mo_reacher",
   "mo_pusher",
+  "numerical",
 ]
 
+from . import numerical
 from .morobtrol import (
   mo_ant,
   mo_half_cheetah,
