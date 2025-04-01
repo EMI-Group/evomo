@@ -45,10 +45,12 @@ class TestMAF(TestCase):
     def test_maf(self):
         for pro in self.pro:
             pop = torch.rand(7, pro.d)
+            original_pop = pop.clone()
             print(f"pro: {pro}")
 
             fit = pro.evaluate(pop)
             print(f"fit.size(): {fit.size()}")
+            assert (pop - original_pop).sum() == 0
             assert fit.size() == (7, pro.m)
 
             pf = pro.pf()
