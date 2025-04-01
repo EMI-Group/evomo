@@ -117,13 +117,13 @@ def _evaluate_brax_main(
             brax_state = brax_state.replace(obs=to_jax_array(norm_obs))
         brax_state = vmap_brax_step(brax_state, to_jax_array(action))
 
-        obs_buf[counter] = from_jax_array(brax_state.obs)
+        obs_buf[counter] = from_jax_array(brax_state.obs, device)
         done = jnp.tile(brax_state.done[:, jnp.newaxis], (1, num_obj))
         reward = jnp.nan_to_num(brax_state.reward)
         total_reward += (1 - done) * reward
-        jax_vm = to_jax_array(valid_mask[counter])
+        jax_vm = to_jax_array(valid_mask[counter].clone())
         valid_mask[counter] = from_jax_array(
-            (1 - brax_state.done.ravel()).reshape(jax_vm.shape) * jax_vm
+            (1 - brax_state.done.ravel()).reshape(jax_vm.shape) * jax_vm, device
         )
         counter += 1
         if not useless:
@@ -494,6 +494,7 @@ class MoRobtrol(Problem):
             max_episode_length=self.max_episode_length,
             key=self.key,
             model_state=model_state,
+            num_obj=self.num_obj,
             useless=self.useless,
             obs_param=self.obs_param,
             observation_shape=self.observation_shape,
