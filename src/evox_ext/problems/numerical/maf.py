@@ -83,7 +83,6 @@ class MAF2(MAF):
         f = (1 + g) * f1 * f2
         return f
 
-    @torch.jit.ignore
     def _calc_pf(self):
         m = self.m
         r, n = uniform_sampling(self.ref_num * self.m, self.m)
@@ -134,8 +133,7 @@ class MAF3(MAF):
         f = torch.cat([f1[:, : m - 1] ** 4, (f1[:, m - 1] ** 2).view(-1, 1)], dim=1)
         return f
 
-    @torch.jit.ignore
-    def _cal_pf(self):
+    def _calc_pf(self):
         m = self.m
         r, n = uniform_sampling(self.ref_num * self.m, self.m)
 
@@ -162,8 +160,7 @@ class MAF4(MAF):
         f = f1 * torch.pow(2, torch.arange(1, m + 1))
         return f
 
-    @torch.jit.ignore
-    def _cal_pf(self):
+    def _calc_pf(self):
         m = self.m
         r, n = uniform_sampling(self.ref_num * self.m, self.m)
         r1 = r / torch.sqrt(torch.sum(r**2, dim=1))
@@ -195,8 +192,7 @@ class MAF5(MAF):
         f = f1 * torch.pow(2, torch.arange(m, 0, -1, device=X.device))
         return f
 
-    @torch.jit.ignore
-    def _cal_pf(self):
+    def _calc_pf(self):
         m = self.m
         r, n = uniform_sampling(self.ref_num * self.m, self.m)
         r1 = r / torch.sqrt(torch.sum(r**2, dim=1))
@@ -228,8 +224,7 @@ class MAF6(MAF):
         )
         return f
 
-    @torch.jit.ignore
-    def _cal_pf(self):
+    def _calc_pf(self):
         m = self.m
         r, n = uniform_sampling(self.ref_num * self.m, 2)
         r1 = (r / torch.sqrt(torch.sum(r**2, dim=1))).repeat(1, r.size(1))
@@ -260,7 +255,7 @@ class MAF7(MAF):
         return f
 
     @torch.jit.ignore
-    def _cal_pf(self):
+    def _calc_pf(self):
         m = self.m
         interval = torch.tensor([0, 0.251412, 0.631627, 0.859401], device=self.device)
         median = (interval[1] - interval[0]) / (interval[3] - interval[2] + interval[1] - interval[0])
@@ -298,8 +293,7 @@ class MAF8(MAF):
         f = self._eucl_dis(X[:, :2], self.points)
         return f
 
-    @torch.jit.ignore
-    def _cal_pf(self):
+    def _calc_pf(self):
         temp = torch.linspace(
             -1, 1, steps=int(torch.sqrt(torch.tensor(self.ref_num * self.m, device=self.device))), device=self.device
         )
@@ -401,8 +395,7 @@ class MAF10(MAF):
         f = x[:, m - 1].unsqueeze(1) + s * h
         return f
 
-    @torch.jit.ignore
-    def _cal_pf(self):
+    def _calc_pf(self):
         m = self.m
         x, temp, a = self._pf_a()
         e = torch.abs(
@@ -482,8 +475,7 @@ class MAF11(MAF10):
         d = int((d - m + 1) / 2) * 2 + m - 1
         super().__init__(d, m, ref_num, device)
 
-    @torch.jit.ignore
-    def _cal_pf(self):
+    def _calc_pf(self):
         m = self.m
         x, temp, a = self._pf_a()
         e = torch.abs(temp.unsqueeze(1) * (1 - torch.cos(torch.pi / 2 * a)) - 1 + a * torch.cos(5 * torch.pi * a) ** 2)
@@ -577,12 +569,12 @@ class MAF12(MAF):
         f = x[:, m - 1].view(-1, 1) + S * h
         return f
 
-    def pf(self):
+    def _calc_pf(self):
         m = self.m
         r, n = uniform_sampling(self.ref_num * self.m, self.m)
         r = r / torch.sqrt(torch.sum(r**2, dim=1)).reshape(-1, 1)
         f = torch.arange(2, 2 * m + 1, 2) * r
-        return f
+        self._pf_value = f
 
     def _s_decept(self, Y: torch.Tensor, a, b, c):
         return 1 + (torch.abs(Y - a) - b) * (
@@ -648,13 +640,12 @@ class MAF13(MAF):
         )
         return f
 
-    @torch.jit.ignore
-    def _cal_pf(self):
+    def _calc_pf(self):
         m = self.m
         r, n = uniform_sampling(self.ref_num * self.m, 3)
         r = r / torch.sqrt(torch.sum(r**2, dim=1))
         f = torch.cat([r, (r[:, 0] ** 2 + r[:, 1] ** 10 + r[:, 2] ** 10).unsqueeze(1).repeat(1, m - 3)], dim=1)
-        return f
+        self._pf_value = f
 
 
 class MAF14(MAF):
@@ -683,8 +674,7 @@ class MAF14(MAF):
         )
         return f
 
-    @torch.jit.ignore
-    def _cal_pf(self):
+    def _calc_pf(self):
         self._pf_value = uniform_sampling(self.ref_num * self.m, self.m)
 
     def _evaluate(self, X: torch.Tensor):
@@ -743,8 +733,7 @@ class MAF15(MAF14):
         )
         return f
 
-    @torch.jit.ignore
-    def _cal_pf(self):
+    def _calc_pf(self):
         r, n = uniform_sampling(self.ref_num * self.m, self.m)
         r = 1 - r / torch.sqrt(torch.sum(r**2, axis=1)).reshape(-1, 1)
         self._pf_value = r
