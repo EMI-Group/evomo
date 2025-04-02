@@ -7,7 +7,7 @@ from evox.operators.sampling import uniform_sampling
 from evox.problems.numerical import ackley_func, griewank_func, rastrigin_func, rosenbrock_func, sphere_func
 
 
-def schwefel_func(x :torch.Tensor) -> torch.Tensor:
+def schwefel_func(x: torch.Tensor) -> torch.Tensor:
     return torch.max(torch.abs(x), dim=-1).values
 
 
@@ -60,7 +60,9 @@ class LSMOP(Problem):
         m = self.m
         n, d = X.size()
         X_ = X.clone()
-        X_[:, m - 1 :] = (1 + (torch.arange(m, d + 1, device=X_.device) / d).unsqueeze(0).repeat(n, 1)) * X_[:, m - 1 :] - X_[:, :1] * 10
+        X_[:, m - 1 :] = (1 + (torch.arange(m, d + 1, device=X_.device) / d).unsqueeze(0).repeat(n, 1)) * X_[:, m - 1 :] - X_[
+            :, :1
+        ] * 10
         return X_
 
     def _calc_g(self, X: torch.Tensor):
@@ -71,7 +73,7 @@ class LSMOP(Problem):
         n, d = X_.size()
         ones_col = torch.ones(n, 1, device=X_.device)
         cumprod_part = torch.cumprod(torch.cat([ones_col, X_[:, : m - 1]], dim=1), dim=1)
-        f = (1 + g) * torch.flip(cumprod_part, [1]) * torch.cat([ones_col, 1 - torch.flip(X_[:, :m-1], [1])], dim=1)
+        f = (1 + g) * torch.flip(cumprod_part, [1]) * torch.cat([ones_col, 1 - torch.flip(X_[:, : m - 1], [1])], dim=1)
         return f
 
     def _inner_calc_g(self, inner_funcs, x):
@@ -139,7 +141,7 @@ class LSMOP5(LSMOP):
         n, d = X_.size()
         ones_col = torch.ones(n, 1, device=X_.device)
         cumprod_part = torch.cumprod(torch.cat([ones_col, torch.cos(X_[:, : m - 1] * torch.pi / 2)], dim=1), dim=1)
-        last_part = torch.sin(torch.flip(X_[:, :m-1], [1]) * torch.pi / 2)
+        last_part = torch.sin(torch.flip(X_[:, : m - 1], [1]) * torch.pi / 2)
         f = (
             (1 + g + torch.cat([g[:, 1:], torch.zeros(n, 1, device=X_.device)], dim=1))
             * torch.flip(cumprod_part, [1])

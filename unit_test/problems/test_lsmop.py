@@ -7,17 +7,7 @@ from evox.problems.numerical import LSMOP1, LSMOP2, LSMOP3, LSMOP4, LSMOP5, LSMO
 
 class TestLSMOP(TestCase):
     def setUp(self):
-        self.pro = [
-            LSMOP1(),
-            LSMOP2(),
-            LSMOP3(),
-            LSMOP4(),
-            LSMOP5(),
-            LSMOP6(),
-            LSMOP7(),
-            LSMOP8(),
-            LSMOP9()
-        ]
+        self.pro = [LSMOP1(), LSMOP2(), LSMOP3(), LSMOP4(), LSMOP5(), LSMOP6(), LSMOP7(), LSMOP8(), LSMOP9()]
 
     def test_lsmop(self):
         pop = torch.rand(50, 300)
@@ -28,6 +18,7 @@ class TestLSMOP(TestCase):
             assert fit.size() == (50, 3)
             pf = pro.pf()
             assert pf.size(1) == 3
+
 
 if __name__ == "__main__":
     t = TestLSMOP()
