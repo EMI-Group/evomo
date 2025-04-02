@@ -20,10 +20,12 @@ class TestZDT(TestCase):
 
     def test_zdt(self):
         pop = torch.rand(7, self.n)
+        original_pop = pop.clone()
         for pro in self.pro:
             print(f"pro: {pro}")
             fit = pro.evaluate(pop)
             print(f"fit.size(): {fit.size()}")
+            assert (pop - original_pop).sum() == 0
             assert fit.size() == (7, 2)
             pf = pro.pf()
             print(f"pf.size(): {pf.size()}")
