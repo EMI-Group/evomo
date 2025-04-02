@@ -1,7 +1,6 @@
 from unittest import TestCase
 
 import torch
-
 from evox.problems.numerical import LSMOP1, LSMOP2, LSMOP3, LSMOP4, LSMOP5, LSMOP6, LSMOP7, LSMOP8, LSMOP9
 
 
