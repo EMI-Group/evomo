@@ -1,18 +1,4 @@
 __all__ = [
-    # "Ackley",
-    # "Griewank",
-    # "Rastrigin",
-    # "Rosenbrock",
-    # "Schwefel",
-    # "Sphere",
-    # "CEC2022",
-    # "DTLZ1",
-    # "DTLZ2",
-    # "DTLZ3",
-    # "DTLZ4",
-    # "DTLZ5",
-    # "DTLZ6",
-    # "DTLZ7",
     "ZDT1",
     "ZDT2",
     "ZDT3",
@@ -44,9 +30,6 @@ __all__ = [
     "LSMOP9",
 ]
 
-# from .basic import Ackley, Griewank, Rastrigin, Rosenbrock, Schwefel, Sphere
-# from .cec2022 import CEC2022
-# from .dtlz import DTLZ1, DTLZ2, DTLZ3, DTLZ4, DTLZ5, DTLZ6, DTLZ7
 from evox_ext.problems.numerical.lsmop import LSMOP1, LSMOP2, LSMOP3, LSMOP4, LSMOP5, LSMOP6, LSMOP7, LSMOP8, LSMOP9
 from evox_ext.problems.numerical.maf import (
     MAF1,

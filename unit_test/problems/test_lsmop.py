@@ -17,9 +17,3 @@ class TestLSMOP(TestCase):
             assert fit.size() == (50, 3)
             pf = pro.pf()
             assert pf.size(1) == 3
-
-
-if __name__ == "__main__":
-    t = TestLSMOP()
-    t.setUp()
-    t.test_lsmop()
