@@ -33,10 +33,12 @@ def setup_workflow(model, pop_size, max_episode_length, num_episodes, device):
         device=device,
         num_obj=2,
         observation_shape=8,
-        obs_norm={"clip_val": 5.0, "std_min": 1e-6, "std_max": 1e6},
+        obs_norm=torch.tensor([5.0, 1e-6, 1e6], device=device),
     )
 
-    algorithm = NSGA2(pop_size=pop_size, lb=lower_bound, ub=upper_bound, n_objs=2, device=device)
+    algorithm = NSGA2(
+        pop_size=pop_size, lb=lower_bound, ub=upper_bound, n_objs=2, device=device
+    )
     monitor = EvalMonitor(device=device)
 
     workflow = StdWorkflow(
@@ -54,6 +56,7 @@ def run_workflow(workflow, adapter, monitor, compiled=False, generations=3):
     step_function = torch.compile(workflow.step) if compiled else workflow.step
     for index in range(generations):
         step_function()
+
 
 class TestMoRobtrolProblem(unittest.TestCase):
     def setUp(self):
