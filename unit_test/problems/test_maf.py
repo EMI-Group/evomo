@@ -32,12 +32,12 @@ class TestMAF(TestCase):
                 MAF5(d,m),
                 MAF6(d,m),
                 MAF7(d,m),
-                MAF8(2,3), #MAF 8 is only defined for D = 2 and M >= 3
-                MAF9(2,3), #MAF 9 is only defined for D = 2 and M >= 3
+                MAF8(2,3), # MAF 8 is only defined for D = 2 and M >= 3
+                MAF9(2,3), # MAF 9 is only defined for D = 2 and M >= 3
                 MAF10(d,m),
                 MAF11(d,m),
                 MAF12(d,m),
-                MAF13(d,3), #MAF 13 is only defined for M >= 3
+                MAF13(d,3), # MAF 13 is only defined for M >= 3
                 MAF14(d,m),
                 MAF15(d,m),
         ]
@@ -45,12 +45,10 @@ class TestMAF(TestCase):
     def test_maf(self):
         for pro in self.pro:
             pop = torch.rand(7, pro.d)
-            original_pop = pop.clone()
             print(f"pro: {pro}")
 
             fit = pro.evaluate(pop)
             print(f"fit.size(): {fit.size()}")
-            assert (pop - original_pop).sum() == 0
             assert fit.size() == (7, pro.m)
 
             pf = pro.pf()

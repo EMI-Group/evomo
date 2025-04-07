@@ -163,7 +163,7 @@ class MAF4(MAF):
     def _calc_pf(self):
         m = self.m
         r, n = uniform_sampling(self.ref_num * self.m, self.m)
-        r1 = r / torch.sqrt(torch.sum(r**2, dim=1))
+        r1 = r / torch.sqrt(torch.sum(r**2, dim=1, keepdim=True))
         f = (1 - r1) * torch.pow(2, torch.arange(1, m + 1, device=r.device))
         self._pf_value = f
 
@@ -195,7 +195,7 @@ class MAF5(MAF):
     def _calc_pf(self):
         m = self.m
         r, n = uniform_sampling(self.ref_num * self.m, self.m)
-        r1 = r / torch.sqrt(torch.sum(r**2, dim=1))
+        r1 = r / torch.sqrt(torch.sum(r**2, dim=1, keepdim=True))
         f = r1 * torch.pow(2, torch.arange(m, 0, -1, device=r.device))
         self._pf_value = f
 
@@ -227,10 +227,14 @@ class MAF6(MAF):
     def _calc_pf(self):
         m = self.m
         r, n = uniform_sampling(self.ref_num * self.m, 2)
-        r1 = (r / torch.sqrt(torch.sum(r**2, dim=1))).repeat(1, r.size(1))
+        print(r.size())
+        r1 = (r / torch.sqrt(torch.sum(r**2, dim=1, keepdim=True)))
+
         if r1.size(1) < m:
             r1 = torch.cat((r1[:, torch.zeros(m - 4, device=r.device)], r1), dim=1)
-        f = r1 / torch.pow(torch.sqrt(2), torch.maximum(self.m - 2, 0).repeat(n, 1))
+        f = r1 / torch.pow(torch.sqrt(torch.tensor(2.0)),
+                           torch.maximum(torch.tensor(self.m - 2), torch.tensor(0)).repeat(n, 1))
+
         self._pf_value = f
 
 
@@ -294,6 +298,9 @@ class MAF8(MAF):
         return f
 
     def _calc_pf(self):
+        if not hasattr(self, 'points'):
+            self.points = self._getPoints()
+
         temp = torch.linspace(
             -1, 1, steps=int(torch.sqrt(torch.tensor(self.ref_num * self.m, device=self.device))), device=self.device
         )
@@ -343,9 +350,13 @@ class MAF8(MAF):
 
     def _point_in_polygon(self, polygon, point):
         seg_term = torch.roll(polygon, 1, dims=0)
-        is_intersect = torch.cat(
-            [self._ray_intersect_segment(point, polygon[i], seg_term[i]) for i in range(polygon.size(0))], dim=0
-        )
+        is_intersect_list = []
+
+        for i in range(polygon.size(0)):
+            intersect = self._ray_intersect_segment(point, polygon[i], seg_term[i])
+            is_intersect_list.append(intersect.unsqueeze(0))
+
+        is_intersect = torch.cat(is_intersect_list, dim=0)
         is_vertex = torch.any(torch.all(polygon == point, dim=1))
         return (torch.sum(is_intersect) % 2 == 1) | is_vertex
 
@@ -405,7 +416,7 @@ class MAF10(MAF):
         )
         rank = torch.argsort(e, dim=1)
 
-        x[:, 0] = a[0, torch.min(rank[:, :10], dim=1)]
+        x[:, 0] = a[0, torch.min(rank[:, :10], dim=1)[1]]
         f = self._convex(x)
         f[:, m - 1] = self._mixed(x)
         f = f * torch.arange(2, 2 * m + 1, 2, device=self.device)
@@ -480,12 +491,12 @@ class MAF11(MAF10):
         x, temp, a = self._pf_a()
         e = torch.abs(temp.unsqueeze(1) * (1 - torch.cos(torch.pi / 2 * a)) - 1 + a * torch.cos(5 * torch.pi * a) ** 2)
         rank = torch.argsort(e, dim=1)
-        x[:, 0] = a[0, torch.min(rank[:, :10], dim=1)]
+        x[:, 0] = a[0, torch.min(rank[:, :10], dim=1)[1]]
         f = self._convex(x)
         f[:, m - 1] = self._mixed(x)
         non_dominated_rank = non_dominate_rank(f)
         f = f[non_dominated_rank == 0, :]
-        f = f * torch.arange(2, 2 * m + 1, 2, device=self.sample.device)
+        f = f * torch.arange(2, 2 * m + 1, 2, device=x.device)
         self._pf_value = f
 
     def _evaluate(self, t1: torch.Tensor, X: torch.Tensor):
@@ -643,7 +654,7 @@ class MAF13(MAF):
     def _calc_pf(self):
         m = self.m
         r, n = uniform_sampling(self.ref_num * self.m, 3)
-        r = r / torch.sqrt(torch.sum(r**2, dim=1))
+        r = r / torch.sqrt(torch.sum(r**2, dim=1, keepdim=True))
         f = torch.cat([r, (r[:, 0] ** 2 + r[:, 1] ** 10 + r[:, 2] ** 10).unsqueeze(1).repeat(1, m - 3)], dim=1)
         self._pf_value = f
 
@@ -675,7 +686,7 @@ class MAF14(MAF):
         return f
 
     def _calc_pf(self):
-        self._pf_value = uniform_sampling(self.ref_num * self.m, self.m)
+        self._pf_value = uniform_sampling(self.ref_num * self.m, self.m)[0]
 
     def _evaluate(self, X: torch.Tensor):
         m = self.m
