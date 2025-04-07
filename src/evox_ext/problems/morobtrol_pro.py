@@ -201,18 +201,18 @@ def _fake_evaluate_brax(
     max_episode_length: int,
     key: torch.Tensor,
     model_state: List[torch.Tensor],
-    # num_obj: int,
-    # useless: bool,
-    # obs_param: torch.Tensor,
-    # observation_shape: int,
-    # obs_norm: torch.Tensor,
-    # obs_buf: torch.Tensor,
-    # valid_mask: torch.Tensor,
+    num_obj: int,
+    useless: bool,
+    obs_param: torch.Tensor,
+    observation_shape: int,
+    obs_norm: torch.Tensor,
+    obs_buf: torch.Tensor,
+    valid_mask: torch.Tensor,
 ) -> Tuple[torch.Tensor, List[torch.Tensor], torch.Tensor]:
     return (
         key.new_empty(key.size()),
         [v.new_empty(v.size()) for v in model_state],
-        model_state[0].new_empty(pop_size, num_episodes),
+        model_state[0].new_empty(pop_size, num_episodes, num_obj),
     )
 
 
