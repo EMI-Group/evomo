@@ -206,7 +206,7 @@ if __name__ == "__main__":
 ## Publications on EvoMO
 - Hao Li, Zhenyu Liang, and Ran Cheng, “GPU-accelerated evolutionary many-objective optimization using tensorized NSGA-III,” in *IEEE
 Congress on Evolutionary Computation*, 2025. [Paper](https://arxiv.org) | [Read More](docs/papers/tensornsga3_cec25.md)
-- Zhenyu Liang, Tao Jiang, Kebin Sun, and Ran Cheng, “GPU-accelerated Evolutionary Multiobjective Optimization Using Tensorized RVEA,” in *Proceedings of the Genetic and Evolutionary Computation Conference*, 2024. [Paper](https://arxiv.org/abs/2404.01159) | [Read More](https://github.com/EMI-Group/tensorrvea)
+- Zhenyu Liang, Tao Jiang, Kebin Sun, and Ran Cheng, “GPU-accelerated evolutionary multiobjective optimization using tensorized RVEA,” in *Proceedings of the Genetic and Evolutionary Computation Conference*, 2024, pp. 566–575. [Paper](https://arxiv.org/abs/2404.01159) | [Read More](https://github.com/EMI-Group/tensorrvea)
 
 ## Community & Support
 
