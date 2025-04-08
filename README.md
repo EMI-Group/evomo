@@ -134,7 +134,7 @@ import time
 import torch
 import torch.nn as nn
 from evox.algorithms import TensorMOEAD
-from evox.problems import MoRobtrol
+from evox.problems.neuroevolution import MoRobtrol
 from evox.utils import ParamsAndVector
 from evox.workflows import EvalMonitor, StdWorkflow
 
