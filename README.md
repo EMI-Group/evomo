@@ -1,23 +1,24 @@
 <h1 align="center">
   <a href="https://github.com/EMI-Group/evox">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./assets/evox_logo_dark.png">
-    <source media="(prefers-color-scheme: light)" srcset="./assets/evox_logo_light.png">
-      <img alt="EvoX Logo" height="50" src="./assets/evox_logo_light.png">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/evox_logo_dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/images/evox_logo_light.png">
+      <img alt="EvoX Logo" height="50" src="docs/images/evox_logo_light.png">
   </picture>
   </a>
   <br>
 </h1>
 
-<p align="center">
+<h2 align="center">
 🌟 EvoMO: Bridging Evolutionary Multiobjective Optimization and GPU Acceleration via Tensorization 🌟
-</p>
+</h2>
 
-<p align="center">
-  <a href="https://arxiv.org/">
+<div align="center">
+  <a href="http://arxiv.org/abs/2503.20286">
     <img src="https://img.shields.io/badge/paper-arxiv-red?style=for-the-badge" alt="EvoMO Paper on arXiv">
   </a>
-</p>
+</div>
+
 
 ## Table of Contents
 
@@ -25,26 +26,36 @@
 2. [Key Features](#key-features)
 3. [Requirements](#requirements)
 4. [Examples](#examples)
-6. [Community & Support](#community--support)
+5. [Community & Support](#community--support)
 
 
 ## Overview  
 
-EvoMO is a GPU-accelerated library for evolutionary multiobjective optimization (EMO) via advanced tensorization. By converting key data structures and operations into tensor representations, it enables concise mathematical modeling and significant speedups. Designed for scalability, EvoMO efficiently handles large populations and complex optimization tasks. EvoMO is a sister project of [EvoX](https://github.com/EMI-Group/evox).  
+EvoMO is a GPU-accelerated library for evolutionary multiobjective optimization (EMO) that leverages advanced tensorization techniques. By transforming key data structures and operations into tensor representations, EvoMO enables more efficient mathematical modeling and delivers significant performance improvements. Designed with scalability in mind, EvoMO can efficiently handle large populations and complex optimization tasks. Additionally, EvoMO includes MoRobtrol, a multiobjective robot control benchmark suite, providing a platform for testing tensorized EMO algorithms in real-world, black-box environments. EvoMO is a sister project of [EvoX](https://github.com/EMI-Group/evox).  
 
 ## Key Features  
 
-- **General Tensorization Methodology ⚡:**  
-  EvoMO adopts a unified tensorization approach that restructures EMO algorithms into tensor-based representations, enabling efficient GPU acceleration.  
+### 💻 High-Performance Computing
 
-- **Optimized State-of-the-Art Algorithms 🚀:**  
-  Supports **NSGA-II**, **NSGA-III**, **MOEA/D**, **RVEA**, and **HypE**, achieving up to **1113× speedup** while preserving solution quality.  
+#### 🚀 General Tensorization Methodology
+- **EvoMO** adopts a unified tensorization approach, restructuring EMO algorithms into tensor representations, enabling efficient GPU acceleration.
 
-- **Scalability 📈:**  
-  Handles large populations, scaling to hundreds of thousands for complex optimization tasks.  
+#### ⚡ Ultra Performance
+- Supports tensorized implementations of **NSGA-II**, **NSGA-III**, **MOEA/D**, **RVEA**, **HypE**, and more, achieving up to **1113× speedup** while preserving solution quality.
 
-- **MoRobtrol Benchmark 🤖:**  
-  Includes **MoRobtrol**, a multiobjective robot control benchmark for testing tensorized EMO algorithms in challenging black-box environments.  
+#### 📈 Scalability
+- Handles large populations, scaling to hundreds of thousands for complex optimization tasks, ensuring scalability for real-world applications.
+
+
+### 📊 Benchmarking
+
+#### 🤖 MoRobtrol Benchmark
+- Includes **MoRobtrol**, a multiobjective robot control benchmark, for testing tensorized EMO algorithms in challenging black-box environments.
+
+### 🔧 Easy-to-Use Integration
+
+#### 🔄 Shared Name with EvoX
+- After installation, you can directly import EvoMO algorithms using `import evox`, making it seamless to access both EvoX and EvoMO algorithms with a unified interface.
 
 ## Requirements
 
@@ -123,8 +134,10 @@ We welcome contributions and look forward to your feedback!
 If you use EvoMO in your research and want to cite it in your work, please use:
 ```
 @article{evomo,
-  title = {Bridging Evolutionary Multiobjective Optimization and GPU Acceleration via Tensorization},
-  author = {Zhenyu Liang, Hao Li, Naiwei Yu, Kebin Sun, and Ran Cheng},
-  year = {2025},
+  title = {Bridging Evolutionary Multiobjective Optimization and {GPU} Acceleration via Tensorization},
+  author = {Liang, Zhenyu and Li, Hao and Yu, Naiwei and Sun, Kebin and Cheng, Ran},
+  journal = {IEEE Transactions on Evolutionary Computation},
+  year = 2025,
+  doi = {10.1109/TEVC.2025.3555605}
 }
 ```
