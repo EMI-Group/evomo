@@ -11,7 +11,25 @@ def _generic_zdt(f1, g, h, x):
 
 
 class ZDT(Problem):
+    """
+    The ZDT test suite for multiobjective optimization.
+
+    This suite of benchmark functions is commonly used to evaluate the performance of multiobjective
+    evolutionary algorithms.
+
+    :references:
+        [1] E. Zitzler, K. Deb, and L. Thiele, "Comparison of Multiobjective Evolutionary Algorithms:
+            Empirical Results," in Evolutionary Computation, vol. 8, no. 2, pp. 173-195, 2000.
+            Available: https://ieeexplore.ieee.org/abstract/document/6787994
+    """
+
     def __init__(self, n: int, ref_num: int = 100):
+        """
+        Initialize the ZDT problem instance.
+
+        :param n: The dimensionality of the problem (number of variables).
+        :param ref_num: The reference number for evaluating the problem, default is 100.
+        """
         super().__init__()
         self.n = n
         self._zdt = None

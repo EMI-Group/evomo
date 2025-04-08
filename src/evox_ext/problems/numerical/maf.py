@@ -9,11 +9,24 @@ from evox.problems.numerical.basic import griewank_func, rastrigin_func, rosenbr
 
 class MAF(Problem):
     """
-    ------------------------------- Reference --------------------------------
-    R. Cheng, M. Li, Y. Tian, X. Zhang, S. Yang, Y. Jin, and X. Yao, A benchmark test suite for evolutionary many-objective optimization, Complex & Intelligent Systems, 2017, 3(1): 67-81.
+    The MAF benchmark test suite for evolutionary many-objective optimization.
+
+    :references:
+        [1] R. Cheng, M. Li, Y. Tian, X. Zhang, S. Yang, Y. Jin, and X. Yao, "A benchmark test suite
+            for evolutionary many-objective optimization," Complex & Intelligent Systems, vol. 3,
+            no. 1, pp. 67-81, 2017. Available: https://link.springer.com/article/10.1007/s40747-017-0039-7
     """
 
+
     def __init__(self, d: int = None, m: int = 3, ref_num: int = 1000, device: Optional[torch.device] = None):
+        """
+        Initialize the MAF problem instance.
+
+        :param d: The dimensionality of the problem (number of decision variables). If None, it is set to m + 9.
+        :param m: The number of objectives for the problem. Default is 3.
+        :param ref_num: The reference number for evaluating the problem, default is 1000.
+        :param device: The device to perform computations on (e.g., CPU or GPU). If None, the default device is used.
+        """
         super().__init__()
         self.device = device or torch.get_default_device()
         self.m = m
