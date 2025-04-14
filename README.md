@@ -1,9 +1,9 @@
 <h1 align="center">
   <a href="https://github.com/EMI-Group/evox">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./assets/evox_logo_dark.png">
-    <source media="(prefers-color-scheme: light)" srcset="./assets/evox_logo_light.png">
-      <img alt="EvoX Logo" height="50" src="./assets/evox_logo_light.png">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/evox_logo_dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/images/evox_logo_light.png">
+      <img alt="EvoX Logo" height="50" src="docs/images/evox_logo_light.png">
   </picture>
   </a>
   <br>
@@ -25,6 +25,7 @@
 2. [Key Features](#key-features)
 3. [Installation Guide](#installation-guide)
 4. [Examples](#examples)
+5. [Publications on EvoMO](#publications-on-evomo)
 6. [Community & Support](#community--support)
 
 
@@ -95,11 +96,12 @@ Solve the DTLZ2 problem using the TensorMOEA/D algorithm:
 
 ```python
 import time
+
 import torch
-from evox.workflows import StdWorkflow
 from evox.algorithms import TensorMOEAD
-from evox.problems.numerical import DTLZ2
 from evox.metrics import igd
+from evox.problems.numerical import DTLZ2
+from evox.workflows import StdWorkflow
 
 if __name__ == "__main__":
     torch.set_default_device("cuda" if torch.cuda.is_available() else "cpu")
@@ -132,7 +134,7 @@ import time
 import torch
 import torch.nn as nn
 from evox.algorithms import TensorMOEAD
-from evox.problems import MoRobtrol
+from evox.problems.neuroevolution import MoRobtrol
 from evox.utils import ParamsAndVector
 from evox.workflows import EvalMonitor, StdWorkflow
 
@@ -200,6 +202,11 @@ if __name__ == "__main__":
     run_workflow(workflow)
 
 ```
+
+## Publications on EvoMO
+- Hao Li, Zhenyu Liang, and Ran Cheng, “GPU-accelerated evolutionary many-objective optimization using tensorized NSGA-III,” in *IEEE
+Congress on Evolutionary Computation*, 2025. [[📄 Paper](https://arxiv.org/abs/2504.06067)] | [[🧐 Read More](docs/papers/tensornsga3_cec25.md)]
+- Zhenyu Liang, Tao Jiang, Kebin Sun, and Ran Cheng, “GPU-accelerated evolutionary multiobjective optimization using tensorized RVEA,” in *Proceedings of the Genetic and Evolutionary Computation Conference*, 2024, pp. 566–575. [[📄 Paper](https://arxiv.org/abs/2404.01159)] | [[🧐 Read More](https://github.com/EMI-Group/tensorrvea)]
 
 ## Community & Support
 

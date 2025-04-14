@@ -12,12 +12,20 @@ def schwefel_func(x: torch.Tensor) -> torch.Tensor:
 
 
 class LSMOP(Problem):
-    """R. Cheng, Y. Jin, and M. Olhofer, Test problems for large-scale multiobjective and many-objective optimization, IEEE Transactions on Cybernetics, 2017, 47(12): 4108-4121."""
+    """
+    The LSMOP test suite for large-scale multiobjective and many-objective optimization.
+
+    :references:
+        [1] R. Cheng, Y. Jin, M. Olhofer, and B. Sendhoff, "Test Problems for Large-Scale
+            Multiobjective and Many-Objective Optimization," IEEE Transactions on Cybernetics,
+            vol. 47, no. 12, pp. 4108-4121, 2017. Available: https://ieeexplore.ieee.org/abstract/document/7553457
+    """
+
 
     def __init__(self, d=None, m=None, ref_num=1000):
         """
-        :param d: number of decision variables, defaults to self.m * 100
-        :param m: number of objectives, defaults to 3
+        :param d: number of decision variables
+        :param m: number of objectives
         :param ref_num: number of reference points, defaults to 1000
         """
         super().__init__()

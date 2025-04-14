@@ -4,11 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "evomo"
-version = "0.1.0"
+version = "0.1.1"
 authors = [
   { name = "Zhenyu Liang", email = "zhenyuliang97@gmail.com" },
   { name = "Naiwei Yu", email = "yunaiweiyn@gmail.com" },
   { name = "Hao Li", email = "li7526a@gmail.com" },
+  { name = "Boqing Xu", email = "xuboqing123@gmail.com" },
 ]
 description = "evomo"
 readme = "README.md"
