@@ -12,7 +12,9 @@ from evox.utils import cos_dist
 
 class NSGA3(Algorithm):
     """
-    An implementation of the tensorized NSGA-III for many-objective optimization problems.
+    An implementation of the tensorized NSGA-III for many-objective optimization problems, closely related to the
+    original NSGA-III, published in the 2025 IEEE Congress on Evolutionary Computation (CEC).
+
 
     :references:
         [1] K. Deb and H. Jain, "An Evolutionary Many-Objective Optimization Algorithm Using Reference-Point-Based

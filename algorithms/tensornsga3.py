@@ -1,10 +1,3 @@
-# --------------------------------------------------------------------------------------
-# 1. NSGA-III algorithm is described in the following papers:
-#
-# Title: Bridging Evolutionary Multiobjective Optimization and GPU Acceleration via Tensorization
-# Link: 
-#
-# --------------------------------------------------------------------------------------
 import jax
 import jax.numpy as jnp
 from evox.operators import (
@@ -16,12 +9,22 @@ from evox.operators import (
 )
 from evox import Algorithm, jit_class, State
 from evox.utils import cos_dist
-from jax import vmap
+
 
 @jit_class
 class TensorNSGA3(Algorithm):
-    """NSGA-III algorithm
-    link: 
+    """
+    An implementation of the tensorized NSGA-III for many-objective optimization problems, published in the
+    IEEE Transactions on Evolutionary Computation (TEVC).
+
+    :references:
+        [1] K. Deb and H. Jain, "An Evolutionary Many-Objective Optimization Algorithm Using Reference-Point-Based
+            Nondominated Sorting Approach, Part I: Solving Problems With Box Constraints," IEEE Transactions on Evolutionary
+            Computation, vol. 18, no. 4, pp. 577-601, 2014. Available: https://ieeexplore.ieee.org/document/6600851
+
+        [2] Z. Liang, H. Li, N. Yu, K. Sun, and R. Cheng, "Bridging Evolutionary Multiobjective Optimization and
+            GPU Acceleration via Tensorization," IEEE Transactions on Evolutionary Computation, 2025. Available:
+            https://ieeexplore.ieee.org/document/10944658
     """
     def __init__(
             self,
@@ -34,6 +37,18 @@ class TensorNSGA3(Algorithm):
             mutation_op=None,
             crossover_op=None,
     ):
+        """
+        Initializes the TensorNSGA-III algorithm for many-objective optimization.
+
+        :param lb: The lower bounds for the decision variables (1D tensor).
+        :param ub: The upper bounds for the decision variables (1D tensor).
+        :param n_objs: The number of objective functions in the optimization problem.
+        :param pop_size: The size of the population.
+        :param uniform_init: Whether to use uniform initialization (default: True).
+        :param selection_op: The selection operation for evolutionary strategy (optional).
+        :param mutation_op: The mutation operation, defaults to `polynomial_mutation` if not provided (optional).
+        :param crossover_op: The crossover operation, defaults to `simulated_binary` if not provided (optional).
+        """
         self.lb = lb
         self.ub = ub
         self.n_objs = n_objs
@@ -122,11 +137,9 @@ class TensorNSGA3(Algorithm):
         )
         normalized_fitness = ranked_fitness / nadir_point
         cos_distance = cos_dist(normalized_fitness, state.ref)
-        # dist is matrix with shape is (merged_pop_size, ref_num)
         dist = jnp.linalg.norm(normalized_fitness, axis=-1, keepdims=True) * jnp.sqrt(
             1 - cos_distance ** 2
         )
-        # Associate each solution with its nearest reference point
         group_id = jnp.nanargmin(dist, axis=1)
         group_dist = jnp.nanmin(dist, axis=1)
         group_id = jnp.where(group_id == -1, len(state.ref), group_id)
@@ -140,7 +153,6 @@ class TensorNSGA3(Algorithm):
         upper_bound = self.pop_size * 2 + len(state.ref)
         rho = jnp.where(rho_last == 0, upper_bound, rho)
         group_id = jnp.where(rank == last_rank, group_id, upper_bound)
-        # for rho == 0
         rho_level = 0
 
         selected_rho = jnp.where(rho == rho_level, jnp.arange(rho.size), upper_bound)
@@ -148,7 +160,6 @@ class TensorNSGA3(Algorithm):
             return jnp.where(idx == upper_bound, upper_bound,
                              jnp.argmin(jnp.where(group_id == idx, group_dist, upper_bound)))
 
-        # use vmap to vectorize the selection
         selected_idx = jax.vmap(select_from_index_by_min)(selected_rho)
 
         the_selected_one_idx = jnp.minimum(jnp.min(selected_idx), the_selected_one_idx)
