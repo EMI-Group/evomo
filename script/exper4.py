@@ -6,7 +6,7 @@ from pathlib import Path
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
-from algorithms import TensorNSGA3
+from algorithms import NSGA3
 from problems import MOKnapsack, MNKLandscape
 from jax import random
 import jax
@@ -25,11 +25,11 @@ def run(algorithm_name, problem, key, objects=3, num_iter=100, d=500, data_type=
     mutation_op = mutation.Bitflip(prob=0.1)
     crossover_op = crossover.UniformRand()
     algorithm = {
-        "TensorNSGA3": TensorNSGA3(
+        "TensorNSGA3": NSGA3(
             lb=lb,
             ub=ub,
             n_objs=objects,
-            pop_size=1000,
+            pop_size=100,
             mutation_op=mutation_op,
             crossover_op=crossover_op,
             data_type=data_type,
@@ -85,7 +85,7 @@ def evaluate(f, pf, num_iter=100):
 
 
 if __name__ == "__main__":
-    jax.config.update("jax_default_prng_impl", "rbg")
+    # jax.config.update("jax_default_prng_impl", "rbg")
     num_iter = 100
 
     algorithm_names = [
@@ -107,7 +107,7 @@ if __name__ == "__main__":
    
     pro_keys = random.split(key, num_pro)
 
-    directory = f"../data/effi_scal"
+    directory = f"../data/exp4"
     if not os.path.exists(directory):
         os.makedirs(directory, exist_ok=True)
 
