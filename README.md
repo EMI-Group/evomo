@@ -140,11 +140,4 @@ If you use EvoMO in your research and want to cite it in your work, please use:
   year = 2025,
   doi = {10.1109/TEVC.2025.3555605}
 }
-
-@INPROCEEDINGS{tensorNSGA3,
-  author={Li, Hao and Liang, Zhenyu and Cheng, Ran},
-  booktitle={2025 IEEE Congress on Evolutionary Computation (CEC)}, 
-  title={GPU-accelerated Evolutionary Many-objective Optimization Using Tensorized NSGA-III}, 
-  year={2025},
-  }
 ```
