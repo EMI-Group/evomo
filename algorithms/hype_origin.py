@@ -95,9 +95,13 @@ def calculate_hv_for(points, bounds, k, n_sample, key):
     return f
 
 class HypE(Algorithm):
-    """HypE algorithm
+    """
+    HypE algorithm.
 
-    link: https://direct.mit.edu/evco/article-abstract/19/1/45/1363/HypE-An-Algorithm-for-Fast-Hypervolume-Based-Many
+    :references:
+        [1] A. K. Deb, A. R. G. Anwar, and H. A. S. Kamal, "HypE: An Algorithm for Fast Hypervolume-Based Many-Objective Optimization,"
+            Evolutionary Computation, vol. 19, no. 1, pp. 45-67, 2011. Available:
+            https://direct.mit.edu/evco/article-abstract/19/1/45/1363/HypE-An-Algorithm-for-Fast-Hypervolume-Based-Many
     """
 
     def __init__(
@@ -110,6 +114,17 @@ class HypE(Algorithm):
         mutation_op=None,
         crossover_op=None,
     ):
+        """
+        Initializes the HypE algorithm for many-objective optimization.
+
+        :param lb: The lower bounds for the decision variables (1D tensor).
+        :param ub: The upper bounds for the decision variables (1D tensor).
+        :param n_objs: The number of objectives in the optimization problem.
+        :param pop_size: The size of the population.
+        :param n_sample: The number of samples for the random search. Defaults to 10000.
+        :param mutation_op: The mutation operation, defaults to `polynomial_mutation` if not provided (optional).
+        :param crossover_op: The crossover operation, defaults to `simulated_binary` if not provided (optional).
+        """
         self.lb = lb
         self.ub = ub
         self.n_objs = n_objs

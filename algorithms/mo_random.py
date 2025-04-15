@@ -8,10 +8,6 @@ from evox import Algorithm, jit_class, State
 class MORandom(Algorithm):
     """Multiobjective random search algorithm
 
-    Args:
-        n_objs : The number of objectives.
-        pop_size : The population size.
-        uniform_init : Whether to initialize the population uniformly. Defaults to True.
     """
 
     def __init__(
@@ -23,6 +19,16 @@ class MORandom(Algorithm):
         uniform_init=False,
         selection_op=None,
     ):
+        """
+        Initializes the Multiobjective random search algorithm.
+
+        :param lb: The lower bounds for the decision variables (1D tensor).
+        :param ub: The upper bounds for the decision variables (1D tensor).
+        :param n_objs: The number of objectives in the optimization problem.
+        :param pop_size: The size of the population.
+        :param uniform_init: Whether to initialize the population uniformly. Defaults to False.
+        :param selection_op: The selection operation for evolutionary strategy (optional).
+        """
         self.lb = lb
         self.ub = ub
         self.n_objs = n_objs

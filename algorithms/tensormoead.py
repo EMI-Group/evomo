@@ -1,10 +1,3 @@
-# --------------------------------------------------------------------------------------
-# 1. MOEA/D algorithm is described in the following papers:
-#
-# Title: MOEA/D: A Multiobjective Evolutionary Algorithm Based on Decomposition
-# Link: https://ieeexplore.ieee.org/document/4358754
-# --------------------------------------------------------------------------------------
-
 import jax
 import jax.numpy as jnp
 
@@ -58,6 +51,24 @@ class AggregationFunction:
 
 @jit_class
 class TensorMOEAD(Algorithm):
+    """
+    TensorMOEA/D
+
+    This is a tensorized implementation of the original MOEA/D algorithm, which incorporates GPU acceleration
+    for improved computational performance in solving multi-objective optimization problems.
+
+    :references:
+        [1] Q. Zhang and H. Li, "MOEA/D: A Multiobjective Evolutionary Algorithm Based on Decomposition,"
+            IEEE Transactions on Evolutionary Computation, vol. 11, no. 6, pp. 712-731, 2007. Available:
+            https://ieeexplore.ieee.org/document/4358754
+
+        [2] Z. Liang, H. Li, N. Yu, K. Sun, and R. Cheng, "Bridging Evolutionary Multiobjective Optimization and
+            GPU Acceleration via Tensorization," IEEE Transactions on Evolutionary Computation, 2025. Available:
+            https://ieeexplore.ieee.org/document/10944658
+
+    :note: This implementation differs from the original MOEA/D algorithm by incorporating tensorization for
+            GPU acceleration, significantly improving performance for large-scale optimization tasks.
+    """
     def __init__(
         self,
         lb,
@@ -69,6 +80,18 @@ class TensorMOEAD(Algorithm):
         mutation_op=None,
         crossover_op=None,
     ):
+        """
+        Initializes the TensorMOEAD algorithm.
+
+        :param lb: The lower bounds for the decision variables (1D tensor).
+        :param ub: The upper bounds for the decision variables (1D tensor).
+        :param n_objs: The number of objectives in the optimization problem.
+        :param pop_size: The size of the population.
+        :param aggregate_op: The aggregation operators used for the multi-objective decomposition (default: ["pbi", "pbi"]).
+        :param uniform_init: Whether to initialize the population uniformly. Defaults to True.
+        :param mutation_op: The mutation operation, defaults to `polynomial_mutation` if not provided (optional).
+        :param crossover_op: The crossover operation, defaults to `simulated_binary` if not provided (optional).
+        """
         self.lb = lb
         self.ub = ub
         self.n_objs = n_objs

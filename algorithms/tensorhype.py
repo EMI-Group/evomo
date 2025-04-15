@@ -1,14 +1,3 @@
-# --------------------------------------------------------------------------------------
-# 1. HypE algorithm is described in the following papers:
-#
-# Title: HypE: An Algorithm for Fast Hypervolume-Based Many-Objective Optimization
-# Link: https://direct.mit.edu/evco/article-abstract/19/1/45/1363/HypE-An-Algorithm-for-Fast-Hypervolume-Based-Many
-#
-# 2. This code has been inspired by PlatEMO.
-# More information about PlatEMO can be found at the following URL:
-# GitHub Link: https://github.com/BIMK/PlatEMO
-# --------------------------------------------------------------------------------------
-
 import jax
 import jax.numpy as jnp
 from functools import partial
@@ -54,9 +43,17 @@ def cal_hv(points, ref, k, n_sample, key):
 
 @jit_class
 class TensorHypE(Algorithm):
-    """HypE algorithm
+    """
+    The tensorized version of HypE algorithm.
 
-    link: https://direct.mit.edu/evco/article-abstract/19/1/45/1363/HypE-An-Algorithm-for-Fast-Hypervolume-Based-Many
+    :references:
+        [1] J. Bader and E. Zitzler, "HypE: An algorithm for fast hypervolume-based many-objective optimization,"
+            Evolutionary Computation, vol. 19, no. 1, pp. 45-76, 2011. Available:
+            https://direct.mit.edu/evco/article-abstract/19/1/45/1363/HypE-An-Algorithm-for-Fast-Hypervolume-Based-Many
+
+        [2] Z. Liang, H. Li, N. Yu, K. Sun, and R. Cheng, "Bridging Evolutionary Multiobjective Optimization and
+            GPU Acceleration via Tensorization," IEEE Transactions on Evolutionary Computation, 2025. Available:
+            https://ieeexplore.ieee.org/document/10944658
     """
 
     def __init__(
@@ -70,6 +67,18 @@ class TensorHypE(Algorithm):
         mutation_op=None,
         crossover_op=None,
     ):
+        """
+        Initializes the TensorHype algorithm.
+
+        :param lb: The lower bounds for the decision variables (1D tensor).
+        :param ub: The upper bounds for the decision variables (1D tensor).
+        :param n_objs: The number of objectives in the optimization problem.
+        :param pop_size: The size of the population.
+        :param uniform_init: Whether to initialize the population uniformly. Defaults to True.
+        :param n_sample: The number of samples to generate for the random search. Defaults to 10000.
+        :param mutation_op: The mutation operation, defaults to `polynomial_mutation` if not provided (optional).
+        :param crossover_op: The crossover operation, defaults to `simulated_binary` if not provided (optional).
+        """
         self.lb = lb
         self.ub = ub
         self.n_objs = n_objs

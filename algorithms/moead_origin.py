@@ -55,6 +55,15 @@ class AggregationFunction:
 
 
 class MOEAD:
+    """
+    MOEA/D is a multi-objective optimization algorithm
+    that decomposes a multi-objective problem into a set of scalar optimization subproblems.
+
+    :references:
+        [1] Q. Zhang and H. Li, "MOEA/D: A Multiobjective Evolutionary Algorithm Based on Decomposition,"
+            IEEE Transactions on Evolutionary Computation, vol. 11, no. 6, pp. 712-731, 2007. Available:
+            https://ieeexplore.ieee.org/document/4358754
+    """
     def __init__(
         self,
         lb,
@@ -66,6 +75,18 @@ class MOEAD:
         key,
         uniform_init=True,
     ):
+        """
+        Initializes the MOEA/D algorithm.
+
+        :param lb: The lower bounds for the decision variables (1D tensor).
+        :param ub: The upper bounds for the decision variables (1D tensor).
+        :param pop_size: The size of the population.
+        :param n_objs: The number of objectives in the optimization problem.
+        :param num_generations: The number of generations for the algorithm to run.
+        :param problem: The multi-objective optimization problem to solve.
+        :param key: Random key for reproducibility (used for random number generation).
+        :param uniform_init: Whether to initialize the population uniformly. Defaults to True.
+        """
         self.lb = lb
         self.ub = ub
         self.num_variables = lb.shape[0]
