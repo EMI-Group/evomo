@@ -1,15 +1,3 @@
-# --------------------------------------------------------------------------------------
-# 1. NSGA-III algorithm is described in the following papers:
-#
-# Title: An Evolutionary Many-Objective Optimization Algorithm Using Reference-Point-Based Nondominated Sorting
-# Approach, Part I: Solving Problems With Box Constraints
-# Link: https://ieeexplore.ieee.org/document/6600851
-#
-# 2. This code has been inspired by PlatEMO.
-# More information about PlatEMO can be found at the following URL:
-# GitHub Link: https://github.com/BIMK/PlatEMO
-# --------------------------------------------------------------------------------------
-
 import jax
 import jax.numpy as jnp
 from evox.operators import (
@@ -24,9 +12,18 @@ from evox import Algorithm, jit_class, State
 
 @jit_class
 class NSGA3(Algorithm):
-    """NSGA-III algorithm
+    """
+    The NSGA-III algorithm for many-objective optimization.
 
-    link: https://ieeexplore.ieee.org/document/6600851
+    :link: https://ieeexplore.ieee.org/document/6600851
+
+    References:
+        [1] K. Deb and H. Jain, "An Evolutionary Many-Objective Optimization Algorithm Using Reference-Point-Based
+            Nondominated Sorting Approach, Part I: Solving Problems With Box Constraints," IEEE Transactions on Evolutionary
+            Computation, vol. 18, no. 4, pp. 577-601, 2014. Available: https://ieeexplore.ieee.org/document/6600851
+
+    This code has been inspired by PlatEMO. More information about PlatEMO can be found at the following URL:
+    GitHub Link: https://github.com/BIMK/PlatEMO
     """
 
     def __init__(
@@ -134,20 +131,6 @@ class NSGA3(Algorithm):
         )
         normalized_fitness = offset_fitness / nadir_point
 
-        # def perpendicular_distance(x, y):
-        #     dist = jnp.zeros((len(x), len(y)))
-        #
-        #     for i in range(len(x)):
-        #         proj_len = jnp.dot(x[i], y.T) / jnp.sum(y * y, axis=1)
-        #         proj_vec = proj_len[:, None] * y
-        #         prep_vec = x[i] - proj_vec
-        #         norm = jnp.linalg.norm(prep_vec, axis=1)
-        #
-        #         dist = dist.at[i].set(norm)
-        #
-        #     return dist
-        #
-        # dist = perpendicular_distance(ranked_fitness, self.ref)
         def perpendicular_distance(x, y):
             dist = jnp.zeros((len(x), len(y)))
 
@@ -159,26 +142,11 @@ class NSGA3(Algorithm):
                     norm = jnp.linalg.norm(prep_vec)
                     return dist.at[i, j].set(norm)
 
-                # Use fori_loop for the inner loop
                 return jax.lax.fori_loop(0, len(y), inner_loop, dist)
 
-            # Use fori_loop for the outer loop
             dist = jax.lax.fori_loop(0, len(x), outer_loop, dist)
             return dist
 
-        # def perpendicular_distance(x, y):
-        #     dist = jnp.zeros((len(x), len(y)))
-        #
-        #     def loop_body(i, dist):
-        #         proj_len = jnp.dot(x[i], y.T) / jnp.sum(y * y, axis=1)
-        #         proj_vec = proj_len[:, None] * y
-        #         prep_vec = x[i] - proj_vec
-        #         norm = jnp.linalg.norm(prep_vec, axis=1)
-        #
-        #         return dist.at[i].set(norm)
-        #
-        #     dist = jax.lax.fori_loop(0, len(x), loop_body, dist)
-        #     return dist
 
         dist = perpendicular_distance(ranked_fitness, self.ref)
 

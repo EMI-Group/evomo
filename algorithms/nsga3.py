@@ -1,10 +1,3 @@
-# --------------------------------------------------------------------------------------
-# NSGA-III algorithm is described in the following papers:
-#
-# Title: GPU-accelerated Evolutionary Many-objective Optimization Using Tensorized NSGA-III
-# Link: 
-#
-# --------------------------------------------------------------------------------------
 import jax
 import jax.numpy as jnp
 from evox.operators import (
@@ -18,8 +11,16 @@ from evox import Algorithm, State
 from evox.utils import cos_dist
 
 class NSGA3(Algorithm):
-    """ NSGA-III algorithm
-    link:
+    """
+    An implementation of the tensorized NSGA-III for many-objective optimization problems.
+
+    :references:
+        [1] K. Deb and H. Jain, "An Evolutionary Many-Objective Optimization Algorithm Using Reference-Point-Based
+            Nondominated Sorting Approach, Part I: Solving Problems With Box Constraints," IEEE Transactions on Evolutionary
+            Computation, vol. 18, no. 4, pp. 577-601, 2014. Available: https://ieeexplore.ieee.org/document/6600851
+
+        [2] H. Li, Z. Liang, and R. Cheng, "GPU-accelerated Evolutionary Many-objective Optimization Using Tensorized
+            NSGA-III," IEEE Congress on Evolutionary Computation, 2025.
     """
 
     def __init__(
@@ -35,18 +36,17 @@ class NSGA3(Algorithm):
         data_type=None,
     ):
         """
-        Initialize the NSGA-III algorithm.
+        Initializes the NSGA-III algorithm.
 
-        Args:
-            lb: Lower bounds of the decision variables.
-            ub: Upper bounds of the decision variables.
-            n_objs: Number of objectives.
-            pop_size: Population size.
-            uniform_init: Whether to use uniform initialization.
-            selection_op: Selection operator (default: Uniform random).
-            mutation_op: Mutation operator (default: Polynomial mutation).
-            crossover_op: Crossover operator (default: Simulated binary crossover).
-            data_type: the data type: float or bool
+        :param lb: The lower bounds for the decision variables (1D tensor).
+        :param ub: The upper bounds for the decision variables (1D tensor).
+        :param n_objs: The number of objective functions in the optimization problem.
+        :param pop_size: The size of the population.
+        :param uniform_init: Whether to use uniform initialization (default: True).
+        :param selection_op: The selection operation for evolutionary strategy (optional).
+        :param mutation_op: The mutation operation, defaults to `polynomial_mutation` if not provided (optional).
+        :param crossover_op: The crossover operation, defaults to `simulated_binary` if not provided (optional).
+        :param data_type: The data type for the decision variables, either 'float' or 'bool' (optional).
         """
         self.lb = lb
         self.ub = ub
@@ -75,8 +75,7 @@ class NSGA3(Algorithm):
         """
         Initialize the state of the algorithm.
 
-        Args:
-            key: Random key for reproducibility.
+        :param key: Random key for reproducibility.
         """
         key, subkey = jax.random.split(key)
         initializer = jax.nn.initializers.glorot_normal()
@@ -105,8 +104,7 @@ class NSGA3(Algorithm):
         """
         Return the initial population and state.
 
-        Args:
-            state: Current state of the algorithm.
+        :param state: Current state of the algorithm.
         """
         return state.population, state
 
@@ -114,9 +112,8 @@ class NSGA3(Algorithm):
         """
         Update the state with the fitness values.
 
-        Args:
-            state: Current state of the algorithm.
-            fitness: Fitness values for the initial population.
+        :param state: Current state of the algorithm.
+        :param fitness: Fitness values for the initial population.
         """
         state = state.update(fitness=fitness)
         return state
@@ -125,8 +122,7 @@ class NSGA3(Algorithm):
         """
         Generate the next population using crossover and mutation.
 
-        Args:
-            state: Current state of the algorithm.
+        :param state: Current state of the algorithm.
         """
         key, mut_key, x_key = jax.random.split(state.key, 3)
         crossovered = self.crossover(x_key, state.population)
