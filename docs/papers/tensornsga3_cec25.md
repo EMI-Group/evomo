@@ -25,11 +25,11 @@
 
 If you use the TensorNSGA-III presented in the CEC 2025 in your research and wish to cite it, please use:
 ```
-@INPROCEEDINGS{tensorNSGA3,
+@inproceedings{tensorNSGA3,
   author={Li, Hao and Liang, Zhenyu and Cheng, Ran},
   booktitle={2025 IEEE Congress on Evolutionary Computation (CEC)}, 
   title={{GPU}-accelerated Evolutionary Many-objective Optimization Using Tensorized {NSGA-III}}, 
   year={2025},
-  }
+}
 ```
 
