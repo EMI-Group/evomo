@@ -22,7 +22,7 @@ class NSGA3(Algorithm):
             Computation, vol. 18, no. 4, pp. 577-601, 2014. Available: https://ieeexplore.ieee.org/document/6600851
 
         [2] H. Li, Z. Liang, and R. Cheng, "GPU-accelerated Evolutionary Many-objective Optimization Using Tensorized
-            NSGA-III," IEEE Congress on Evolutionary Computation, 2025.
+            NSGA-III," in 2025 IEEE Congress on Evolutionary Computation, 2025.
     """
 
     def __init__(
