@@ -5,20 +5,17 @@ from evox.core import Algorithm, Mutable, Parameter
 from evox.operators.mutation import polynomial_mutation
 from evox.operators.sampling import uniform_sampling
 from evox.operators.selection import ref_vec_guided
-from evox.utils import clamp
+from evox.utils import randint
 
 
 class LMOCSO(Algorithm):
     """
-    # 1. LMOCSO algorithm is described in the following papers:
-    #
-    # Title: Efficient Large-Scale Multiobjective Optimization Based on a Competitive Swarm
-    # Optimizer
-    # Link: https://ieeexplore.ieee.org/document/8681243
+        The tensorized version of LMOCSO algorithm.
 
-    # 2. This code has been inspired by PlatEMO.
-    # More information about PlatEMO can be found at the following URL:
-    # GitHub Link: https://github.com/BIMK/PlatEMO
+    :references:
+        [1] Ye Tian, Xiutao Zheng, Xingyi Zhang and Yaochu Jin, "Efficient Large-Scale Multiobjective Optimization Based on a Competitive Swarm," in IEEE Transactions on Cybernetics , 2020, pp. 3696 - 3708. Available:
+            https://link.springer.com/chapter/10.1007/978-3-540-30217-9_84
+
     """
 
     def __init__(
@@ -28,7 +25,7 @@ class LMOCSO(Algorithm):
         lb: torch.Tensor,
         ub: torch.Tensor,
         alpha: float = 2.0,
-        max_gen: int=100,
+        max_gen: int = 100,
         mutation_op: Optional[Callable] = None,
         selection_op: Optional[Callable] = None,
         device: torch.device | None = None,
@@ -75,7 +72,7 @@ class LMOCSO(Algorithm):
         population = population * (self.ub - self.lb) + self.lb
         self.pop = Mutable(population)
         self.velocity = Mutable(torch.zeros(self.pop_size // 2 * 2, self.dim, device=device))
-        reference_vector,_ = uniform_sampling(n=self.pop_size, m=self.n_objs)
+        reference_vector, _ = uniform_sampling(n=self.pop_size, m=self.n_objs)
         self.reference_vector = Mutable(reference_vector)
         self.fit = Mutable(torch.full((self.pop_size, self.n_objs), torch.inf, device=device))
         self.gen = 0
@@ -88,26 +85,27 @@ class LMOCSO(Algorithm):
 
         Calls the `init_step` of the algorithm if overwritten; otherwise, its `step` method will be invoked.
         """
-        self.fit=self.evaluate(self.pop)
-
+        self.fit = self.evaluate(self.pop)
 
     def step(self):
         """Perform the optimization step of the workflow."""
-        no_nan_pop = ~torch.isnan(self.pop).all(axis=1)
-        valid_indices = torch.where(no_nan_pop)[0]
-        max_idx = valid_indices.shape[0]
 
-        if max_idx < 2:
-            new_population = self.pop.clone()
-            return
+        valid_mask = ~torch.isnan(self.pop).all(axis=1)
+        num_valid = torch.sum(valid_mask, dtype=torch.int32)
+        mating_pool = randint(0, num_valid, (self.pop_size,), device=self.pop.device)
 
-        mating_pool = torch.randint(0, max_idx, (self.pop_size,), generator=self.generator, device=self.device)
-        selected_pop = self.pop[valid_indices][mating_pool]
+        sorted_indices = torch.where(
+            valid_mask,
+            torch.arange(self.pop_size, device=self.device),
+            torch.iinfo(torch.int32).max,
+        )
+        sorted_indices = torch.argsort(sorted_indices, stable=True)
+        selected_pop = self.pop[sorted_indices[mating_pool]]
+
+        randperm_size = num_valid // 2 * 2
+        randperm = torch.randperm(randperm_size, device=self.device, generator=self.generator).reshape(2, -1)
 
         sde_fitness = self.cal_fitness(self.fit)
-
-        randperm_size = max_idx // 2 * 2
-        randperm = torch.randperm(randperm_size, device=self.device, generator=self.generator).reshape(2, -1)
 
         mask = sde_fitness[randperm[0, :]] > sde_fitness[randperm[1, :]]
         winner = torch.where(mask, randperm[0, :], randperm[1, :])
@@ -116,29 +114,22 @@ class LMOCSO(Algorithm):
         r0 = torch.rand(randperm_size // 2, self.dim, device=self.device)
         r1 = torch.rand(randperm_size // 2, self.dim, device=self.device)
 
-
-        valid_loser_indices = valid_indices[loser]
-        off_velocity = r0 * self.velocity[valid_loser_indices] + r1 * (
-            selected_pop[winner] - selected_pop[loser]
-        )
+        off_velocity = r0 * self.velocity[loser] + r1 * (selected_pop[winner] - selected_pop[loser])
         new_loser_population = torch.clip(
-            selected_pop[loser]
-            + off_velocity
-            + r0 * (off_velocity - self.velocity[valid_loser_indices]),
+            selected_pop[loser] + off_velocity + r0 * (off_velocity - self.velocity[loser]),
             self.lb,
             self.ub,
         )
 
-
-        new_population = self.pop.clone()
-        new_population[valid_loser_indices] = new_loser_population
+        new_population = selected_pop.clone()
+        new_population[loser] = new_loser_population
         new_velocity = self.velocity.clone()
-        new_velocity[valid_loser_indices] = off_velocity
+        new_velocity[loser] = off_velocity
         self.velocity = new_velocity
 
         next_generation = self.mutation(new_population, self.lb, self.ub)
-        next_generation = clamp(next_generation, self.lb, self.ub)
-        self.next_generation=next_generation
+
+        self.next_generation = next_generation
 
         current_gen = self.gen + 1
         v = self.reference_vector
@@ -148,13 +139,20 @@ class LMOCSO(Algorithm):
         merged_fitness = torch.cat([self.fit, next_generation_fitness], dim=0)
 
         # RVEA Selection
-        survivor, survivor_fitness = self.selection(
-            merged_pop, merged_fitness, v, (current_gen / self.max_gen) ** self.alpha
-        )
-        self.pop=survivor
-        self.fit=survivor_fitness
-        self.gen = current_gen
+        survivor, survivor_fitness = self.selection(merged_pop, merged_fitness, v, (current_gen / self.max_gen) ** self.alpha)
 
+        valid_mask = ~torch.isnan(survivor).all(dim=1)
+        num_valid = torch.sum(valid_mask, dtype=torch.int32)
+        mating_pool = randint(0, num_valid, (self.pop_size - len(survivor),), device=self.device)
+        valid_indices = torch.arange(len(survivor), device=self.device)[valid_mask]
+        padding_pop = survivor[valid_indices[mating_pool]]
+        padding_fitness = survivor_fitness[valid_indices[mating_pool]]
+        survivor = torch.cat([survivor, padding_pop], dim=0)
+        survivor_fitness = torch.cat([survivor_fitness, padding_fitness], dim=0)
+
+        self.pop = survivor
+        self.fit = survivor_fitness
+        self.gen = current_gen
 
     def cal_fitness(self, obj):
         """
@@ -167,7 +165,7 @@ class LMOCSO(Algorithm):
 
         dis = torch.cdist(f, f)
 
-        dis = dis.masked_fill(torch.eye(n, device=obj.device).bool(), float('inf'))
+        dis = dis.masked_fill(torch.eye(n, device=obj.device).bool(), float("inf"))
 
         fitness = torch.min(dis, dim=1)[0]
 
