@@ -13,11 +13,6 @@ class MoInvertedDoublePendulum(InvertedDoublePendulum):
         mo_reward = jnp.zeros((self.num_obj,))
         return state.replace(reward=mo_reward)
 
-    # def step(self, state, action):
-    #     state = super().step(state, action)
-    #     mo_reward = jnp.array([state.metrics['reward_run'], state.metrics['reward_ctrl']])
-    #     return state.replace(reward=mo_reward)
-
     def step(self, state, action):
         """Run one timestep of the environment's dynamics."""
         pipeline_state = self.pipeline_step(state.pipeline_state, action)
@@ -30,7 +25,6 @@ class MoInvertedDoublePendulum(InvertedDoublePendulum):
         alive_bonus = 10
 
         obs = self._get_obs(pipeline_state)
-        # reward = alive_bonus - dist_penalty - vel_penalty
         done = jnp.where(y <= 1, jnp.float32(1), jnp.float32(0))
 
         mo_reward = jnp.array([alive_bonus - dist_penalty, alive_bonus - vel_penalty])
