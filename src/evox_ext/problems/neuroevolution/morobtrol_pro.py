@@ -496,7 +496,7 @@ class MoRobtrol(Problem):
 
         :param pop_params: A dictionary of parameters where each key is a parameter name and each value is a tensor of shape (batch_size, *param_shape) representing the batched parameters of batched models.
 
-        :return: A tensor of shape (batch_size,) containing the reward of each sample in the population.
+        :return: A tensor of shape (pop_size, num_obj) containing the reward of each sample in the population.
         """
         # Merge the given parameters into the initial parameters
         model_state = {**self.vmap_init_state, **pop_params}
@@ -520,7 +520,7 @@ class MoRobtrol(Problem):
             valid_mask=self.valid_mask,
         )
         self.key = key
-        rewards = self.reduce_fn(rewards, dim=-1)
+        rewards = self.reduce_fn(rewards, dim=1)
         return rewards
 
     def visualize(
