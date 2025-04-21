@@ -114,7 +114,6 @@ class LMOCSO(Algorithm):
         loser = torch.where(mask, randperm[1, :], randperm[0, :])
 
         r0 = torch.rand(self.pop_size // 2, self.dim, device=self.pop.device)
-
         r1 = torch.rand(self.pop_size // 2, self.dim, device=self.pop.device)
 
         off_velocity = r0 * self.velocity[loser] + r1 * (selected_pop[winner] - selected_pop[loser])
