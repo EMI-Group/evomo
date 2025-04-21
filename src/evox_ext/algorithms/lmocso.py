@@ -12,10 +12,10 @@ class LMOCSO(Algorithm):
     """
         The tensorized version of LMOCSO algorithm.
 
-    :references:
+    :reference:
         [1] Ye Tian, Xiutao Zheng, Xingyi Zhang and Yaochu Jin, "Efficient Large-Scale Multiobjective Optimization Based
             on a Competitive Swarm," in IEEE Transactions on Cybernetics , 2020, pp. 3696 - 3708. Available:
-            https://link.springer.com/chapter/10.1007/978-3-540-30217-9_84
+            https://ieeexplore.ieee.org/document/8681243
 
     """
 
