@@ -4,7 +4,19 @@ from brax.envs.inverted_double_pendulum import InvertedDoublePendulum
 
 
 class MoInvertedDoublePendulum(InvertedDoublePendulum):
+    """
+    The multi-objective version of inverted_double_pendulum env.
+
+    :references:
+        [1] C. D. Freeman, E. Frey, A. Raichuk, S. Girgin, I. Mordatch, and O. Bachem,
+        “Brax - a differentiable physics engine for large scale rigid body simulation,” 2021.
+        [Online]. Available: http://github.com/google/brax
+    """
     def __init__(self, **kwargs):
+        """Initialize the multi-objective inverted_double_pendulum env.
+
+        :param num_obj: The number of the objectives. For this env, it is set to 2.
+        """
         super().__init__(**kwargs)
         self.num_obj = 2
 
@@ -14,7 +26,10 @@ class MoInvertedDoublePendulum(InvertedDoublePendulum):
         return state.replace(reward=mo_reward)
 
     def step(self, state, action):
-        """Run one timestep of the environment's dynamics."""
+        """Run one timestep of the environment's dynamics.
+
+        For more information, please refer to `inverted_double_pendulum <https://github.com/google/brax/tree/main/brax/envs/inverted_double_pendulum.py>` env in brax.
+        """
         pipeline_state = self.pipeline_step(state.pipeline_state, action)
 
         tip = base.Transform.create(pos=jnp.array([0.0, 0.0, 0.6])).do(pipeline_state.x.take(2))
