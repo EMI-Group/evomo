@@ -101,6 +101,8 @@ def _evaluate_brax_main(
         clip_val = obs_norm[0]
         std_min = obs_norm[1]
         std_max = obs_norm[2]
+
+        # Perform normalization of the observation space
         if not useless:
             origin_obs = from_jax_array(brax_state.obs, device)
             obs_step = obs_param[0]
@@ -126,6 +128,8 @@ def _evaluate_brax_main(
             (1 - brax_state.done.ravel()).reshape(jax_vm.shape) * jax_vm, device
         )
         counter += 1
+
+        # Update obs_param
         if not useless:
             obs_step = obs_param[0]
             run_var, run_mean = torch.chunk(obs_param[1:], 2)
@@ -353,6 +357,9 @@ class MoRobtrol(Problem):
         :param reduce_fn: The function to reduce the rewards of multiple episodes. Default to `torch.mean`.
         :param backend: Brax's backend. If None, the default backend of the environment will be used. Default to None.
         :param device: The device to run the computations on. Defaults to the current default device.
+        :param num_obj: The number of the objectives. Defaults to 1.
+        :param observation_shape: The shape of the observation space. Default to 0.
+        :param obs_norm: The observation normalization parameters. The format should be a tensor that represented `[clip_val, std_min, std_max]`. `clip_val` represents the clip interval will be `[-clip_val, clip_val]`, `std_min` represents the minimum standard deviation, `std_max` represents the maximum deviation.
 
         ## Notice
         The initial key is obtained from `torch.random.get_rng_state()`.
@@ -364,12 +371,15 @@ class MoRobtrol(Problem):
 
         ## Examples
         >>> from evox import problems
-        >>> problem = problems.neuroevolution.Brax(
+        >>> problem = problems.neuroevolution.MoRobtrol(
         ...    env_name="swimmer",
         ...    policy=model,
         ...    max_episode_length=1000,
         ...    num_episodes=3,
         ...    pop_size=100,
+        ...    num_obj=2,
+        ...    observation_shape=8,
+        ...    obs_norm=torch.tensor([5.0, 1e-6, 1e6]),
         ...    rotate_key=False,
         ...)
         """
@@ -486,7 +496,7 @@ class MoRobtrol(Problem):
 
         :param pop_params: A dictionary of parameters where each key is a parameter name and each value is a tensor of shape (batch_size, *param_shape) representing the batched parameters of batched models.
 
-        :return: A tensor of shape (batch_size,) containing the reward of each sample in the population.
+        :return: A tensor of shape (pop_size, num_obj) containing the reward of each sample in the population.
         """
         # Merge the given parameters into the initial parameters
         model_state = {**self.vmap_init_state, **pop_params}
@@ -510,7 +520,7 @@ class MoRobtrol(Problem):
             valid_mask=self.valid_mask,
         )
         self.key = key
-        rewards = self.reduce_fn(rewards, dim=-1)
+        rewards = self.reduce_fn(rewards, dim=1)
         return rewards
 
     def visualize(
