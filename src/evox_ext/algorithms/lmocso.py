@@ -143,20 +143,24 @@ class LMOCSO(Algorithm):
         self.pop = survivor
         self.fit = survivor_fitness
 
-
     def cal_fitness(self, obj):
         """
         Calculate the fitness by shift-based density
         """
-        n = obj.size(0)
-        f_max = torch.max(obj, dim=0)[0]
-        f_min = torch.min(obj, dim=0)[0]
-        f = (obj - f_min) / (f_max - f_min)
-
-        dis = torch.cdist(f, f)
-
-        dis = dis.masked_fill(torch.eye(n, device=obj.device).bool(), float("inf"))
-
-        fitness = torch.min(dis, dim=1)[0]
+        n = obj.shape[0]
+        f_max, _ = torch.max(obj, dim=0, keepdim=True)
+        f_min, _ = torch.min(obj, dim=0, keepdim=True)
+        f = (obj - f_min) / (f_max - f_min + 1e-10)
+        s_obj = torch.maximum(
+            f.unsqueeze(1),
+            f.unsqueeze(0)
+        )
+        dis = torch.norm(
+            f.unsqueeze(1) - s_obj,
+            p=2, dim=2
+        )
+        dis = dis + torch.diag(torch.full((n,), float('inf'), device=obj.device))
+        fitness, _ = torch.min(dis, dim=1)
 
         return fitness
+
