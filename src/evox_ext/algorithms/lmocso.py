@@ -75,7 +75,7 @@ class LMOCSO(Algorithm):
         population = torch.rand(self.pop_size, self.dim, device=device)
         population = population * (self.ub - self.lb) + self.lb
         self.pop = Mutable(population)
-        self.velocity = Mutable(torch.zeros(90, self.dim, device=device))
+        self.velocity = Mutable(torch.zeros(self.pop_size // 2 * 2, self.dim, device=device))
 
         self.reference_vector = Mutable(reference_vector)
         self.fit = Mutable(torch.full((self.pop_size, self.n_objs), torch.inf, device=device))
