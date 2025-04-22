@@ -1,12 +1,12 @@
 from unittest import TestCase
 
 import torch
-from evox.algorithms import IBEA, TensorMOEAD
+from evox.algorithms import IBEA, LMOCSO, TensorMOEAD
 from evox.core import Algorithm, use_state, vmap
 from evox.problems.numerical import DTLZ2
 from evox.workflows import StdWorkflow
 
-
+torch.set_default_device("cuda" if torch.cuda.is_available() else "cpu")
 class MOTestBase(TestCase):
     def run_algorithm(self, algo: Algorithm):
         prob = DTLZ2(m=3)
@@ -19,7 +19,7 @@ class MOTestBase(TestCase):
         prob = DTLZ2(m=3)
         workflow = StdWorkflow(algo, prob)
         workflow.init_step()
-        jit_state_step = torch.compile(workflow.step)
+        jit_state_step = torch.compile(workflow.step, dynamic=False)
         for _ in range(3):
             jit_state_step()
 
@@ -30,7 +30,7 @@ class MOTestBase(TestCase):
         vmap_state_step = vmap(state_step, randomness="different")
         params, buffers = torch.func.stack_module_state([workflow] * 3)
         state = params | buffers
-        vmap_state_step = torch.compile(vmap_state_step)
+        vmap_state_step = torch.compile(vmap_state_step, dynamic=False)
         for _ in range(3):
             state = vmap_state_step(state)
 
@@ -43,7 +43,8 @@ class TestMOVariants(MOTestBase):
         ub = torch.ones(dim)
         self.algo = [
             TensorMOEAD(pop_size=pop_size, n_objs=3, lb=lb, ub=ub),
-            IBEA(pop_size=pop_size, n_objs=3, lb=lb, ub=ub)
+            IBEA(pop_size=pop_size, n_objs=3, lb=lb, ub=ub),
+            LMOCSO(pop_size=pop_size, n_objs=3, lb=lb, ub=ub)
         ]
 
     def test_moea_variants(self):
