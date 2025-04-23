@@ -24,7 +24,7 @@ classifiers = [
 
 dependencies = [
   "torch >= 2.6.0",
-  "evox >= 1.1.2",
+  "evox >= 1.2.0",
 ]
 
 [project.optional-dependencies]
