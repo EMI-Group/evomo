@@ -228,7 +228,9 @@ If you use EvoMO in your research and want to cite it in your work, please use:
 }
 ```
 
-## Contributors
+[//]: # (## Contributors)
 
-<!-- ALL-CONTRIBUTORS-LIST:START -->
-<!-- ALL-CONTRIBUTORS-LIST:END -->
+[//]: # ()
+[//]: # (<!-- ALL-CONTRIBUTORS-LIST:START -->)
+
+[//]: # (<!-- ALL-CONTRIBUTORS-LIST:END -->)
