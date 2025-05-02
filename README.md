@@ -27,7 +27,8 @@
 4. [Examples](#examples)
 5. [Publications on EvoMO](#publications-on-evomo)
 6. [Community & Support](#community--support)
-
+7. [Citing](#Citing-evomo)
+8. [Contributors](#Contributors)
 
 ## Overview  
 
@@ -226,3 +227,8 @@ If you use EvoMO in your research and want to cite it in your work, please use:
   doi = {10.1109/TEVC.2025.3555605}
 }
 ```
+
+## Contributors
+
+<!-- ALL-CONTRIBUTORS-LIST:START -->
+<!-- ALL-CONTRIBUTORS-LIST:END -->
