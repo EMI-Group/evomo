@@ -230,11 +230,5 @@ If you use EvoMO in your research and want to cite it in your work, please use:
 
 ## Contributors
 
-<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
-<!-- prettier-ignore-start -->
-<!-- markdownlint-disable -->
+Thanks to the following people who contributed to this project: [Zhenyu2Liang](https://github.com/Zhenyu2Liang), [Nam-dada](https://github.com/Nam-dada), [LiHao-MS](https://github.com/LiHao-MS), [XU-Boqing](https://github.com/XU-Boqing), [sherry-zx](https://github.com/sherry-zx), [BillHuang2001](https://github.com/BillHuang2001), [ranchengcn](https://github.com/ranchengcn).
 
-<!-- markdownlint-restore -->
-<!-- prettier-ignore-end -->
-
-<!-- ALL-CONTRIBUTORS-LIST:END -->
