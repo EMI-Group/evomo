@@ -230,6 +230,11 @@ If you use EvoMO in your research and want to cite it in your work, please use:
 
 ## Contributors
 
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- prettier-ignore-start -->
+<!-- markdownlint-disable -->
 
-<!-- ALL-CONTRIBUTORS-LIST:START -->
+<!-- markdownlint-restore -->
+<!-- prettier-ignore-end -->
+
 <!-- ALL-CONTRIBUTORS-LIST:END -->
