@@ -25,21 +25,21 @@ class TestMAF(TestCase):
         d = 12
         m = 2
         self.pro = [
-                MAF1(d,m),
-                MAF2(d,m),
-                MAF3(d,m),
-                MAF4(d,m),
-                MAF5(d,m),
-                MAF6(d,m),
-                MAF7(d,m),
-                MAF8(2,3), # MAF 8 is only defined for D = 2 and M >= 3
-                MAF9(2,3), # MAF 9 is only defined for D = 2 and M >= 3
-                MAF10(d,m),
-                MAF11(d,m),
-                MAF12(d,m),
-                MAF13(d,3), # MAF 13 is only defined for M >= 3
-                MAF14(d,m),
-                MAF15(d,m),
+            MAF1(m + 9, m),  # MAF 1 is only defined for d = m + 9
+            MAF2(m + 9, m),  # MAF 2 is only defined for d = m + 9
+            MAF3(m + 9, m),  # MAF 3 is only defined for d = m + 9
+            MAF4(m + 9, m),  # MAF 4 is only defined for d = m + 9
+            MAF5(d, m),
+            MAF6(m + 9, m),  # MAF 6 is only defined for d = m + 9
+            MAF7(m + 19, m), # MAF 7 is only defined for d = m + 19
+            MAF8(2, 3),      # MAF 8 is only defined for d = 2 and m >= 3
+            MAF9(2, 3),      # MAF 9 is only defined for d = 2 and m >= 3
+            MAF10(m + 9, m), # MAF 10 is only defined for d = m + 9
+            MAF11(d, m), # MAF 11 is only defined for d = m + 9
+            MAF12(m + 9, m), # MAF 12 is only defined for d = m + 9
+            MAF13(d, 3),     # MAF 13 is only defined for m >= 3
+            MAF14(m * 20, m),# MAF 14 is only defined for d = m * 20
+            MAF15(m * 20, m),# MAF 15 is only defined for d = m * 20
         ]
 
     def test_maf(self):
