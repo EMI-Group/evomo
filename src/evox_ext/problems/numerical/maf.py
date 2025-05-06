@@ -17,7 +17,6 @@ class MAF(Problem):
             no. 1, pp. 67-81, 2017. Available: https://link.springer.com/article/10.1007/s40747-017-0039-7
     """
 
-
     def __init__(self, d: int = None, m: int = 3, ref_num: int = 1000, device: Optional[torch.device] = None):
         """
         Initialize the MAF problem instance.
@@ -73,15 +72,18 @@ class MAF2(MAF):
         d = self.d
         g = torch.zeros(n, m, device=X.device)
         interval = int((d - m + 1) / m)
+        g_cols = []
         for i in range(m):
             if i < m - 1:
                 start = m + i * interval - 1
-                temp = X[:, start : start + interval].clone()
+                seg = X[:, start : start + interval]
             else:
                 start = m + (m - 1) * interval - 1
-                temp = X[:, start:].clone()
-            temp = torch.where(temp == 0, 0.5, temp)
-            g[:, i] = torch.sum((temp - 0.5) ** 2, dim=1)
+                seg = X[:, start:]
+
+            seg = torch.where(seg == 0, 0.5, seg)
+            g_cols.append(((seg - 0.5) ** 2).sum(dim=1, keepdim=True))
+        g = torch.cat(g_cols, dim=1)
 
         f1 = torch.flip(
             torch.cumprod(
@@ -107,7 +109,11 @@ class MAF2(MAF):
                 c[i, m - j - 1] = torch.sqrt(1 / (1 + temp**2))
 
         if m > 5:
-            c = c * (torch.cos(torch.pi / 8) - torch.cos(3 * torch.pi / 8)) + torch.cos(3 * torch.pi / 8)
+            c = c * (
+                torch.cos(torch.tensor(torch.pi / 8, device=r.device))
+                - torch.cos(torch.tensor(3 * torch.pi / 8, device=r.device))
+                + torch.cos(torch.tensor(3 * torch.pi / 8, device=r.device))
+            )
         else:
             c = c[
                 torch.all(
@@ -136,7 +142,7 @@ class MAF3(MAF):
             (1 + g).unsqueeze(1)
             * torch.flip(
                 torch.cumprod(
-                    torch.cat([torch.ones((n, 1)), torch.cos(X[:, : m - 1] * torch.pi / 2)], dim=1),
+                    torch.cat([torch.ones(n, 1, device=X.device), torch.cos(X[:, : m - 1] * torch.pi / 2)], dim=1),
                     dim=1,
                 ),
                 [1],
@@ -170,7 +176,7 @@ class MAF4(MAF):
             ),
             [1],
         ) * torch.cat([torch.ones(n, 1, device=X.device), torch.sin(torch.flip(X[:, : m - 1], [1]) * torch.pi / 2)], dim=1)
-        f = f1 * torch.pow(2, torch.arange(1, m + 1))
+        f = f1 * torch.pow(2, torch.arange(1, m + 1, device=X.device))
         return f
 
     def _calc_pf(self):
@@ -228,25 +234,23 @@ class MAF6(MAF):
             (1 + 100 * g)
             * torch.flip(
                 torch.cumprod(
-                    torch.cat([torch.ones((n, 1)), torch.cos(Xfront * torch.pi / 2)], dim=1),
+                    torch.cat([torch.ones(n, 1, device=X.device), torch.cos(Xfront * torch.pi / 2)], dim=1),
                     dim=1,
                 ),
                 [1],
             )
-            * torch.cat([torch.ones((n, 1)), torch.sin(torch.flip(Xfront, [1]) * torch.pi / 2)], dim=1)
+            * torch.cat([torch.ones(n, 1, device=X.device), torch.sin(torch.flip(Xfront, [1]) * torch.pi / 2)], dim=1)
         )
         return f
 
     def _calc_pf(self):
         m = self.m
         r, n = uniform_sampling(self.ref_num * self.m, 2)
-        print(r.size())
-        r1 = (r / torch.sqrt(torch.sum(r**2, dim=1, keepdim=True)))
+        r1 = r / torch.sqrt(torch.sum(r**2, dim=1, keepdim=True))
 
         if r1.size(1) < m:
-            r1 = torch.cat((r1[:, torch.zeros(m - 4, device=r.device)], r1), dim=1)
-        f = r1 / torch.pow(torch.sqrt(torch.tensor(2.0)),
-                           torch.maximum(torch.tensor(self.m - 2), torch.tensor(0)).repeat(n, 1))
+            r1 = torch.cat((r1[:, torch.zeros(m - r1.size(1), device=r.device, dtype=torch.long)], r1), dim=1)
+        f = r1 / torch.pow(torch.sqrt(torch.tensor(2.0)), torch.maximum(torch.tensor(self.m - 2), torch.tensor(0)).repeat(n, 1))
 
         self._pf_value = f
 
@@ -258,17 +262,16 @@ class MAF7(MAF):
 
     def evaluate(self, X: torch.Tensor):
         m = self.m
-        n = X.size(0)
-        f = torch.zeros(n, m, device=X.device)
         g = 1 + 9 * torch.mean(X[:, m - 1 :], dim=1)
-        f[:, : m - 1] = X[:, : m - 1]
-        f[:, m - 1] = (1 + g) * (
+        fFront = X[:, : m - 1]
+        fRear = (1 + g) * (
             m
             - torch.sum(
-                f[:, : self.m - 1] / (1 + g) * (1 + torch.sin(3 * torch.pi * f[:, : m - 1])),
+                fFront / (1 + g.unsqueeze(1)) * (1 + torch.sin(3 * torch.pi * fFront)),
                 dim=1,
             )
         )
+        f = torch.cat([fFront, fRear.unsqueeze(1)], dim=1)
         return f
 
     @torch.jit.ignore
@@ -295,7 +298,7 @@ class MAF7(MAF):
     def _grid(self, N: int, M: int):
         gap = torch.linspace(0, 1, steps=int(N ** (1 / M)), device=self.device)
         mesh = torch.meshgrid(*([gap] * M), indexing="ij")
-        W = torch.cat([x.view(-1, 1) for x in mesh], dim=1)
+        W = torch.cat([x.reshape(-1, 1) for x in mesh], dim=1)
         return W
 
 
@@ -311,7 +314,7 @@ class MAF8(MAF):
         return f
 
     def _calc_pf(self):
-        if not hasattr(self, 'points'):
+        if not hasattr(self, "points"):
             self.points = self._getPoints()
 
         temp = torch.linspace(
@@ -379,10 +382,14 @@ class MAF9(MAF8):
         super().__init__(d, m, ref_num, device)
 
     def evaluate(self, X: torch.Tensor):
-        f = torch.zeros(X.size(0), self.points.size(0), device=X.device)
+        f_cols = []
         for i in range(self.points.size(0) - 1):
-            f[:, i] = self._Point2Line(X, self.points[i : i + 2, :])
-        f[:, -1] = self._Point2Line(X, torch.cat([self.points[-1, :].unsqueeze(0), self.points[0, :].unsqueeze(0)], dim=0))
+            col_i = self._Point2Line(X, self.points[i : i + 2, :])
+            f_cols.append(col_i.unsqueeze(1))
+        last_col = self._Point2Line(X, torch.cat([self.points[-1, :].unsqueeze(0), self.points[0, :].unsqueeze(0)], dim=0))
+        f_cols.append(last_col.unsqueeze(1))
+
+        f = torch.cat(f_cols, dim=1)
         return f
 
     def _Point2Line(self, pop_dec: torch.Tensor, line: torch.Tensor):
@@ -399,24 +406,24 @@ class MAF10(MAF):
 
     def evaluate(self, X: torch.Tensor):
         m = self.m
-        n = X.size(0)
         d = self.d
-        s = torch.arange(2, 2 * m + 1, 2, device=X.device)
-        z01 = X / 2 * torch.arange(1, d + 1, device=X.device)
-        t0 = torch.zeros(n, d, device=X.device)
-        t0[:, : m - 1] = z01[:, : m - 1]
-        t0[:, m - 1 :] = self._s_linear(z01[:, m - 1 :], 0.35)
+        s = torch.arange(2, 2 * m + 1, step=2, device=X.device)
+        z01 = X / torch.arange(2, d * 2 + 1, step=2, device=X.device)
+        t0Front = z01[:, : m - 1]
+        t0Rear = self._s_linear(z01[:, m - 1 :], 0.35)
+        t0 = torch.cat([t0Front, t0Rear], dim=1)
 
         t = self._evaluate(t0, X)
 
-        x = torch.zeros(n, m, device=X.device)
-        for i in range(m - 1):
-            x[:, i] = torch.maximum(t[:, m - 1], torch.ones_like(t[:, m - 1], device=X.device)) * (t[:, i] - 0.5) + 0.5
-        x[:, m - 1] = t[:, m - 1]
+        tRear = t[:, m - 1 : m]
+        xFront = torch.maximum(tRear, torch.ones_like(tRear)) * (t[:, : m - 1] - 0.5) + 0.5
+        x = torch.cat([xFront, tRear], dim=1)
 
-        h = self._convex(x)
-        h[:, m - 1] = self._mixed(x)
-        f = x[:, m - 1].unsqueeze(1) + s * h
+        h_convex = self._convex(x)[:, : m - 1]
+        h_mixed = self._mixed(x).unsqueeze(1)
+        h = torch.cat([h_convex, h_mixed], dim=1)
+
+        f = tRear + s * h
         return f
 
     def _calc_pf(self):
@@ -437,20 +444,23 @@ class MAF10(MAF):
 
     def _evaluate(self, t1: torch.Tensor, X: torch.Tensor):
         m = self.m
-        n = X.size(0)
         d = self.d
         t2 = t1.clone()
         t2[:, m - 1 :] = self._b_flat(t1[:, m - 1 :], 0.8, 0.75, 0.85)
 
         t3 = t2**0.02
 
-        t = torch.zeros(n, m, device=X.device)
-
+        outs = []
         for i in range(m - 1):
-            temp1 = t3[:, i : i + 2]
-            temp2 = torch.arange(2 * i, 2 * (i + 1) + 1, 2, device=X.device)
-            t[:, i] = self._r_sum(temp1, temp2)
-        t[:, m - 1] = self._r_sum(t3[:, m - 1 : d], torch.arange(2 * m, 2 * d + 1, 2, device=X.device))
+            y = t3[:, i : i + 2]
+            w = torch.arange(2 * i, 2 * (i + 1) + 1, 2, device=X.device)
+            outs.append(self._r_sum(y, w))
+
+        y_last = t3[:, m - 1 : d]
+        w_last = torch.arange(2 * m, 2 * d + 1, 2, device=X.device)
+        outs.append(self._r_sum(y_last, w_last))
+
+        t = torch.stack(outs, dim=1)
 
         return t
 
@@ -514,21 +524,24 @@ class MAF11(MAF10):
 
     def _evaluate(self, t1: torch.Tensor, X: torch.Tensor):
         m = self.m
-        n = X.size(0)
         d = self.d
         L = d - (m - 1)
 
-        t2 = torch.zeros(n, m - 1 + L // 2, device=X.device)
-        t2[:, : m - 1] = t1[:, : m - 1]
-        t2[:, m - 1 : m - 1 + L // 2] = (t1[:, m - 1 :: 2] + t1[:, m::2] + 2 * torch.abs(t1[:, m - 1 :: 2] - t1[:, m::2])) / 3
+        t2Front = t1[:, : m - 1]
+        t2Rear = (t1[:, m - 1 :: 2] + t1[:, m::2] + 2 * torch.abs(t1[:, m - 1 :: 2] - t1[:, m::2])) / 3
+        t2 = torch.cat([t2Front, t2Rear], dim=1)
 
-        t = torch.zeros(n, m, device=X.device)
-
+        outs = []
+        w = torch.ones(1, device=X.device)
         for i in range(m - 1):
-            temp = t2[:, i : i + 2]
-            t[:, i - 1] = self._r_sum(temp, torch.ones(1, device=X.device))
+            y = t2[:, i : i + 1]
+            outs.append(self._r_sum(y, w))
 
-        t[:, m - 1] = self._r_sum(t2[:, m - 1 : m - 1 + L // 2], torch.ones(L // 2, device=X.device))
+        y_last = t2[:, m - 1 : m - 1 + L // 2]
+        w_last = torch.ones(L // 2, device=X.device)
+        outs.append(self._r_sum(y_last, w_last))
+
+        t = torch.stack(outs, dim=1)
         return t
 
     def _mixed(self, x: torch.Tensor):
@@ -544,53 +557,49 @@ class MAF12(MAF):
 
     def evaluate(self, X: torch.Tensor):
         m = self.m
-        n = X.size(0)
         d = self.d
         L = d - (m - 1)
-        S = torch.arange(2, 2 * m + 1, 2)
+        S = torch.arange(2, 2 * m + 1, step=2, device=X.device)
 
-        z01 = X / torch.arange(2, d * 2 + 1, 2)
+        z01 = X / torch.arange(2, d * 2 + 1, step=2, device=X.device)
 
-        t1 = torch.zeros(n, d, device=X.device)
         Y = (torch.flip(torch.cumsum(torch.flip(z01, [1]), dim=1), [1]) - z01) / torch.arange(d - 1, -1, -1, device=X.device)
-        t1[:, : d - 1] = z01[:, : d - 1] ** (
+        t1Front = z01[:, : d - 1] ** (
             0.02
             + (50 - 0.02)
             * (0.98 / 49.98 - (1 - 2 * Y[:, : d - 1]) * torch.abs(torch.floor(0.5 - Y[:, : d - 1]) + 0.98 / 49.98))
         )
-        t1[:, d - 1] = z01[:, d - 1]
+        t1Rear = z01[:, d - 1 :]
+        t1 = torch.cat([t1Front, t1Rear], dim=1)
 
-        t2 = torch.zeros(n, d, device=X.device)
-        t2[:, : m - 1] = self._s_decept(t1[:, : m - 1], 0.35, 0.001, 0.05)
-        t2[:, m - 1 :] = self._s_multi(t1[:, m - 1 :], 30, 95, 0.35)
+        t2Front = self._s_decept(t1[:, : m - 1], 0.35, 0.001, 0.05)
+        t2Rear = self._s_multi(t1[:, m - 1 :], 30, 95, 0.35)
+        t2 = torch.cat([t2Front, t2Rear], dim=1)
 
-        t3 = torch.zeros(n, m, device=X.device)
-
+        t3_cols = []
         for i in range(m - 1):
-            temp = t2[:, i : i + 2]
-            t3[:, i - 1] = self._r_nonsep(temp, 1)
+            temp = t2[:, i : i + 1]
+            t3_cols.append(self._r_nonsep(temp, 1))
 
-        SUM = torch.zeros(n, device=X.device)
+        diff = torch.abs(t2Rear.unsqueeze(2) - t2Rear.unsqueeze(1))
+        SUM = diff.sum(dim=(1, 2)) * 0.5
 
-        for i in range(m - 1, d - 1):
-            for j in range(i + 1, d):
-                SUM += torch.abs(t2[:, i] - t2[:, j])
+        denom1 = torch.tensor(L / 2, device=X.device)
+        denom2 = 1 + 2 * L - 2 * denom1
+        last_col = (t2Rear.sum(dim=1) + 2 * SUM) / denom1 / denom2
+        t3_cols.append(last_col)
 
-        t3[:, m - 1] = (
-            (torch.sum(t2[:, m - 1 :], dim=1) + SUM * 2)
-            / torch.tensor(L / 2, device=X.device)
-            / (1 + 2 * L - 2 * torch.tensor(L / 2, device=X.device))
-        )
+        t3 = torch.stack(t3_cols, dim=1)
 
-        x = torch.zeros(n, m, device=X.device)
-
+        x_cols = []
+        max_factor = torch.maximum(last_col, torch.ones_like(last_col))
         for i in range(m - 1):
-            x[:, i] = torch.maximum(t3[:, m - 1], torch.ones_like(t3[:, m - 1], device=X.device)) * (t3[:, i] - 0.5) + 0.5
-
-        x[:, m - 1] = t3[:, m - 1]
+            x_cols.append(max_factor * (t3[:, i] - 0.5) + 0.5)
+        x_cols.append(last_col)
+        x = torch.stack(x_cols, dim=1)
 
         h = self._concave(x)
-        f = x[:, m - 1].view(-1, 1) + S * h
+        f = x[:, m - 1].unsqueeze(1) + S * h
         return f
 
     def _calc_pf(self):
@@ -615,13 +624,14 @@ class MAF12(MAF):
         ) / (b + 2)
 
     def _r_nonsep(self, Y: torch.Tensor, a):
-        Output = torch.zeros(Y.size(0))
-        for j in range(Y.size(1)):
-            Temp = torch.zeros(Y.size(0))
-            for k in range(a - 1):
-                Temp += torch.abs(Y[:, j] - Y[:, (j + 1 + k) % Y.size(1)])
-            Output += Y[:, j] + Temp
-        return Output / (Y.size(1) / a) / int(a / 2) / (1 + 2 * a - 2 * int(a / 2))
+        s1 = Y.sum(dim=1)
+        if a > 1:
+            s2 = sum((Y - Y.roll(-o, dims=1)).abs().sum(dim=1) for o in range(1, a))
+        else:
+            s2 = torch.zeros_like(s1)
+        int_a2 = a // 2
+
+        return (s1 + s2) / (Y.size(1) / a) * int_a2 * (1 + 2 * a - 2 * int_a2)
 
     def _concave(self, X: torch.Tensor):
         return torch.flip(
@@ -632,7 +642,7 @@ class MAF12(MAF):
             [1],
         ) * torch.cat(
             [
-                torch.ones((X.size(0), 1)),
+                torch.ones(X.size(0), 1, device=X.device),
                 torch.cos(torch.flip(X[:, :-1], [1]) * torch.pi / 2),
             ],
             dim=1,
@@ -648,20 +658,19 @@ class MAF13(MAF):
         m = self.m
         n = X.size(0)
         d = self.d
-        Y = X - 2 * X[:, 1].view(-1, 1) * torch.sin(2 * torch.pi * X[:, 0].view(-1, 1) + torch.arange(1, d + 1) * torch.pi / d)
+        Y = X - 2 * X[:, 1].view(-1, 1) * torch.sin(
+            2 * torch.pi * X[:, 0].view(-1, 1) + torch.arange(1, d + 1, device=X.device) * torch.pi / d
+        )
         f = torch.zeros(n, m, device=X.device)
-        f[:, 0] = torch.sin(X[:, 0] * torch.pi / 2) + 2 * torch.mean(Y[:, 3:d:3] ** 2, dim=1)
-        f[:, 1] = torch.cos(X[:, 0] * torch.pi / 2) * torch.sin(X[:, 1] * torch.pi / 2) + 2 * torch.mean(
-            Y[:, 4:d:3] ** 2, dim=1
-        )
-        f[:, 2] = torch.cos(X[:, 0] * torch.pi / 2) * torch.cos(X[:, 1] * torch.pi / 2) + 2 * torch.mean(
-            Y[:, 2:d:3] ** 2, dim=1
-        )
-        f[:, 3:] = (
+        f0 = torch.sin(X[:, 0] * torch.pi / 2) + 2 * torch.mean(Y[:, 3:d:3] ** 2, dim=1)
+        f1 = torch.cos(X[:, 0] * torch.pi / 2) * torch.sin(X[:, 1] * torch.pi / 2) + 2 * torch.mean(Y[:, 4:d:3] ** 2, dim=1)
+        f2 = torch.cos(X[:, 0] * torch.pi / 2) * torch.cos(X[:, 1] * torch.pi / 2) + 2 * torch.mean(Y[:, 2:d:3] ** 2, dim=1)
+        f3 = (
             (f[:, 0] ** 2 + f[:, 1] ** 10 + f[:, 2] ** 10 + 2 * torch.mean(Y[:, 3:d] ** 2, dim=1))
             .unsqueeze(1)
             .repeat(1, self.m - 3)
         )
+        f = torch.cat([f0.unsqueeze(1), f1.unsqueeze(1), f2.unsqueeze(1), f3], dim=1)
         return f
 
     def _calc_pf(self):
@@ -690,7 +699,7 @@ class MAF14(MAF):
     def evaluate(self, X: torch.Tensor):
         m = self.m
         n = X.size(0)
-        g = self._evaluate(X)
+        g = self._evaluate(X.clone())
         f = (
             (1 + g)
             * torch.flip(torch.cumprod(torch.cat([torch.ones(n, 1, device=X.device), X[:, : m - 1]], dim=1), dim=1), [1])
@@ -712,7 +721,7 @@ class MAF14(MAF):
             g = self._inner_loop(i, self._func1, g, nk, X)
         for i in range(1, m, 2):
             g = self._inner_loop(i, self._func2, g, nk, X)
-        g = g / torch.tensor(self.sublen).unsqueeze(0) * nk
+        g = g / torch.tensor(self.sublen, device=X.device).unsqueeze(0) * nk
         return g
 
     def _modify_X(self, X: torch.Tensor):
@@ -721,13 +730,18 @@ class MAF14(MAF):
         ).unsqueeze(-1)
         return X
 
-    def _inner_loop(self, i, inner_fun, g, nk, X: torch.Tensor):
-        for j in range(0, nk):
+    def _inner_loop(self, i, inner_fun, g: torch.Tensor, nk, X: torch.Tensor):
+        new_col = g[:, i].clone()
+        for j in range(nk):
             start = self.len[i] + self.m - 1 + j * self.sublen[i]
             end = start + self.sublen[i]
             temp = X[:, start:end]
-            g[:, i] = g[:, i] + inner_fun(temp)
-        return g
+            new_col = new_col + inner_fun(temp)
+        g_out = torch.cat(
+            [g[:, :i], new_col.unsqueeze(1), g[:, i + 1 :]],
+            dim=1,
+        )
+        return g_out
 
     def _func1(self, X):
         return rastrigin_func(X)
@@ -743,7 +757,7 @@ class MAF15(MAF14):
     def evaluate(self, X: torch.Tensor):
         m = self.m
         n = X.size(0)
-        g = self._evaluate(X)
+        g = self._evaluate(X.clone())
         f = (1 + g + torch.cat([g[:, 1:], torch.zeros(n, 1, device=X.device)], dim=1)) * (
             1
             - torch.flip(
