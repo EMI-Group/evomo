@@ -46,6 +46,7 @@ class MAF(Problem):
 
 class MAF1(MAF):
     def __init__(self, d=None, m=3, ref_num=1000, device: Optional[torch.device] = None):
+        assert d == m + 9, f"{self.__class__.__name__} is only defined for d = m + 9, got {d}."
         super().__init__(d, m, ref_num, device)
 
     def evaluate(self, X: torch.Tensor):
@@ -64,6 +65,7 @@ class MAF1(MAF):
 
 class MAF2(MAF):
     def __init__(self, d=None, m=3, ref_num=1000, device: Optional[torch.device] = None):
+        assert d == m + 9, f"{self.__class__.__name__} is only defined for d = m + 9, got {d}."
         super().__init__(d, m, ref_num, device)
 
     def evaluate(self, X: torch.Tensor):
@@ -131,6 +133,7 @@ class MAF2(MAF):
 
 class MAF3(MAF):
     def __init__(self, d=None, m=3, ref_num=1000, device: Optional[torch.device] = None):
+        assert d == m + 9, f"{self.__class__.__name__} is only defined for d = m + 9, got {d}."
         super().__init__(d, m, ref_num, device)
 
     def evaluate(self, X: torch.Tensor):
@@ -163,6 +166,7 @@ class MAF3(MAF):
 
 class MAF4(MAF):
     def __init__(self, d=None, m=3, ref_num=1000, device: Optional[torch.device] = None):
+        assert d == m + 9, f"{self.__class__.__name__} is only defined for d = m + 9, got {d}."
         super().__init__(d, m, ref_num, device)
 
     def evaluate(self, X: torch.Tensor):
@@ -221,6 +225,7 @@ class MAF5(MAF):
 
 class MAF6(MAF):
     def __init__(self, d=None, m=3, ref_num=1000, device: Optional[torch.device] = None):
+        assert d == m + 9, f"{self.__class__.__name__} is only defined for d = m + 9, got {d}."
         super().__init__(d, m, ref_num, device)
 
     def evaluate(self, X: torch.Tensor):
@@ -257,7 +262,7 @@ class MAF6(MAF):
 
 class MAF7(MAF):
     def __init__(self, d=None, m=3, ref_num=1000, device: Optional[torch.device] = None):
-        d = m + 19 if d is None else d
+        assert d == m + 19, f"{self.__class__.__name__} is only defined for d = m + 19, got {d}."
         super().__init__(d, m, ref_num, device)
 
     def evaluate(self, X: torch.Tensor):
@@ -304,8 +309,8 @@ class MAF7(MAF):
 
 class MAF8(MAF):
     def __init__(self, d=2, m=10, ref_num=1000, device: Optional[torch.device] = None):
-        assert d == 2, f"{self.__class__.__name__} is only defined for D = 2, got {d}."
-        assert m >= 3, f"{self.__class__.__name__} is only defined for M >= 3, got {m}."
+        assert d == 2, f"{self.__class__.__name__} is only defined for d = 2, got {d}."
+        assert m >= 3, f"{self.__class__.__name__} is only defined for m >= 3, got {m}."
         super().__init__(d, m, ref_num, device)
         self.points = self._getPoints()
 
@@ -402,6 +407,7 @@ class MAF9(MAF8):
 
 class MAF10(MAF):
     def __init__(self, d=None, m=3, ref_num=1000, device: Optional[torch.device] = None):
+        assert d == m + 9, f"{self.__class__.__name__} is only defined for d = m + 9, got {d}."
         super().__init__(d, m, ref_num, device)
 
     def evaluate(self, X: torch.Tensor):
@@ -553,6 +559,7 @@ class MAF11(MAF10):
 
 class MAF12(MAF):
     def __init__(self, d=None, m=3, ref_num=1000, device: Optional[torch.device] = None):
+        assert d == m + 9, f"{self.__class__.__name__} is only defined for d = m + 9, got {d}."
         super().__init__(d, m, ref_num, device)
 
     def evaluate(self, X: torch.Tensor):
@@ -597,7 +604,6 @@ class MAF12(MAF):
             x_cols.append(max_factor * (t3[:, i] - 0.5) + 0.5)
         x_cols.append(last_col)
         x = torch.stack(x_cols, dim=1)
-
         h = self._concave(x)
         f = x[:, m - 1].unsqueeze(1) + S * h
         return f
@@ -651,7 +657,7 @@ class MAF12(MAF):
 
 class MAF13(MAF):
     def __init__(self, d=5, m=3, ref_num=1000, device: Optional[torch.device] = None):
-        assert m >= 3, f"{self.__class__.__name__} is only defined for M >= 3, got {m}."
+        assert m >= 3, f"{self.__class__.__name__} is only defined for m >= 3, got {m}."
         super().__init__(d, m, ref_num, device)
 
     def evaluate(self, X: torch.Tensor):
@@ -683,7 +689,7 @@ class MAF13(MAF):
 
 class MAF14(MAF):
     def __init__(self, d=None, m=3, ref_num=1000, device: Optional[torch.device] = None):
-        d = 20 * m if d is None else d
+        assert d == 20 * m, f"{self.__class__.__name__} is only defined for d = 20 * m, got {d}."
         super().__init__(d, m, ref_num, device)
         nk = 2
         c = torch.zeros(self.m, device=device)
@@ -699,7 +705,7 @@ class MAF14(MAF):
     def evaluate(self, X: torch.Tensor):
         m = self.m
         n = X.size(0)
-        g = self._evaluate(X.clone())
+        g = self._evaluate(X)
         f = (
             (1 + g)
             * torch.flip(torch.cumprod(torch.cat([torch.ones(n, 1, device=X.device), X[:, : m - 1]], dim=1), dim=1), [1])
@@ -714,25 +720,27 @@ class MAF14(MAF):
         m = self.m
         n = X.size(0)
         nk = 2
-        X = self._modify_X(X)
+        new_X = self._modify_X(X)
         g = torch.zeros(n, m, device=X.device)
 
         for i in range(0, m, 2):
-            g = self._inner_loop(i, self._func1, g, nk, X)
+            g = self._inner_loop(i, self._func1, g, nk, new_X)
+
         for i in range(1, m, 2):
-            g = self._inner_loop(i, self._func2, g, nk, X)
+            g = self._inner_loop(i, self._func2, g, nk, new_X)
         g = g / torch.tensor(self.sublen, device=X.device).unsqueeze(0) * nk
         return g
 
     def _modify_X(self, X: torch.Tensor):
-        X[:, self.m - 1 :] = (1 + torch.arange(self.m, self.d + 1, device=X.device) / self.d) * X[:, self.m - 1 :] - (
-            X[:, 0] * 10
-        ).unsqueeze(-1)
-        return X
+        new_X = X.clone()
+        new_X[:, self.m - 1 :] = (1 + torch.arange(self.m, self.d + 1, device=X.device) / self.d).unsqueeze(0) * X[
+            :, self.m - 1 :
+        ] - (X[:, 0] * 10).unsqueeze(-1)
+        return new_X
 
     def _inner_loop(self, i, inner_fun, g: torch.Tensor, nk, X: torch.Tensor):
         new_col = g[:, i].clone()
-        for j in range(nk):
+        for j in range(1, nk):
             start = self.len[i] + self.m - 1 + j * self.sublen[i]
             end = start + self.sublen[i]
             temp = X[:, start:end]
@@ -757,7 +765,7 @@ class MAF15(MAF14):
     def evaluate(self, X: torch.Tensor):
         m = self.m
         n = X.size(0)
-        g = self._evaluate(X.clone())
+        g = self._evaluate(X)
         f = (1 + g + torch.cat([g[:, 1:], torch.zeros(n, 1, device=X.device)], dim=1)) * (
             1
             - torch.flip(
@@ -777,10 +785,11 @@ class MAF15(MAF14):
         self._pf_value = r
 
     def _modify_X(self, X: torch.Tensor):
-        X[:, self.m - 1 :] = (1 + torch.cos(torch.arange(self.m, self.d + 1, device=X.device) / self.d * torch.pi / 2)) * X[
-            :, self.m - 1 :
-        ] - (X[:, 0] * 10).unsqueeze(-1)
-        return X
+        new_X = X.clone()
+        new_X[:, self.m - 1 :] = (
+            1 + torch.cos(torch.arange(self.m, self.d + 1, device=X.device).unsqueeze(0) / self.d * torch.pi / 2)
+        ) * X[:, self.m - 1 :] - (X[:, 0] * 10).unsqueeze(-1)
+        return new_X
 
     def _func1(self, X):
         return griewank_func(X)
