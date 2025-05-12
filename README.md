@@ -58,8 +58,9 @@ EvoMO is a GPU-accelerated library for evolutionary multiobjective optimization 
 
 ### 🔧 Easy-to-Use Integration
 
-#### 🔄 Shared Name with EvoX
-- After installation, you can directly import EvoMO algorithms using `import evox`, making it seamless to access both EvoX and EvoMO algorithms with a unified interface.
+#### 📦 Standalone EvoMO Package
+- EvoMO is now available as an independent repository, allowing users to easily access multiobjective optimization algorithms and benchmark problems via `import evomo` for improved discoverability and usability.
+
 
 ## Installation Guide
 
