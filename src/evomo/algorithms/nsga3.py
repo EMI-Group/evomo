@@ -5,7 +5,7 @@ from evox.core import Algorithm, Mutable, vmap
 from evox.operators.crossover import simulated_binary
 from evox.operators.mutation import polynomial_mutation
 from evox.operators.sampling import uniform_sampling
-from evox.operators.selection import non_dominate_rank, tournament_selection_multifit
+from evox.operators.selection import tournament_selection_multifit
 from evox.utils import clamp
 
 from evomo.operators.selection import non_dominate_rank
