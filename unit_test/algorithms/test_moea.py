@@ -1,27 +1,36 @@
-from unittest import TestCase
+from unittest import TestCase, skip
 
 import torch
-from evox.algorithms import IBEA, LMOCSO, TensorMOEAD
-from evox.core import Algorithm, use_state, vmap
-from evox.problems.numerical import DTLZ2
-from evox.workflows import StdWorkflow
+from evox.core import Algorithm, compile, use_state, vmap
+from evox.workflows import EvalMonitor, StdWorkflow
 
-torch.set_default_device("cuda" if torch.cuda.is_available() else "cpu")
+from evomo.algorithms import IBEA, LMOCSO, MOEAD, NSGA2, NSGA3, RVEA, HypE, RVEAa, TensorMOEAD
+from evomo.problems.numerical import DTLZ2
+
+
 class MOTestBase(TestCase):
     def run_algorithm(self, algo: Algorithm):
         prob = DTLZ2(m=3)
-        workflow = StdWorkflow(algo, prob)
+        monitor = EvalMonitor(multi_obj=True, full_sol_history=True)
+        workflow = StdWorkflow(algo, prob, monitor=monitor)
         workflow.init_step()
         for _ in range(3):
             workflow.step()
 
+        monitor.get_pf()
+        monitor.get_pf_fitness()
+
     def run_compiled_algorithm(self, algo: Algorithm):
         prob = DTLZ2(m=3)
-        workflow = StdWorkflow(algo, prob)
+        monitor = EvalMonitor(multi_obj=True, full_sol_history=True)
+        workflow = StdWorkflow(algo, prob, monitor=monitor)
         workflow.init_step()
-        jit_state_step = torch.compile(workflow.step, dynamic=False)
+        jit_step = compile(workflow.step, dynamic=False)
         for _ in range(3):
-            jit_state_step()
+            jit_step()
+
+        monitor.get_pf()
+        monitor.get_pf_fitness()
 
     def run_vmap_algorithm(self, algo: Algorithm):
         prob = DTLZ2(m=3)
@@ -30,25 +39,68 @@ class MOTestBase(TestCase):
         vmap_state_step = vmap(state_step, randomness="different")
         params, buffers = torch.func.stack_module_state([workflow] * 3)
         state = params | buffers
-        vmap_state_step = torch.compile(vmap_state_step, dynamic=False)
+        vmap_state_step = compile(vmap_state_step)
         for _ in range(3):
             state = vmap_state_step(state)
 
 
 class TestMOVariants(MOTestBase):
     def setUp(self):
-        pop_size = 20
-        dim = 10
-        lb = -torch.ones(dim)
-        ub = torch.ones(dim)
-        self.algo = [
-            TensorMOEAD(pop_size=pop_size, n_objs=3, lb=lb, ub=ub),
-            IBEA(pop_size=pop_size, n_objs=3, lb=lb, ub=ub),
-            LMOCSO(pop_size=pop_size, n_objs=3, lb=lb, ub=ub)
-        ]
+        torch.compiler.reset()
+        torch.manual_seed(42)
+        torch.set_default_device("cuda" if torch.cuda.is_available() else "cpu")
+        self.pop_size = 20
+        self.dim = 10
+        self.lb = -torch.ones(self.dim)
+        self.ub = torch.ones(self.dim)
 
-    def test_moea_variants(self):
-        for algo in self.algo:
-            self.run_algorithm(algo)
-            self.run_compiled_algorithm(algo)
-            self.run_vmap_algorithm(algo)
+    def test_nsga2(self):
+        algo = NSGA2(pop_size=self.pop_size, n_objs=3, lb=self.lb, ub=self.ub)
+        self.run_algorithm(algo)
+        self.run_compiled_algorithm(algo)
+
+    def test_nsga3(self):
+        algo = NSGA3(pop_size=self.pop_size, n_objs=3, lb=self.lb, ub=self.ub)
+        self.run_algorithm(algo)
+        self.run_compiled_algorithm(algo)
+
+    def test_rvea(self):
+        algo = RVEA(pop_size=self.pop_size, n_objs=3, lb=self.lb, ub=self.ub)
+        self.run_algorithm(algo)
+        self.run_compiled_algorithm(algo)
+        self.run_vmap_algorithm(algo)
+
+    def test_moead(self):
+        algo = MOEAD(pop_size=self.pop_size, n_objs=3, lb=self.lb, ub=self.ub)
+        self.run_algorithm(algo)
+        self.run_compiled_algorithm(algo)
+
+    @skip("Torch 2.7 bug when running on non-AVX512 CPU: https://github.com/pytorch/pytorch/issues/152172")
+    def test_hype(self):
+        algo = HypE(pop_size=self.pop_size, n_objs=3, lb=self.lb, ub=self.ub)
+        self.run_algorithm(algo)
+        self.run_compiled_algorithm(algo)
+        self.run_vmap_algorithm(algo)
+
+    def test_rveaa(self):
+        algo = RVEAa(pop_size=self.pop_size, n_objs=3, lb=self.lb, ub=self.ub)
+        self.run_algorithm(algo)
+        self.run_compiled_algorithm(algo)
+
+    def test_tensormoead(self):
+        algo = TensorMOEAD(pop_size=self.pop_size, n_objs=3, lb=self.lb, ub=self.ub)
+        self.run_algorithm(algo)
+        self.run_compiled_algorithm(algo)
+        self.run_vmap_algorithm(algo)
+
+    def test_ibea(self):
+        algo = IBEA(pop_size=self.pop_size, n_objs=3, lb=self.lb, ub=self.ub)
+        self.run_algorithm(algo)
+        self.run_compiled_algorithm(algo)
+        self.run_vmap_algorithm(algo)
+
+    def test_lmocso(self):
+        algo = LMOCSO(pop_size=self.pop_size, n_objs=3, lb=self.lb, ub=self.ub)
+        self.run_algorithm(algo)
+        self.run_compiled_algorithm(algo)
+        self.run_vmap_algorithm(algo)

@@ -1,7 +1,8 @@
 from unittest import TestCase
 
 import torch
-from evox.problems.numerical import ZDT1, ZDT2, ZDT3, ZDT4, ZDT6
+
+from evomo.problems.numerical import ZDT1, ZDT2, ZDT3, ZDT4, ZDT6
 
 
 class TestZDT(TestCase):

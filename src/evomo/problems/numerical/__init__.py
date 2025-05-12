@@ -28,10 +28,18 @@ __all__ = [
     "LSMOP7",
     "LSMOP8",
     "LSMOP9",
+    "DTLZ1",
+    "DTLZ2",
+    "DTLZ3",
+    "DTLZ4",
+    "DTLZ5",
+    "DTLZ6",
+    "DTLZ7",
 ]
 
-from evox_ext.problems.numerical.lsmop import LSMOP1, LSMOP2, LSMOP3, LSMOP4, LSMOP5, LSMOP6, LSMOP7, LSMOP8, LSMOP9
-from evox_ext.problems.numerical.maf import (
+from evomo.problems.numerical.dtlz import DTLZ1, DTLZ2, DTLZ3, DTLZ4, DTLZ5, DTLZ6, DTLZ7
+from evomo.problems.numerical.lsmop import LSMOP1, LSMOP2, LSMOP3, LSMOP4, LSMOP5, LSMOP6, LSMOP7, LSMOP8, LSMOP9
+from evomo.problems.numerical.maf import (
     MAF1,
     MAF2,
     MAF3,
@@ -48,4 +56,4 @@ from evox_ext.problems.numerical.maf import (
     MAF14,
     MAF15,
 )
-from evox_ext.problems.numerical.zdt import ZDT1, ZDT2, ZDT3, ZDT4, ZDT6
+from evomo.problems.numerical.zdt import ZDT1, ZDT2, ZDT3, ZDT4, ZDT6

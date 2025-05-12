@@ -1,7 +1,8 @@
 from unittest import TestCase
 
 import torch
-from evox.problems.numerical import (
+
+from evomo.problems.numerical import (
     MAF1,
     MAF2,
     MAF3,

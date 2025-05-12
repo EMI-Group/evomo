@@ -15,7 +15,7 @@ __all__ = [
 
 from brax.envs import register_environment
 
-from evox_ext.problems.neuroevolution.morobtrol import (
+from evomo.problems.neuroevolution.morobtrol import (
     mo_ant,
     mo_half_cheetah,
     mo_hopper,

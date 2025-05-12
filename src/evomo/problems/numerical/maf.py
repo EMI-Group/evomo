@@ -3,8 +3,9 @@ from typing import Optional
 import torch
 from evox.core import Problem
 from evox.operators.sampling import uniform_sampling
-from evox.operators.selection import non_dominate_rank
 from evox.problems.numerical.basic import griewank_func, rastrigin_func, rosenbrock_func, sphere_func
+
+from evox.operators.selection import non_dominate_rank
 
 
 class MAF(Problem):
