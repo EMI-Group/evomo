@@ -99,10 +99,11 @@ Solve the DTLZ2 problem using the TensorMOEA/D algorithm:
 import time
 
 import torch
-from evox.algorithms import TensorMOEAD
 from evox.metrics import igd
 from evox.problems.numerical import DTLZ2
 from evox.workflows import StdWorkflow
+
+from evomo.algorithms import TensorMOEAD
 
 if __name__ == "__main__":
     torch.set_default_device("cuda" if torch.cuda.is_available() else "cpu")
@@ -134,10 +135,11 @@ import time
 
 import torch
 import torch.nn as nn
-from evox.algorithms import TensorMOEAD
-from evox.problems.neuroevolution import MoRobtrol
 from evox.utils import ParamsAndVector
 from evox.workflows import EvalMonitor, StdWorkflow
+
+from evomo.algorithms import TensorMOEAD
+from evomo.problems.neuroevolution import MoRobtrol
 
 
 class SimpleMLP(nn.Module):
