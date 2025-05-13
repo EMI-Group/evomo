@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "evomo"
-version = "0.2.0rc1"
+version = "0.2.0"
 authors = [
   { name = "Zhenyu Liang", email = "zhenyuliang97@gmail.com" },
   { name = "Naiwei Yu", email = "yunaiweiyn@gmail.com" },
