@@ -127,6 +127,12 @@ if __name__ == "__main__":
     print(f"Total time: {time.time() - t} seconds")
 ```
 
+> [!NOTE]  
+> **For Windows users**: If you encounter `FileNotFoundError: [Error 2] No such file or directory: 'C:\\Users\\...'`, it may be caused by the system path length limitation.  
+> Please enable long path support to resolve this issue.
+
+
+
 ### MoRobtrol
 
 Solve the MoSwimmer problem in MoRobtrol using the TensorMOEA/D algorithm:
