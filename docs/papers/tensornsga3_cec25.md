@@ -30,6 +30,8 @@ If you use the TensorNSGA-III presented in the CEC 2025 in your research and wis
   booktitle={2025 IEEE Congress on Evolutionary Computation (CEC)}, 
   title={{GPU}-accelerated Evolutionary Many-objective Optimization Using Tensorized {NSGA-III}}, 
   year={2025},
+  pages={1-8},
+  doi={10.1109/CEC65147.2025.11043108},
 }
 ```
 
