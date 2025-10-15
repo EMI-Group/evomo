@@ -114,7 +114,7 @@ if __name__ == "__main__":
     pf = prob.pf()
     workflow = StdWorkflow(algo, prob)
     workflow.init_step()
-    jit_state_step = torch.compile(workflow.step)
+    jit_state_step = workflow.step
 
     t = time.time()
     for i in range(100):
@@ -193,7 +193,7 @@ def setup_workflow(model, pop_size, max_episode_length, num_episodes, device):
     return workflow
 
 
-def run_workflow(workflow, compiled=True, generations=10):
+def run_workflow(workflow, compiled=False, generations=10):
     workflow.init_step()
     step_function = torch.compile(workflow.step) if compiled else workflow.step
     for index in range(generations):
