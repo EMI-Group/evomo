@@ -86,7 +86,7 @@ class RVEA(Algorithm):
 
         v = sampling.to(device=device)
 
-        v0 = v
+        v0 = v.clone()
         self.pop_size = v.size(0)
         length = ub - lb
         population = torch.rand(self.pop_size, self.dim, device=device)
@@ -110,7 +110,7 @@ class RVEA(Algorithm):
     def _rv_adaptation(self, pop_obj: torch.Tensor):
         max_vals = nanmax(pop_obj, dim=0)[0]
         min_vals = nanmin(pop_obj, dim=0)[0]
-        return self.init_v * (max_vals - min_vals)
+        return self.init_v.clone() * (max_vals - min_vals)
 
     def _no_rv_adaptation(self, pop_obj: torch.Tensor):
         return self.reference_vector.clone()
@@ -124,18 +124,27 @@ class RVEA(Algorithm):
         pop = self.pop[sorted_indices[mating_pool]]
         return pop
 
-    def _update_pop_and_rv(self, survivor: torch.Tensor, survivor_fit: torch.Tensor):
+    def _update_pop_and_rv(self, survivor, survivor_fit):
         self.pop = survivor
         self.fit = survivor_fit
 
-        self.reference_vector = torch.cond(
-            self.gen % self.rv_adapt_every == 0, self._rv_adaptation, self._no_rv_adaptation, (survivor_fit,)
-        )
+        if torch.compiler.is_compiling():
+            self.reference_vector = torch.cond(
+                self.gen % self.rv_adapt_every == 0,
+                self._rv_adaptation,
+                self._no_rv_adaptation,
+                (survivor_fit,)
+            )
+        else:
+            if (self.gen % self.rv_adapt_every) == 0:
+                self.reference_vector = self._rv_adaptation(survivor_fit)
+            else:
+                self.reference_vector = self._no_rv_adaptation(survivor_fit)
 
     def step(self):
         """Perform a single optimization step."""
 
-        self.gen = self.gen + torch.tensor(1)
+        self.gen = self.gen + 1
         pop = self._mating_pool()
         crossovered = self.crossover(pop)
         offspring = self.mutation(crossovered, self.lb, self.ub)
