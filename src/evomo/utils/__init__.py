@@ -1,4 +1,4 @@
-__all = [
+__all__ = [
     "unique_rows_sorted",
 ]
 
