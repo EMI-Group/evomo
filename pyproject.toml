@@ -36,6 +36,8 @@ vis = [
 neuroevolution = [
   "torchvision >= 0.16.0",
   "brax >= 0.12.0",
+  "jax >= 0.4.6",
+  "jaxlib >= 0.4.6",
 ]
 
 test = [
