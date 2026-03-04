@@ -2,7 +2,7 @@ import torch
 from evox.utils import lexsort, register_vmap_op
 
 
-def dominate_relation(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+def dominate_relation(x: torch.Tensor, y: torch.Tensor, cv_x: torch.Tensor = None, cv_y: torch.Tensor = None) -> torch.Tensor:
     """Return the domination relation matrix A, where A_{ij} is True if x_i dominates y_j.
 
     :param x: An array with shape (n1, m) where n1 is the population size and m is the number of objectives.
@@ -21,6 +21,23 @@ def dominate_relation(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
 
     # Check the domination condition: x_i dominates y_j
     domination_matrix = less_than_equal.all(dim=2) & strictly_less_than.any(dim=2)
+
+    # Constraint handling
+    if cv_x is not None and cv_y is not None:
+        cv_x_expanded = cv_x.unsqueeze(1)
+        cv_y_expanded = cv_y.unsqueeze(0)
+        
+        cv_x_sum = cv_x_expanded.sum(dim=-1) if cv_x_expanded.ndim > 2 else cv_x_expanded
+        cv_y_sum = cv_y_expanded.sum(dim=-1) if cv_y_expanded.ndim > 2 else cv_y_expanded
+        
+        cv_x_feasible = (cv_x_sum <= 0)
+        cv_y_feasible = (cv_y_sum <= 0)
+        
+        case1 = cv_x_feasible & ~cv_y_feasible
+        case2 = (~cv_x_feasible) & (~cv_y_feasible) & (cv_x_sum < cv_y_sum)
+        case3 = (cv_x_feasible & cv_y_feasible) | ((~cv_x_feasible) & (~cv_y_feasible) & (cv_x_sum == cv_y_sum))
+        
+        domination_matrix = case1 | case2 | (case3 & domination_matrix)
 
     return domination_matrix
 
@@ -174,7 +191,7 @@ def _iterative_get_ranks(
     return rank
 
 
-def non_dominate_rank(x: torch.Tensor) -> torch.Tensor:
+def non_dominate_rank(x: torch.Tensor, cv: torch.Tensor = None) -> torch.Tensor:
     """
     Compute the non-domination rank for a set of solutions in multi-objective optimization.
 
@@ -188,7 +205,7 @@ def non_dominate_rank(x: torch.Tensor) -> torch.Tensor:
 
     n = x.size(0)
     # Domination relation matrix (n x n)
-    dominate_relation_matrix = dominate_relation(x, x)
+    dominate_relation_matrix = dominate_relation(x, x, cv, cv)
     # Count how many times each individual is dominated
     dominate_count = dominate_relation_matrix.sum(dim=0)
     # Initialize rank array
@@ -238,7 +255,7 @@ def crowding_distance(costs: torch.Tensor, mask: torch.Tensor):
     return crowding_distances
 
 
-def nd_environmental_selection(x: torch.Tensor, f: torch.Tensor, topk: int):
+def nd_environmental_selection(x: torch.Tensor, f: torch.Tensor, topk: int, cv: torch.Tensor = None):
     """
     Perform environmental selection based on non-domination rank and crowding distance.
 
@@ -253,9 +270,15 @@ def nd_environmental_selection(x: torch.Tensor, f: torch.Tensor, topk: int):
         - **rank**: The non-domination rank of the selected solutions.
         - **crowding_dis**: The crowding distance of the selected solutions.
     """
-    rank = non_dominate_rank(f)
+    rank = non_dominate_rank(f, cv)
     worst_rank = torch.topk(rank, topk, largest=False)[0][-1]
     mask = rank == worst_rank
     crowding_dis = crowding_distance(f, mask)
-    combined_order = lexsort([-crowding_dis, rank])[:topk]
-    return x[combined_order], f[combined_order], rank[combined_order], crowding_dis[combined_order]
+    
+    if cv is not None:
+        cv_sum = cv.sum(dim=1) if cv.ndim > 1 else cv
+        combined_order = lexsort([-crowding_dis, rank, cv_sum])[:topk]
+        return x[combined_order], f[combined_order], rank[combined_order], crowding_dis[combined_order], cv[combined_order]
+    else:
+        combined_order = lexsort([-crowding_dis, rank])[:topk]
+        return x[combined_order], f[combined_order], rank[combined_order], crowding_dis[combined_order], None

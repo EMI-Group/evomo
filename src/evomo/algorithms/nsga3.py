@@ -14,7 +14,7 @@ from evomo.operators.selection import non_dominate_rank
 def _get_table_row_inner(bool_ref_candidate: torch.Tensor, upper_bound: torch.Tensor):
     true_indices = torch.where(
         bool_ref_candidate,
-        torch.arange(bool_ref_candidate.size(0), dtype=torch.int32, device=torch.get_default_device()),
+        torch.arange(bool_ref_candidate.size(0), dtype=torch.int32, device=bool_ref_candidate.device),
         upper_bound,
     )
     true_indices = torch.sort(true_indices, dim=0).values
@@ -135,7 +135,8 @@ class NSGA3(Algorithm):
         """
         self.fit = self.evaluate(self.pop)
         self.rank = non_dominate_rank(self.fit)
-
+    
+    @torch._dynamo.disable
     def step(self):
         """Perform the optimization step of the workflow."""
         mating_pool = self.selection(self.pop_size, [self.rank])
