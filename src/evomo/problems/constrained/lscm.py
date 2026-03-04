@@ -1,11 +1,13 @@
+
 __all__ = ['LSCM1', 'LSCM2', 'LSCM3', 'LSCM4', 'LSCM5', 'LSCM6', 'LSCM7', 'LSCM8', 'LSCM9', 'LSCM10', 'LSCM11', 'LSCM12']
 
 from typing import List, Tuple, Dict, Optional
 import torch
-from .utils import CMOP, get_pareto_front
+from evomo.utils import get_pareto_front
 from evox.operators.sampling import uniform_sampling, grid_sampling
 from evox.utils import clamp
 from .sdc import CEC_2006_information, CEC_2006_fitness, Distance_function
+from evomo.problems.constrained.base import CMOP
 
 
 def duan_yueshu(index: int) -> Tuple[list, list, int, int, list, int, int]:

@@ -1,11 +1,13 @@
+
 __all__ = ['SDC1', 'SDC2', 'SDC3', 'SDC4', 'SDC5', 'SDC6', 'SDC7', 
            'SDC8', 'SDC9', 'SDC10', 'SDC11', 'SDC12', 'SDC13', 'SDC14', 'SDC15']
 
 from typing import Tuple, Optional
 import torch
-from .utils import CMOP, get_pareto_front
+from evomo.utils import get_pareto_front
 from evox.operators.sampling import uniform_sampling, grid_sampling
 from evox.utils import clamp
+from evomo.problems.constrained.base import CMOP
 
 
 def information(index: int) -> list:

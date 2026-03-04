@@ -1,10 +1,11 @@
+
 __all__ = ['DASCMOP1', 'DASCMOP2', 'DASCMOP3', 'DASCMOP4', 'DASCMOP5',
            'DASCMOP6', 'DASCMOP7', 'DASCMOP8', 'DASCMOP9']
 
 import torch
-from .utils import CMOP
 from evox.operators.sampling import uniform_sampling
 from typing import Optional
+from evomo.problems.constrained.base import CMOP
 
 
 class DASCMOP(CMOP):

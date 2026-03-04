@@ -1,6 +1,8 @@
+
 import torch
-from .utils import CMOP, get_pareto_front
+from evomo.utils import get_pareto_front
 from evox.operators.sampling import uniform_sampling, grid_sampling
+from evomo.problems.constrained.base import CMOP
 
 __all__ = ['MW1', 'MW2', 'MW3', 'MW4', 'MW5', 'MW6', 'MW7', 'MW8', 'MW9', 'MW10', 'MW11',
            'MW12', 'MW13', 'MW14']

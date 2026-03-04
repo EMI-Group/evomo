@@ -1,6 +1,8 @@
+
 import numpy as np
-from .utils import CMOP, load_pareto_front_from_file
+from evomo.utils import load_pareto_front_from_file
 import torch
+from evomo.problems.constrained.base import CMOP
 
 
 __all__ = ['CTP1', 'CTP2', 'CTP3', 'CTP4', 'CTP5', 'CTP6', 'CTP7', 'CTP8']

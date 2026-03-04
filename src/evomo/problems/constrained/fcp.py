@@ -1,8 +1,10 @@
+
 __all__ = ['FCP1', 'FCP2', 'FCP3', 'FCP4', 'FCP5']
 
 import torch
-from .utils import CMOP, get_pareto_front
+from evomo.utils import get_pareto_front
 from evox.operators.sampling import uniform_sampling
+from evomo.problems.constrained.base import CMOP
 
 class FCP(CMOP):
     """

@@ -1,10 +1,11 @@
+
 __all__ = ['LIRCMOP1', 'LIRCMOP2', 'LIRCMOP3', 'LIRCMOP4', 'LIRCMOP5', 'LIRCMOP6', 'LIRCMOP7',
            'LIRCMOP8', 'LIRCMOP9', 'LIRCMOP10', 'LIRCMOP11', 'LIRCMOP12', 'LIRCMOP13', 'LIRCMOP14']
 
 import torch
-from .utils import CMOP
 from evox.operators.sampling import uniform_sampling
 from typing import Optional
+from evomo.problems.constrained.base import CMOP
 
 class LIRCMOP(CMOP):
     """

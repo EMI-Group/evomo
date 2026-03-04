@@ -24,7 +24,37 @@ algorithm-specific, consider moving them to a dedicated submodule.
 
 from __future__ import annotations
 
+from typing import Tuple
 import torch
+
+
+def at_least_2d(X: torch.Tensor) -> Tuple[torch.Tensor, bool]:
+    """Ensure the input tensor is at least 2D. Returns (X_2d, was_1d)."""
+    if X.ndim == 1:
+        return X.unsqueeze(0), True
+    elif X.ndim == 2:
+        return X, False
+    else:
+        raise ValueError(f"Expected 1D/2D torch.Tensor, got {tuple(X.shape)}")
+
+
+def get_pareto_front(f: torch.Tensor) -> torch.Tensor:
+    """
+    Return the non-dominated set (Pareto front) of the given objectives.
+    """
+    # f shape: (N, M)
+    # Simple O(N^2) implementation
+    x_expanded = f.unsqueeze(1)  # (N, 1, M)
+    y_expanded = f.unsqueeze(0)  # (1, N, M)
+
+    # x dominates y if x <= y and at least one x < y
+    less_equal = (x_expanded <= y_expanded).all(dim=2)
+    strictly_less = (x_expanded < y_expanded).any(dim=2)
+    domination = less_equal & strictly_less  # (N, N)
+
+    # an element j is dominated if any i dominates it
+    is_dominated = domination.any(dim=0)
+    return f[~is_dominated]
 
 
 def unique_rows_sorted(x: torch.Tensor, return_index: bool = True):

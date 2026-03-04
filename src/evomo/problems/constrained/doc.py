@@ -1,8 +1,10 @@
+
 import os
 import torch
-from .utils import CMOP, load_pareto_front_from_file
+from evomo.utils import load_pareto_front_from_file
 from evox.utils import clamp
 from evox.operators.sampling import uniform_sampling
+from evomo.problems.constrained.base import CMOP
 
 __all__ = ['DOC1', 'DOC2', 'DOC3', 'DOC4', 'DOC5', 'DOC6', 'DOC7', 'DOC8', 'DOC9']
 
