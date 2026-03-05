@@ -100,9 +100,9 @@ class NSGA2(Algorithm):
         crossovered = self.crossover(self.pop[mating_pool])
         offspring = self.mutation(crossovered, self.lb, self.ub)
         offspring = clamp(offspring, self.lb, self.ub)
-        
+
         off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
-            
+
         merge_pop = torch.cat([self.pop, offspring], dim=0)
         merge_fit = torch.cat([self.fit, off_fit], dim=0)
         merge_cv = torch.cat([self.cv, off_cv], dim=0) if self.cv is not None else None

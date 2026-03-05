@@ -1,8 +1,8 @@
 __all__ = ["constrained", "neuroevolution", "numerical"]
 
 
-from . import numerical
-from . import constrained
+from . import constrained, numerical
+
 try:
     from . import neuroevolution
 except ModuleNotFoundError:

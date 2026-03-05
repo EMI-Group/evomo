@@ -1,7 +1,9 @@
 import os
+from typing import Tuple, Union
+
 import numpy as np
-from typing import Union, Tuple
 import torch
+
 
 def parse_evaluate(eval_out: Union[torch.Tensor, Tuple[torch.Tensor, ...]]) -> Tuple[torch.Tensor, Union[torch.Tensor, None]]:
     """Parse output from evaluate function. Returns (fit, cv) where cv is None if unconstrained."""
@@ -20,7 +22,7 @@ def load_pareto_front_from_file(fname, device=None, dtype=torch.float32):
     utils_dir = os.path.dirname(os.path.realpath(__file__))
     evomo_dir = os.path.dirname(utils_dir)
     pf_dir = os.path.join(evomo_dir, "problems", "constrained", "pf")
-    
+
     full_path = os.path.join(pf_dir, fname)
 
     if not os.path.isfile(full_path):

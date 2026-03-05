@@ -1,12 +1,13 @@
-from unittest import TestCase, skip
+from unittest import TestCase
 
 import torch
 from evox.core import Algorithm, compile, use_state, vmap
 from evox.workflows import EvalMonitor
-from evomo.workflows import UnifiedWorkflow
 
 from evomo.algorithms import IBEA, LMOCSO, MOEAD, NSGA2, NSGA3, RVEA, HypE, RVEAa, TensorMOEAD
 from evomo.problems.numerical import DTLZ2
+from evomo.workflows import UnifiedWorkflow
+
 
 class MOTestBase(TestCase):
     def run_algorithm(self, algo: Algorithm):

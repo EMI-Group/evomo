@@ -1,11 +1,7 @@
-
-import numpy as np
-from evomo.utils import load_pareto_front_from_file
 import torch
+
 from evomo.problems.constrained.base import CMOP
-
-
-__all__ = ['CTP1', 'CTP2', 'CTP3', 'CTP4', 'CTP5', 'CTP6', 'CTP7', 'CTP8']
+from evomo.utils import load_pareto_front_from_file
 
 
 def ctp(X, theta, a, b, c, d, e):
@@ -13,7 +9,7 @@ def ctp(X, theta, a, b, c, d, e):
     Generator for constrained multiobjective problems CTP.
     """
 
-    X = torch.atleast_2d(X) # default expand first dimension
+    X = torch.atleast_2d(X)  # default expand first dimension
     theta = torch.as_tensor(theta, dtype=X.dtype, device=X.device)
 
     # Distance values
@@ -27,10 +23,10 @@ def ctp(X, theta, a, b, c, d, e):
     # Constraint values
     h1 = torch.cos(theta) * (f2 - e) - torch.sin(theta) * f1
     h2 = torch.sin(theta) * (f2 - e) + torch.cos(theta) * f1
-    h3 = a * torch.abs(torch.sin(b * torch.pi * (h2 ** c))) ** d
-    c  = h3 - h1
+    h3 = a * torch.abs(torch.sin(b * torch.pi * (h2**c))) ** d
+    c = h3 - h1
 
-    return torch.cat([f1, f2, c],dim=1)
+    return torch.cat([f1, f2, c], dim=1)
 
 
 def ctp1(X):
@@ -39,7 +35,7 @@ def ctp1(X):
     """
 
     X = torch.atleast_2d(X)
- 
+
     # Distance values
     h = X[:, 1:].square() - 10 * torch.cos(2 * torch.pi * X[:, 1:])
     g = 1 + 10 * (X.shape[1] - 1) + torch.sum(h, dim=1, keepdim=True)
@@ -52,7 +48,8 @@ def ctp1(X):
     c1 = f2 - 0.858 * torch.exp(-0.541 * f1)
     c2 = f2 - 0.728 * torch.exp(-0.295 * f1)
 
-    return torch.cat([f1, f2, -c1, -c2],dim=1)
+    return torch.cat([f1, f2, -c1, -c2], dim=1)
+
 
 def ctp2(X):
     """
@@ -110,7 +107,7 @@ def ctp8(X):
     theta2, a2, b2, c2, d2, e2 = 0.1 * torch.pi, 40, 0.5, 1, 2, -2
     Fk = ctp(X, theta1, a1, b1, c1, d1, e1)
     C = ctp(X, theta2, a2, b2, c2, d2, e2)
-    return torch.cat([Fk, C[:, [2]]],dim=1)
+    return torch.cat([Fk, C[:, [2]]], dim=1)
 
 
 # Generator #
@@ -137,18 +134,9 @@ class CTP(CMOP):
     doi: 10.1007/3-540-44719-9_20.
     """
 
-    _prob = {
-        1: ctp1,
-        2: ctp2,
-        3: ctp3,
-        4: ctp4,
-        5: ctp5,
-        6: ctp6,
-        7: ctp7,
-        8: ctp8
-    }
+    _prob = {1: ctp1, 2: ctp2, 3: ctp3, 4: ctp4, 5: ctp5, 6: ctp6, 7: ctp7, 8: ctp8}
 
-    def __init__(self, prob_id, m=2, d=2,**kwargs):
+    def __init__(self, prob_id, m=2, d=2, **kwargs):
 
         if prob_id not in set(range(1, 9)):
             raise ValueError("Please select a valid prob id.")
@@ -168,21 +156,17 @@ class CTP(CMOP):
         n_iq = 2 if prob_id in {1, 8} else 1
 
         # Set lb, ub
-        lb = torch.tensor([0.] + [-5.] * (d - 1),device=self.device)
-        ub = torch.tensor([1.] + [5.] * (d - 1),device=self.device)
+        lb = torch.tensor([0.0] + [-5.0] * (d - 1), device=self.device)
+        ub = torch.tensor([1.0] + [5.0] * (d - 1), device=self.device)
 
-        super(CTP, self).__init__(d=d,
-                                  m=m,
-                                  n_iq=n_iq,
-                                  n_eq=0,
-                                  lb=lb,
-                                  ub=ub,
-                                  **kwargs)
+        super(CTP, self).__init__(d=d, m=m, n_iq=n_iq, n_eq=0, lb=lb, ub=ub, **kwargs)
 
     def fn(self, X):
         return self.fn(X)
 
+
 # Pymoo convention #
+
 
 class CTP1(CTP):
     """
@@ -193,8 +177,7 @@ class CTP1(CTP):
         super(CTP1, self).__init__(prob_id=1, m=m, d=d, **kwargs)
 
     def pf(self):
-        return load_pareto_front_from_file(f"CTP/{self.fn.__name__.lower()}_M{self.m}_D{self.d}.pf", 
-                                            device=self.device)
+        return load_pareto_front_from_file(f"CTP/{self.fn.__name__.lower()}_M{self.m}_D{self.d}.pf", device=self.device)
 
 
 class CTP2(CTP):
@@ -206,8 +189,7 @@ class CTP2(CTP):
         super(CTP2, self).__init__(prob_id=2, m=m, d=d, **kwargs)
 
     def pf(self):
-        return load_pareto_front_from_file(f"CTP/{self.fn.__name__.lower()}_M{self.m}_D{self.d}.pf",
-                                            device=self.device)
+        return load_pareto_front_from_file(f"CTP/{self.fn.__name__.lower()}_M{self.m}_D{self.d}.pf", device=self.device)
 
 
 class CTP3(CTP):
@@ -219,8 +201,7 @@ class CTP3(CTP):
         super(CTP3, self).__init__(prob_id=3, m=m, d=d, **kwargs)
 
     def pf(self):
-        return load_pareto_front_from_file(f"CTP/{self.fn.__name__.lower()}_M{self.m}_D{self.d}.pf",
-                                            device=self.device)
+        return load_pareto_front_from_file(f"CTP/{self.fn.__name__.lower()}_M{self.m}_D{self.d}.pf", device=self.device)
 
 
 class CTP4(CTP):
@@ -232,8 +213,7 @@ class CTP4(CTP):
         super(CTP4, self).__init__(prob_id=4, m=m, d=d, **kwargs)
 
     def pf(self):
-        return load_pareto_front_from_file(f"CTP/{self.fn.__name__.lower()}_M{self.m}_D{self.d}.pf",
-                                            device=self.device)
+        return load_pareto_front_from_file(f"CTP/{self.fn.__name__.lower()}_M{self.m}_D{self.d}.pf", device=self.device)
 
 
 class CTP5(CTP):
@@ -245,8 +225,7 @@ class CTP5(CTP):
         super(CTP5, self).__init__(prob_id=5, m=m, d=d, **kwargs)
 
     def pf(self):
-        return load_pareto_front_from_file(f"CTP/{self.fn.__name__.lower()}_M{self.m}_D{self.d}.pf",
-                                            device=self.device)
+        return load_pareto_front_from_file(f"CTP/{self.fn.__name__.lower()}_M{self.m}_D{self.d}.pf", device=self.device)
 
 
 class CTP6(CTP):
@@ -258,8 +237,7 @@ class CTP6(CTP):
         super(CTP6, self).__init__(prob_id=6, m=m, d=d, **kwargs)
 
     def pf(self):
-        return load_pareto_front_from_file(f"CTP/{self.fn.__name__.lower()}_M{self.m}_D{self.d}.pf",
-                                            device=self.device)
+        return load_pareto_front_from_file(f"CTP/{self.fn.__name__.lower()}_M{self.m}_D{self.d}.pf", device=self.device)
 
 
 class CTP7(CTP):
@@ -271,8 +249,7 @@ class CTP7(CTP):
         super(CTP7, self).__init__(prob_id=7, m=m, d=d, **kwargs)
 
     def pf(self):
-        return load_pareto_front_from_file(f"CTP/{self.fn.__name__.lower()}_M{self.m}_D{self.d}.pf",
-                                            device=self.device)
+        return load_pareto_front_from_file(f"CTP/{self.fn.__name__.lower()}_M{self.m}_D{self.d}.pf", device=self.device)
 
 
 class CTP8(CTP):
@@ -284,5 +261,4 @@ class CTP8(CTP):
         super(CTP8, self).__init__(prob_id=8, m=m, d=d, **kwargs)
 
     def pf(self):
-        return load_pareto_front_from_file(f"CTP/{self.fn.__name__.lower()}_M{self.m}_D{self.d}.pf",
-                                            device=self.device)
+        return load_pareto_front_from_file(f"CTP/{self.fn.__name__.lower()}_M{self.m}_D{self.d}.pf", device=self.device)

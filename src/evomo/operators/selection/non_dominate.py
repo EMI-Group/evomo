@@ -26,17 +26,17 @@ def dominate_relation(x: torch.Tensor, y: torch.Tensor, cv_x: torch.Tensor = Non
     if cv_x is not None and cv_y is not None:
         cv_x_expanded = cv_x.unsqueeze(1)
         cv_y_expanded = cv_y.unsqueeze(0)
-        
+
         cv_x_sum = cv_x_expanded.sum(dim=-1) if cv_x_expanded.ndim > 2 else cv_x_expanded
         cv_y_sum = cv_y_expanded.sum(dim=-1) if cv_y_expanded.ndim > 2 else cv_y_expanded
-        
+
         cv_x_feasible = (cv_x_sum <= 0)
         cv_y_feasible = (cv_y_sum <= 0)
-        
+
         case1 = cv_x_feasible & ~cv_y_feasible
         case2 = (~cv_x_feasible) & (~cv_y_feasible) & (cv_x_sum < cv_y_sum)
         case3 = (cv_x_feasible & cv_y_feasible) | ((~cv_x_feasible) & (~cv_y_feasible) & (cv_x_sum == cv_y_sum))
-        
+
         domination_matrix = case1 | case2 | (case3 & domination_matrix)
 
     return domination_matrix
@@ -274,7 +274,7 @@ def nd_environmental_selection(x: torch.Tensor, f: torch.Tensor, topk: int, cv: 
     worst_rank = torch.topk(rank, topk, largest=False)[0][-1]
     mask = rank == worst_rank
     crowding_dis = crowding_distance(f, mask)
-    
+
     if cv is not None:
         cv_sum = cv.sum(dim=1) if cv.ndim > 1 else cv
         combined_order = lexsort([-crowding_dis, rank, cv_sum])[:topk]

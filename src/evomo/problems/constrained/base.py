@@ -1,6 +1,8 @@
-from typing import Optional, Tuple, Dict
+from typing import Dict, Optional, Tuple
+
 import torch
 from evox.core import Problem
+
 from evomo.utils import at_least_2d
 
 
@@ -21,6 +23,7 @@ class CMOP(Problem):
     """
     Base class for Constrained Multi-objective Optimization Problems (CMOP).
     """
+
     def __init__(
         self,
         d: int,
@@ -44,7 +47,7 @@ class CMOP(Problem):
         self.dtype = dtype if dtype is not None else torch.get_default_dtype()
         self.d = d
         self.m = m
-        self.n_iq = n_iq 
+        self.n_iq = n_iq
         self.n_eq = n_eq
         self.n_constraints = self.n_iq + self.n_eq
         self.constr_eq_eps = constr_eq_eps
@@ -55,7 +58,7 @@ class CMOP(Problem):
         # write to self
         self.lb = lb.to(device=self.device)
         self.ub = ub.to(device=self.device)
-        
+
         self.scale_d = scale_d
         self.return_cv = return_cv
 
@@ -75,11 +78,7 @@ class CMOP(Problem):
         return self.lb, self.ub
 
     def __str__(self):
-        return (f"# name: {self.name()}\n"
-                f"# d: {self.d}\n"
-                f"# m: {self.m}\n"
-                f"# n_ieq_constr: {self.n_iq}\n"
-                f"# n_eq: {self.n_eq}\n")
+        return f"# name: {self.name()}\n# d: {self.d}\n# m: {self.m}\n# n_ieq_constr: {self.n_iq}\n# n_eq: {self.n_eq}\n"
 
     def _scale_d(self, X: torch.Tensor) -> torch.Tensor:
         return (X - self.lb) / (self.ub - self.lb)
@@ -95,16 +94,16 @@ class CMOP(Problem):
         X2d, only_single_value = at_least_2d(X)
         X2d = torch.as_tensor(X2d, device=self.device, dtype=self.dtype)
         assert X2d.shape[1] == self.d
-        
+
         X_eval = self._unscale_d(X2d) if self.scale_d else X2d
         Y = self.fn(X_eval)  # (N, m + n_iq + n_eq)
-        
-        F = Y[:, :self.m]
-        G = Y[:, self.m:self.m + self.n_iq] if self.n_iq > 0 else None
-        H = Y[:, self.m + self.n_iq:] if self.n_eq > 0 else None
-        
+
+        F = Y[:, : self.m]
+        G = Y[:, self.m : self.m + self.n_iq] if self.n_iq > 0 else None
+        H = Y[:, self.m + self.n_iq :] if self.n_eq > 0 else None
+
         cv = self._compute_cv(G, H)
-        
+
         if only_single_value:
             return F[0], cv[0]
         return F, cv
@@ -118,11 +117,11 @@ class CMOP(Problem):
             cvs.append(torch.clamp(G, min=0))
         if H is not None and H.numel() > 0:
             cvs.append(torch.clamp(torch.abs(H) - self.constr_eq_eps, min=0))
-        
+
         if not cvs:
             N = G.shape[0] if G is not None else H.shape[0]
             return torch.zeros((N, 0), device=self.device)
-            
+
         return torch.cat(cvs, dim=1)
 
     def fn(self, X: torch.Tensor) -> torch.Tensor:

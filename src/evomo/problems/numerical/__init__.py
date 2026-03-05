@@ -35,7 +35,6 @@ __all__ = [
     "DTLZ5",
     "DTLZ6",
     "DTLZ7",
-    "SimpleCMOP",
 ]
 
 from evomo.problems.numerical.dtlz import DTLZ1, DTLZ2, DTLZ3, DTLZ4, DTLZ5, DTLZ6, DTLZ7
@@ -58,4 +57,3 @@ from evomo.problems.numerical.maf import (
     MAF15,
 )
 from evomo.problems.numerical.zdt import ZDT1, ZDT2, ZDT3, ZDT4, ZDT6
-from evomo.problems.numerical.comp import SimpleCMOP

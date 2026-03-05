@@ -135,7 +135,7 @@ class NSGA3(Algorithm):
         """
         self.fit = self.evaluate(self.pop)
         self.rank = non_dominate_rank(self.fit)
-    
+
     @torch._dynamo.disable
     def step(self):
         """Perform the optimization step of the workflow."""
