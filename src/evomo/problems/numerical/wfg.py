@@ -2,6 +2,8 @@ import torch
 from evox.core import Problem
 from evox.operators.sampling import uniform_sampling
 
+_PF_FULL_SEARCH_MAX_ELEMENTS = 10_000_000
+
 
 def _const(value: float, x: torch.Tensor) -> torch.Tensor:
     return torch.as_tensor(value, dtype=x.dtype, device=x.device)
@@ -110,6 +112,51 @@ def _disc(x: torch.Tensor) -> torch.Tensor:
     return 1 - x[:, 0] * torch.cos(5 * torch.pi * x[:, 0]) ** 2
 
 
+def _nondominated(points: torch.Tensor, chunk_size: int = 512) -> torch.Tensor:
+    dominated = torch.zeros(points.size(0), dtype=torch.bool, device=points.device)
+    for start in range(0, points.size(0), chunk_size):
+        stop = min(start + chunk_size, points.size(0))
+        current = points[start:stop]
+        weakly_better = points.unsqueeze(0) <= current.unsqueeze(1)
+        strictly_better = points.unsqueeze(0) < current.unsqueeze(1)
+        dominated[start:stop] = (weakly_better.all(dim=2) & strictly_better.any(dim=2)).any(dim=1)
+    return points[~dominated]
+
+
+def _wfg12_x(sample: torch.Tensor, disconnected: bool) -> torch.Tensor:
+    c = torch.ones_like(sample)
+    for j in range(2, sample.size(1) + 1):
+        target = sample.size(1) - j
+        if target + 1 >= sample.size(1) - 1:
+            prod = torch.ones(sample.size(0), dtype=sample.dtype, device=sample.device)
+        else:
+            prod = torch.prod(1 - c[:, target + 1 : sample.size(1) - 1], dim=1)
+        temp = sample[:, j - 1] / sample[:, 0] * prod
+        c[:, target] = (temp**2 - temp + torch.sqrt(2 * temp)) / (temp**2 + 1)
+
+    x = torch.acos(c) * 2 / torch.pi
+    temp = (1 - torch.sin(torch.pi / 2 * x[:, 1])) * sample[:, -1] / sample[:, -2]
+    a = torch.linspace(0, 1, 10001, dtype=sample.dtype, device=sample.device)
+    if disconnected:
+        residual = a * torch.cos(5 * torch.pi * a) ** 2
+    else:
+        residual = a + torch.cos(10 * torch.pi * a + torch.pi / 2) / 10 / torch.pi
+
+    basis = (1 - torch.cos(torch.pi / 2 * a)).unsqueeze(0)
+    residual = residual.unsqueeze(0)
+    if temp.numel() * a.numel() <= _PF_FULL_SEARCH_MAX_ELEMENTS:
+        error = torch.abs(temp[:, None] * basis - 1 + residual)
+        selected = torch.topk(error, k=10, largest=False, dim=1).indices.min(dim=1).values
+    else:
+        selected_list = []
+        for start in range(0, temp.size(0), 512):
+            error = torch.abs(temp[start : start + 512, None] * basis - 1 + residual)
+            selected_list.append(torch.topk(error, k=10, largest=False, dim=1).indices.min(dim=1).values)
+        selected = torch.cat(selected_list)
+    x[:, 0] = a[selected]
+    return x
+
+
 class WFG(Problem):
     """
     Base class for the Walking Fish Group benchmark problems.
@@ -181,6 +228,14 @@ class WFG1(WFG):
         h[:, -1] = _mixed(x)
         return self._objectives(x, h)
 
+    def pf(self) -> torch.Tensor:
+        sample = uniform_sampling(self.ref_num * self.m, self.m)[0].to(dtype=torch.float64)
+        x = _wfg12_x(sample, disconnected=False)
+        h = _convex(x)
+        h[:, -1] = _mixed(x)
+        scales = 2 * torch.arange(1, self.m + 1, dtype=h.dtype, device=h.device)
+        return h * scales.unsqueeze(0)
+
 
 class WFG2(WFG):
     def _adjust_d(self, d: int) -> int:
@@ -200,6 +255,15 @@ class WFG2(WFG):
         h[:, -1] = _disc(x)
         return self._objectives(x, h)
 
+    def pf(self) -> torch.Tensor:
+        sample = uniform_sampling(self.ref_num * self.m, self.m)[0].to(dtype=torch.float64)
+        x = _wfg12_x(sample, disconnected=True)
+        h = _convex(x)
+        h[:, -1] = _disc(x)
+        h = _nondominated(h)
+        scales = 2 * torch.arange(1, self.m + 1, dtype=h.dtype, device=h.device)
+        return h * scales.unsqueeze(0)
+
 
 class WFG3(WFG2):
     def evaluate(self, X: torch.Tensor) -> torch.Tensor:
@@ -216,8 +280,9 @@ class WFG3(WFG2):
         return self._objectives(x, _linear_shape(x))
 
     def pf(self) -> torch.Tensor:
-        x0 = torch.linspace(0, 1, self.ref_num, dtype=torch.float32)
-        x = torch.cat([x0[:, None], torch.full((self.ref_num, self.m - 2), 0.5), torch.zeros((self.ref_num, 1))], dim=1)
+        n = self.ref_num * self.m
+        x0 = torch.linspace(0, 1, n, dtype=torch.float32)
+        x = torch.cat([x0[:, None], torch.full((n, self.m - 2), 0.5), torch.zeros((n, 1))], dim=1)
         scales = 2 * torch.arange(1, self.m + 1, dtype=x.dtype)
         return _linear_shape(x) * scales.unsqueeze(0)
 
