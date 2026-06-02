@@ -20,6 +20,8 @@ class TestWFG(TestCase):
             assert pro.upper.size(0) == pro.d
             pf = pro.pf()
             assert pf.size(1) == 3
+            assert pf.dtype == pro.upper.dtype
+            assert pf.device == pro.upper.device
 
     def test_wfg2_wfg3_adjust_distance_variables_to_even(self):
         assert WFG2(d=13, m=3).d == 14

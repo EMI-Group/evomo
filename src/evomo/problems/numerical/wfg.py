@@ -234,7 +234,7 @@ class WFG1(WFG):
         h = _convex(x)
         h[:, -1] = _mixed(x)
         scales = 2 * torch.arange(1, self.m + 1, dtype=h.dtype, device=h.device)
-        return h * scales.unsqueeze(0)
+        return (h * scales.unsqueeze(0)).to(dtype=self.upper.dtype, device=self.upper.device)
 
 
 class WFG2(WFG):
@@ -262,7 +262,7 @@ class WFG2(WFG):
         h[:, -1] = _disc(x)
         h = _nondominated(h)
         scales = 2 * torch.arange(1, self.m + 1, dtype=h.dtype, device=h.device)
-        return h * scales.unsqueeze(0)
+        return (h * scales.unsqueeze(0)).to(dtype=self.upper.dtype, device=self.upper.device)
 
 
 class WFG3(WFG2):
