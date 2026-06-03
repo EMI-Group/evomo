@@ -55,3 +55,29 @@ class TestMAF(TestCase):
             pf = pro.pf()
             print(f"pf.size(): {pf.size()}")
             assert pf.size(1) == pro.m
+
+    def test_maf3_allows_non_default_dimension(self):
+        pro = MAF3(20, 3)
+        pop = torch.rand(7, pro.d)
+        fit = pro.evaluate(pop)
+        assert fit.size() == (7, pro.m)
+
+    def test_maf13_promotes_objectives_like_platemo(self):
+        pro = MAF13(5, 2)
+        pop = torch.rand(7, pro.d)
+        fit = pro.evaluate(pop)
+        assert pro.m == 3
+        assert fit.size() == (7, 3)
+
+    def test_maf13_extra_objectives_use_first_three_objectives(self):
+        pro = MAF13(5, 5)
+        pop = torch.rand(7, pro.d)
+        pop[:, 2:] = pop[:, 2:] * 4 - 2
+        fit = pro.evaluate(pop)
+        d = pro.d
+        y = pop - 2 * pop[:, 1].view(-1, 1) * torch.sin(
+            2 * torch.pi * pop[:, 0].view(-1, 1) + torch.arange(1, d + 1, device=pop.device, dtype=pop.dtype) * torch.pi / d
+        )
+        extra = fit[:, 0] ** 2 + fit[:, 1] ** 10 + fit[:, 2] ** 10 + 2 * torch.mean(y[:, 3:d] ** 2, dim=1)
+        torch.testing.assert_close(fit[:, 3], extra)
+        torch.testing.assert_close(fit[:, 4], extra)
