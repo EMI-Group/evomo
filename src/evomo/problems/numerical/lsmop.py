@@ -79,7 +79,7 @@ class LSMOP(Problem):
     def _calc_f(self, X_: torch.Tensor, g):
         m = self.m
         n, d = X_.size()
-        ones_col = torch.ones(n, 1, device=X_.device)
+        ones_col = torch.ones(n, 1, device=X_.device, dtype=X_.dtype)
         cumprod_part = torch.cumprod(torch.cat([ones_col, X_[:, : m - 1]], dim=1), dim=1)
         f = (1 + g) * torch.flip(cumprod_part, [1]) * torch.cat([ones_col, 1 - torch.flip(X_[:, : m - 1], [1])], dim=1)
         return f
@@ -97,7 +97,7 @@ class LSMOP(Problem):
             g_list.append(torch.stack(g_sum, dim=1).sum(dim=1))
 
         g = torch.stack(g_list, dim=1)
-        sublen_tensor = torch.tensor(self.sublen, device=x.device).float()
+        sublen_tensor = torch.tensor(self.sublen, device=x.device, dtype=x.dtype)
         g = g / sublen_tensor / self.nk
         return g
 
@@ -147,7 +147,7 @@ class LSMOP5(LSMOP):
     def _calc_f(self, X_: torch.Tensor, g):
         m = self.m
         n, d = X_.size()
-        ones_col = torch.ones(n, 1, device=X_.device)
+        ones_col = torch.ones(n, 1, device=X_.device, dtype=X_.dtype)
         cumprod_part = torch.cumprod(torch.cat([ones_col, torch.cos(X_[:, : m - 1] * torch.pi / 2)], dim=1), dim=1)
         last_part = torch.sin(torch.flip(X_[:, : m - 1], [1]) * torch.pi / 2)
         f = (
@@ -190,6 +190,15 @@ class LSMOP9(LSMOP):
     def __init__(self, d=None, m=None, ref_num=1000):
         super().__init__(d, m, ref_num)
 
+    def _calc_X_(self, X):
+        m = self.m
+        n, d = X.size()
+        X_ = X.clone()
+        X_[:, m - 1 :] = (
+            1 + torch.cos(torch.arange(m, d + 1, device=X_.device) / d * torch.pi / 2).unsqueeze(0).repeat(n, 1)
+        ) * X_[:, m - 1 :] - X_[:, :1] * 10
+        return X_
+
     def _calc_g(self, X: torch.Tensor):
         g = self._inner_calc_g([self.sphere, self.ackley], X)
         return 1 + torch.sum(g, dim=1, keepdims=True)
@@ -231,5 +240,5 @@ class LSMOP9(LSMOP):
     def _grid(self, N, M):
         gap = torch.linspace(0, 1, int(torch.ceil(torch.tensor(N ** (1 / M)))))
         c = torch.meshgrid(*([gap] * M), indexing="ij")
-        w = torch.stack(c, dim=1).reshape(-1, M)
+        w = torch.stack(c, dim=-1).reshape(-1, M)
         return w
