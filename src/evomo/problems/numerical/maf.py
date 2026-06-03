@@ -707,8 +707,6 @@ class MAF13(MAF):
         super().__init__(d, m, ref_num, device)
 
     def evaluate(self, X: torch.Tensor):
-        m = self.m
-        n = X.size(0)
         d = self.d
         Y = X - 2 * X[:, 1].view(-1, 1) * torch.sin(
             2 * torch.pi * X[:, 0].view(-1, 1) + torch.arange(1, d + 1, device=X.device, dtype=X.dtype) * torch.pi / d
