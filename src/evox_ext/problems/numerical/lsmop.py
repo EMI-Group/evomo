@@ -61,7 +61,7 @@ class LSMOP(Problem):
         return self._pf_value
 
     def _calc_pf(self):
-        f = uniform_sampling(self.ref_num * self.m, self.m)[0] / 2
+        f = uniform_sampling(self.ref_num * self.m, self.m)[0]
         self._pf_value = f
 
     def _calc_X_(self, X: torch.Tensor):
