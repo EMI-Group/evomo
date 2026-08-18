@@ -510,7 +510,13 @@ class MoRobtrol(Problem):
             valid_mask=self.valid_mask,
         )
         self.key = key
-        rewards = self.reduce_fn(rewards, dim=-1)
+        if self.num_obj > 1:
+            # Multi-objective: rewards (pop, num_episodes, num_obj).
+            # Average over episodes only; the objective dim MUST be preserved.
+            # (torch.mean over dim=-1 would collapse the objectives into a scalar.)
+            rewards = rewards.mean(dim=1)
+        else:
+            rewards = self.reduce_fn(rewards, dim=-1)
         return rewards
 
     def visualize(
