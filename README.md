@@ -183,8 +183,7 @@ if __name__ == "__main__":
 ```
 
 `UnifiedWorkflow` preserves the `(fitness, constraint_violation)` output returned by constrained
-problems so that NSGA-II can apply constraint-aware selection. The first call to `compiled_step` may
-take longer because PyTorch compiles the captured graphs on demand.
+problems so that NSGA-II can apply constraint-aware selection.
 
 > [!NOTE]  
 > **For Windows users**: If you encounter `FileNotFoundError: [Error 2] No such file or directory: 'C:\\Users\\...'`, it may be caused by the system path length limitation.  
