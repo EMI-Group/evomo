@@ -84,7 +84,6 @@ class NSGA2(Algorithm):
     def init_step(self):
         """Perform the initialization step of the workflow."""
         self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
-        print(self.cv)
         self.pop, self.fit, self.rank, self.dis, self.cv = nd_environmental_selection(
             self.pop, self.fit, self.pop_size, self.cv
         )
