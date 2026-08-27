@@ -1,4 +1,5 @@
-import os
+from importlib.resources import files
+from pathlib import PurePosixPath
 from typing import Tuple, Union
 
 import numpy as np
@@ -16,20 +17,14 @@ def load_pareto_front_from_file(fname, device=None, dtype=torch.float32):
     """
     Load Pareto front from the constrained problems' pf directory.
     """
-    # Get the path to src/evomo/problems/constrained/pf
-    # __file__ is src/evomo/utils/common.py
-    # utils -> evomo -> problems -> constrained -> pf
-    utils_dir = os.path.dirname(os.path.realpath(__file__))
-    evomo_dir = os.path.dirname(utils_dir)
-    pf_dir = os.path.join(evomo_dir, "problems", "constrained", "pf")
+    resource = files("evomo.problems.constrained").joinpath("pf", *PurePosixPath(fname).parts)
 
-    full_path = os.path.join(pf_dir, fname)
-
-    if not os.path.isfile(full_path):
-        raise FileNotFoundError(f"Pareto front file not found: {full_path}")
+    if not resource.is_file():
+        raise FileNotFoundError(f"Pareto front resource not found: {fname}")
 
     # load using numpy
-    pf_np = np.loadtxt(full_path)
+    with resource.open("r", encoding="utf-8") as file:
+        pf_np = np.loadtxt(file)
 
     # convert to torch tensor
     pf = torch.as_tensor(pf_np, dtype=dtype)
