@@ -89,7 +89,6 @@ class NSGA2(Algorithm):
             self.pop, self.fit, self.pop_size, self.cv
         )
 
-    @torch._dynamo.disable
     def step(self):
         """Perform the optimization step of the workflow."""
         sort_keys = [-self.dis, self.rank]
