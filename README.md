@@ -86,7 +86,20 @@ For the latest development version, you can install from the source:
 ```bash
 git clone https://github.com/EMI-Group/evomo.git
 cd evomo
-pip install -e.
+python -m pip install -e .
+```
+
+### Experimental coding-agent installation
+
+Give the following instruction to a coding agent with terminal access:
+
+```text
+Install this repository in editable mode for numerical and constrained optimization experiments:
+python -m pip install -e .
+python -m pip install pytest
+python -m pytest unit_test/problems/test_dtlz.py -q
+
+Report the Python version, PyTorch version, CUDA availability, and test result.
 ```
 
 ## Examples
@@ -125,6 +138,53 @@ if __name__ == "__main__":
 
     print(f"Total time: {time.time() - t} seconds")
 ```
+
+### Constrained multi-objective optimization
+
+Solve the DOC1 constrained multi-objective problem using NSGA-II. A solution is feasible when all of
+its constraint-violation values are zero.
+
+```python
+import torch
+
+from evomo.algorithms import NSGA2
+from evomo.problems.constrained import DOC1
+from evomo.workflows import UnifiedWorkflow
+
+
+if __name__ == "__main__":
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    torch.set_default_device(device)
+
+    problem = DOC1()
+    algorithm = NSGA2(
+        pop_size=100,
+        n_objs=problem.m,
+        lb=problem.lb,
+        ub=problem.ub,
+        device=device,
+    )
+    workflow = UnifiedWorkflow(algorithm, problem, device=device)
+    workflow.init_step()
+
+    compiled_step = torch.compile(workflow.step)
+    for _ in range(100):
+        compiled_step()
+
+    fitness = workflow.algorithm.fit
+    constraint_violation = workflow.algorithm.cv
+    feasible = constraint_violation.sum(dim=1) <= 0
+
+    print(f"Fitness shape: {tuple(fitness.shape)}")
+    print(f"Constraint violation shape: {tuple(constraint_violation.shape)}")
+    print(f"Feasible solutions: {feasible.sum().item()}/{feasible.numel()}")
+    print("Feasible objective values:")
+    print(fitness[feasible])
+```
+
+`UnifiedWorkflow` preserves the `(fitness, constraint_violation)` output returned by constrained
+problems so that NSGA-II can apply constraint-aware selection. The first call to `compiled_step` may
+take longer because PyTorch compiles the captured graphs on demand.
 
 > [!NOTE]  
 > **For Windows users**: If you encounter `FileNotFoundError: [Error 2] No such file or directory: 'C:\\Users\\...'`, it may be caused by the system path length limitation.  
