@@ -8,6 +8,7 @@ from evox.operators.selection import tournament_selection_multifit
 from evox.utils import clamp
 
 from evomo.operators.selection import nd_environmental_selection
+from evomo.utils import parse_evaluate
 
 
 class NSGA2(Algorithm):
@@ -80,24 +81,30 @@ class NSGA2(Algorithm):
         self.fit = Mutable(torch.empty((self.pop_size, self.n_objs), device=device).fill_(torch.inf))
         self.rank = Mutable(torch.empty(self.pop_size, device=device).fill_(torch.inf))
         self.dis = Mutable(torch.empty(self.pop_size, device=device).fill_(-torch.inf))
-
     def init_step(self):
-        """
-        Perform the initialization step of the workflow.
-
-        Calls the `init_step` of the algorithm if overwritten; otherwise, its `step` method will be invoked.
-        """
-        self.fit = self.evaluate(self.pop)
-        _, _, self.rank, self.dis = nd_environmental_selection(self.pop, self.fit, self.pop_size)
+        """Perform the initialization step of the workflow."""
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
+        self.pop, self.fit, self.rank, self.dis, self.cv = nd_environmental_selection(
+            self.pop, self.fit, self.pop_size, self.cv
+        )
 
     def step(self):
         """Perform the optimization step of the workflow."""
-        mating_pool = self.selection(self.pop_size, [-self.dis, self.rank])
+        sort_keys = [-self.dis, self.rank]
+        if self.cv is not None:
+            sort_keys.append(self.cv.sum(dim=1) if self.cv.ndim > 1 else self.cv)
+
+        mating_pool = self.selection(self.pop_size, sort_keys)
         crossovered = self.crossover(self.pop[mating_pool])
         offspring = self.mutation(crossovered, self.lb, self.ub)
         offspring = clamp(offspring, self.lb, self.ub)
-        off_fit = self.evaluate(offspring)
+
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
+
         merge_pop = torch.cat([self.pop, offspring], dim=0)
         merge_fit = torch.cat([self.fit, off_fit], dim=0)
+        merge_cv = torch.cat([self.cv, off_cv], dim=0) if self.cv is not None else None
 
-        self.pop, self.fit, self.rank, self.dis = nd_environmental_selection(merge_pop, merge_fit, self.pop_size)
+        self.pop, self.fit, self.rank, self.dis, self.cv = nd_environmental_selection(
+            merge_pop, merge_fit, self.pop_size, merge_cv
+        )
