@@ -44,7 +44,7 @@ EvoMO is a GPU-accelerated library for evolutionary multiobjective optimization 
 - **EvoMO** adopts a unified tensorization approach, restructuring EMO algorithms into tensor representations, enabling efficient GPU acceleration.
 
 #### ⚡ Ultra Performance
-- Supports tensorized implementations of **NSGA-II**, **NSGA-III**, **MOEA/D**, **RVEA**, **HypE**, and more, achieving up to **1113× speedup** while preserving solution quality.
+- Supports tensorized implementations of **57 multi-objective optimization algorithms**, including **NSGA-II**, **NSGA-III**, **MOEA/D**, **RVEA**, and **HypE**, with 48 new algorithms added in v0.3.0, achieving up to **1113× speedup** while preserving solution quality.
 
 #### 📈 Scalability
 - Handles large populations, scaling to hundreds of thousands for complex optimization tasks, ensuring scalability for real-world applications.

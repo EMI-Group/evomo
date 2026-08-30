@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "evomo"
-version = "0.2.2"
+version = "0.3.0"
 authors = [
   { name = "Zhenyu Liang", email = "zhenyuliang97@gmail.com" },
   { name = "Naiwei Yu", email = "yunaiweiyn@gmail.com" },
@@ -14,11 +14,11 @@ authors = [
 ]
 description = "evomo"
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "GPL-3.0-only"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 classifiers = [
   "Programming Language :: Python :: 3",
-  "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
   "Intended Audience :: Science/Research",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
