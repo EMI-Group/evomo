@@ -197,10 +197,12 @@ def non_dominate_rank(x: torch.Tensor, cv: torch.Tensor = None) -> torch.Tensor:
 
     The non-domination rank is a measure of the Pareto optimality of each solution.
 
-    :param f: A 2D tensor where each row represents a solution, and each column represents an objective.
+    :param x: A 2D tensor where each row represents a solution, and each column represents an objective.
+    :param cv: An optional tensor containing the constraint violations of the solutions.
 
     :returns:
-        A 1D tensor containing the non-domination rank for each solution.
+        A 1D tensor containing the zero-based non-domination rank for each solution.
+        Solutions in the first Pareto front have rank 0.
     """
 
     n = x.size(0)
@@ -262,13 +264,15 @@ def nd_environmental_selection(x: torch.Tensor, f: torch.Tensor, topk: int, cv: 
     :param x: A 2D tensor where each row represents a solution, and each column represents a decision variable.
     :param f: A 2D tensor where each row represents a solution, and each column represents an objective.
     :param topk: The number of solutions to select.
+    :param cv: An optional tensor containing the constraint violations of the solutions.
 
     :returns:
-        A tuple of four tensors:
+        A tuple of five values:
         - **x**: The selected solutions.
         - **f**: The corresponding objective values.
         - **rank**: The non-domination rank of the selected solutions.
         - **crowding_dis**: The crowding distance of the selected solutions.
+        - **cv**: The selected constraint violations, or ``None`` for an unconstrained problem.
     """
     rank = non_dominate_rank(f, cv)
     worst_rank = torch.topk(rank, topk, largest=False)[0][-1]
