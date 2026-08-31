@@ -1,5 +1,6 @@
 import torch
-from evox.core import Algorithm, Mutable
+from evox.core import Algorithm, Mutable, Parameter
+from evox.operators.mutation import polynomial_mutation
 from evox.operators.sampling import uniform_sampling
 from evox.utils import clamp
 
@@ -7,39 +8,38 @@ from evomo.operators.selection import non_dominate_rank
 
 
 class MOEAD_PaS(Algorithm):
-    def __init__(self, pop_size: int, n_objs: int, lb: torch.Tensor, ub: torch.Tensor, T: int = 20, **kwargs):
+    def __init__(
+        self,
+        pop_size: int,
+        n_objs: int,
+        lb: torch.Tensor,
+        ub: torch.Tensor,
+        T: int | None = None,
+        max_gen: int = 100,
+        **kwargs,
+    ):
         super().__init__()
         device = lb.device
-        self.pop_size = pop_size
         self.n_objs = n_objs
         self.lb = lb
         self.ub = ub
-        self.T = T
-        D = lb.numel()
+        self.dim = lb.numel()
+        self.max_gen = Parameter(max_gen)
 
-        # Sentinel for L-infinity norm (Bug #1)
-        self.sentinel_inf = torch.iinfo(torch.int32).max
-
-        # Initialize State (Mutables)
-        # Ensure initial population is exactly pop_size
-        self.pop = Mutable(torch.rand(pop_size, D, device=device) * (ub - lb) + lb)
-        self.fit = Mutable(torch.full((pop_size, n_objs), torch.inf, device=device))
-
-        # Weight Vectors and Neighborhood
+        # UniformPoint may adjust the requested population size.
         W, n_actual = uniform_sampling(pop_size, n_objs)
-        # Adjust pop_size to match uniform_sampling output
         self.pop_size = n_actual
-        self.T = min(T, self.pop_size)
+        default_T = (n_actual + 9) // 10
+        self.T = min(max(2, default_T if T is None else T), n_actual)
+        self.nr = (self.T + 9) // 10
         self.W = Mutable(W.to(device))
 
-        # Re-init pop and fit if size changed
-        self.pop = Mutable(torch.rand(self.pop_size, D, device=device) * (ub - lb) + lb)
+        self.pop = Mutable(torch.rand(self.pop_size, self.dim, device=device) * (ub - lb) + lb)
         self.fit = Mutable(torch.full((self.pop_size, n_objs), torch.inf, device=device))
 
-        dist = torch.cdist(self.W, self.W)
-        self.B = Mutable(torch.topk(dist, self.T, largest=False, dim=1).indices)
+        distance = torch.cdist(self.W, self.W)
+        self.B = Mutable(torch.topk(distance, self.T, largest=False, dim=1).indices)
 
-        # PaS Specifics
         self.p = Mutable(torch.ones((self.pop_size,), device=device))
         self.z = Mutable(torch.full((1, n_objs), torch.inf, device=device))
         self.znad = Mutable(torch.full((1, n_objs), -torch.inf, device=device))
@@ -47,26 +47,105 @@ class MOEAD_PaS(Algorithm):
 
     def _update_nadir(self, fit: torch.Tensor) -> torch.Tensor:
         rank = non_dominate_rank(fit)
-        rank1_mask = rank == 1
-        # Deadlock Breaker: If no rank 1 found, use all individuals to calculate nadir
-        safe_mask = torch.where(rank1_mask.any(), rank1_mask, torch.ones_like(rank1_mask, dtype=torch.bool))
-        return torch.max(fit[safe_mask], dim=0, keepdim=True).values
+        first_front = rank == 0
+        safe_mask = first_front | ~first_front.any()
+        masked_fit = torch.where(safe_mask.unsqueeze(1), fit, torch.full_like(fit, -torch.inf))
+        return torch.max(masked_fit, dim=0, keepdim=True).values
 
-    def _calc_scalar_func(self, nObj: torch.Tensor, W: torch.Tensor, p: torch.Tensor) -> torch.Tensor:
-        # Bug #12: Safe division
-        v = nObj / (W + 1e-6)
+    def _normalize(self, fit: torch.Tensor) -> torch.Tensor:
+        denominator = torch.clamp(self.znad - self.z, min=1e-12)
+        return torch.clamp((fit - self.z) / denominator, min=0.0)
 
-        # Handle L-infinity (Tchebycheff) and L-p norm
-        g_inf = torch.max(v, dim=-1).values
+    def _calc_scalar_func(self, normalized_fit: torch.Tensor, weights: torch.Tensor, p: torch.Tensor) -> torch.Tensor:
+        values = normalized_fit / weights
+        scale = torch.max(values, dim=-1).values.clamp_min(1e-30)
 
-        # p is expanded to match v's leading dims
-        p_val = p.unsqueeze(-1)
-        # Bug #12: Safe power and sum. Clamp v to avoid negative bases for pow.
-        v_safe = torch.clamp(v, min=0.0) + 1e-6
-        g_p = torch.pow(torch.sum(torch.pow(v_safe, p_val), dim=-1), 1.0 / (p + 1e-6))
+        # Rescaling before exponentiation avoids float32 overflow for p up to 10.
+        finite_p = torch.where(torch.isinf(p), torch.ones_like(p), p)
+        scaled_values = values / scale.unsqueeze(-1)
+        g_p = scale * torch.sum(scaled_values.pow(finite_p.unsqueeze(-1)), dim=-1).pow(1.0 / finite_p)
+        return torch.where(torch.isinf(p), scale, g_p)
 
-        # Bug #41: Use torch.where instead of python if
-        return torch.where(p >= self.sentinel_inf, g_inf, g_p)
+    def _mating_and_candidates(self) -> tuple[torch.Tensor, torch.Tensor]:
+        device = self.pop.device
+        N = self.pop_size
+        T = self.T
+
+        use_neighbours = torch.rand(N, device=device) < 0.9
+        neighbour_order = torch.argsort(torch.rand((N, T), device=device), dim=1)
+        shuffled_neighbours = torch.gather(self.B, 1, neighbour_order)
+        global_candidates = torch.argsort(torch.rand((N, N), device=device), dim=1)
+
+        local_padding = torch.zeros((N, N - T), dtype=torch.long, device=device)
+        local_candidates = torch.cat([shuffled_neighbours, local_padding], dim=1)
+        candidates = torch.where(use_neighbours.unsqueeze(1), local_candidates, global_candidates)
+
+        positions = torch.arange(N, device=device).unsqueeze(0)
+        valid = (~use_neighbours).unsqueeze(1) | (positions < T)
+        return candidates, valid
+
+    def _environmental_selection(
+        self,
+        candidates: torch.Tensor,
+        valid: torch.Tensor,
+        off_pop: torch.Tensor,
+        off_fit: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        device = self.pop.device
+        N = self.pop_size
+
+        candidate_fit = self.fit[candidates]
+        candidate_weights = self.W[candidates]
+        candidate_p = self.p[candidates]
+        normalized_old = self._normalize(candidate_fit)
+        normalized_new = self._normalize(off_fit).unsqueeze(1).expand(-1, N, -1)
+
+        g_old = self._calc_scalar_func(normalized_old, candidate_weights, candidate_p)
+        g_new = self._calc_scalar_func(normalized_new, candidate_weights, candidate_p)
+        better = valid & (g_new < g_old)
+        selected = better & (torch.cumsum(better.to(torch.int32), dim=1) <= self.nr)
+
+        # Each target may receive proposals from multiple offspring. The sequential
+        # MATLAB loop ultimately retains the proposal with the best scalar value;
+        # resolving that reduction explicitly also avoids nondeterministic CUDA writes.
+        target_ids = torch.arange(N, device=device).view(1, 1, N)
+        targets = candidates.unsqueeze(-1) == target_ids
+        proposal_scores = torch.where(
+            targets & selected.unsqueeze(-1),
+            g_new.unsqueeze(-1),
+            torch.full((), torch.inf, device=device),
+        ).amin(dim=1)
+        best_score, best_offspring = torch.min(proposal_scores, dim=0)
+        replace = torch.isfinite(best_score)
+
+        new_pop = torch.where(replace.unsqueeze(1), off_pop[best_offspring], self.pop)
+        new_fit = torch.where(replace.unsqueeze(1), off_fit[best_offspring], self.fit)
+        return new_pop, new_fit
+
+    def _adapt_norm(self) -> None:
+        device = self.pop.device
+        N = self.pop_size
+        p_set = torch.tensor([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, torch.inf], device=device)
+        normalized_fit = self._normalize(self.fit)
+
+        values = normalized_fit.view(1, 1, N, self.n_objs) / self.W.view(1, N, 1, self.n_objs)
+        scale = torch.max(values, dim=-1).values.clamp_min(1e-30)
+        scaled_values = values / scale.unsqueeze(-1)
+        finite_p = torch.where(torch.isinf(p_set), torch.ones_like(p_set), p_set).view(-1, 1, 1)
+        g_p = scale * torch.sum(scaled_values.pow(finite_p.unsqueeze(-1)), dim=-1).pow(1.0 / finite_p)
+        g = torch.where(torch.isinf(p_set).view(-1, 1, 1), scale, g_p)
+
+        best_individual = torch.argmin(g, dim=2)
+        best_fit = normalized_fit[best_individual]
+        fit_norm = torch.linalg.vector_norm(best_fit, dim=-1)
+        weight_norm = torch.linalg.vector_norm(self.W, dim=-1).unsqueeze(0)
+        cosine = torch.sum(best_fit * self.W.unsqueeze(0), dim=-1) / (fit_norm * weight_norm).clamp_min(1e-30)
+        distance = torch.sqrt(torch.clamp(1.0 - cosine.square(), min=0.0)) * fit_norm
+        best_p = p_set[torch.argmin(distance, dim=0)]
+
+        progress = torch.clamp(self.gen.float() / self.max_gen.float(), max=1.0)
+        adapt = torch.rand(N, device=device) >= progress
+        self.p = torch.where(adapt, best_p, self.p)
 
     def init_step(self) -> None:
         self.fit = self.evaluate(self.pop)
@@ -75,114 +154,16 @@ class MOEAD_PaS(Algorithm):
 
     def step(self) -> None:
         self.gen = self.gen + 1
-        device = self.lb.device
-        N = self.pop_size
-        T = self.T
-
-        # 1. Mating / Parent Selection
-        P_indices = torch.where(
-            torch.rand(N, 1, device=device) < 0.9, self.B, torch.arange(N, device=device).unsqueeze(1).repeat(1, T)
-        )
-
-        # Pick 2 parents for each subproblem
-        rand_idx1 = torch.randint(0, T, (N,), device=device)
-        rand_idx2 = torch.randint(0, T, (N,), device=device)
-        idx1 = P_indices[torch.arange(N), rand_idx1]
-        idx2 = P_indices[torch.arange(N), rand_idx2]
-
-        # Generate offspring using DE
-        F = 0.5
-        CR = 0.5
-        # Ensure self.pop is treated as a tensor for the operation
-        curr_pop = self.pop
-        off_pop = curr_pop + F * (curr_pop[idx1] - curr_pop[idx2])
-
-        # Binomial Crossover
-        cross_mask = torch.rand(off_pop.shape, device=device) < CR
-        off_pop = torch.where(cross_mask, off_pop, curr_pop)
-
+        candidates, valid = self._mating_and_candidates()
+        off_pop = self.pop + 0.5 * (self.pop[candidates[:, 0]] - self.pop[candidates[:, 1]])
+        off_pop = polynomial_mutation(off_pop, self.lb, self.ub)
         off_pop = clamp(off_pop, self.lb, self.ub)
         off_fit = self.evaluate(off_pop)
 
-        # 2. Update Ideal and Nadir Points
-        self.z = torch.min(self.z, torch.min(off_fit, dim=0, keepdim=True).values)
-        self.znad = self._update_nadir(torch.cat([self.fit, off_fit], dim=0))
-
-        # 3. Environmental Selection (Replacement)
-        denom = self.znad - self.z + 1e-6
-        nObj_off = (off_fit - self.z) / denom
-        nObj_pop = (self.fit - self.z) / denom
-
-        W_neighbors = self.W[self.B]
-        p_neighbors = self.p[self.B]
-
-        g_neighbors = self._calc_scalar_func(nObj_pop[self.B], W_neighbors, p_neighbors)
-        g_off_on_neighbors = self._calc_scalar_func(nObj_off.unsqueeze(1).expand(-1, T, -1), W_neighbors, p_neighbors)
-
-        better_mask = g_off_on_neighbors < g_neighbors
-
-        # Bug #2: Limit replacement
-        limit = (T + 9) // 10
-        replace_counts = torch.cumsum(better_mask.to(torch.int32), dim=1)
-        final_mask = better_mask & (replace_counts <= limit)
-
-        # Scatter update - using a loop-free vectorized approach to update pop and fit
-        # To handle duplicates in flat_indices (where multiple neighbors of different subproblems point to same index),
-        # we use the fact that MOEA/D typically updates the population sequentially or via a mask.
-        # Here we use index_put_ which is JIT-friendly.
-        rows, cols = torch.where(final_mask)
-        flat_indices = self.B[rows, cols]
-
-        # We update the population and fitness tensors
-        new_pop = self.pop.clone()
-        new_fit = self.fit.clone()
-        new_pop[flat_indices] = off_pop[rows]
-        new_fit[flat_indices] = off_fit[rows]
-        self.pop = new_pop
-        self.fit = new_fit
-
-        # 4. Norm Adaptation (Every 10 generations)
-        if self.gen % 10 == 0:
-            p_set = torch.tensor([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, self.sentinel_inf], device=device, dtype=torch.float32)
-
-            # Recalculate normalized objectives for current population
-            nObj_curr = (self.fit - self.z) / (self.znad - self.z + 1e-6)
-
-            # Vectorized calculation for all p in p_set
-            # nObj_curr: (N, M), W: (N, M)
-            # We want g for every combination of weight i and individual j for every p
-            # g shape: (11, N, N) -> (p_idx, weight_idx, individual_idx)
-
-            # To keep memory usage sane, we follow the MATLAB logic: for each weight i, find best individual j
-            # nObj_all: (1, 1, N, M), W_all: (1, N, 1, M)
-            nObj_all = nObj_curr.view(1, 1, N, self.n_objs)
-            W_all = self.W.view(1, N, 1, self.n_objs)
-            p_all = p_set.view(-1, 1, 1)
-
-            v_all = nObj_all / (W_all + 1e-6)
-            g_all_inf = torch.max(v_all, dim=-1).values
-
-            v_safe_all = torch.clamp(v_all, min=0.0) + 1e-6
-            g_all_p = torch.pow(torch.sum(torch.pow(v_safe_all, p_all.unsqueeze(-1)), dim=-1), 1.0 / (p_all + 1e-6))
-            g_all = torch.where(p_all >= self.sentinel_inf, g_all_inf, g_all_p)  # (11, N, N)
-
-            best_ind_indices = torch.argmin(g_all, dim=2)  # (11, N)
-
-            # fit_best: (11, N, M)
-            fit_best = nObj_curr[best_ind_indices]
-
-            # Cosine similarity
-            norm_fit = torch.norm(fit_best, dim=-1, keepdim=True) + 1e-6
-            norm_W = self.W.norm(dim=-1, keepdim=True).unsqueeze(0) + 1e-6
-            cos_sim = torch.sum((fit_best / norm_fit) * (self.W.unsqueeze(0) / norm_W), dim=-1)  # (11, N)
-
-            # Manifold approximation metric from MATLAB: sqrt(1 - cos^2) * norm
-            # This is equivalent to sine * distance
-            dist_val = torch.sqrt(torch.clamp(1 - cos_sim**2, min=0.0, max=1.0)) * torch.norm(fit_best, dim=-1)
-
-            # Update p to the one with minimum distance (best manifold approximation)
-            best_p_idx = torch.argmin(dist_val, dim=0)  # (N,)
-            self.p = p_set[best_p_idx]
+        self.pop, self.fit = self._environmental_selection(candidates, valid, off_pop, off_fit)
+        self.z = torch.min(self.z, torch.min(self.fit, dim=0, keepdim=True).values)
+        self.znad = self._update_nadir(self.fit)
+        self._adapt_norm()
 
 
 if __name__ == "__main__":

@@ -112,7 +112,7 @@ def _ibea_selection(pop, fit, K, kappa):
 def _pc_selection(pop, fit, K):
     # 1. Non-dominated Filtering
     rank = non_dominate_rank(fit)
-    mask_rank1 = rank == 1
+    mask_rank1 = rank == 0
 
     # If rank 1 is not enough, take more from subsequent ranks
     if torch.sum(mask_rank1) <= K:

@@ -156,7 +156,7 @@ class SSCEA(Algorithm):
 
         # Rank-1 Extraction
         rank = non_dominate_rank(merged_da_fit)
-        mask_r1 = rank == 1
+        mask_r1 = rank == 0
         da_pop_r1 = merged_da_pop[mask_r1]
         da_fit_r1 = merged_da_fit[mask_r1]
 

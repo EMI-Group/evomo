@@ -2,11 +2,9 @@ import torch
 from evox.core import Algorithm, Mutable, Parameter
 from evox.operators.crossover import simulated_binary
 from evox.operators.mutation import polynomial_mutation
-from evox.operators.selection import tournament_selection_multifit
-from evox.utils import clamp
+from evox.utils import clamp, randint
 
-from evomo.operators.selection import nd_environmental_selection, non_dominate_rank
-from evomo.utils import unique_rows_sorted
+from evomo.operators.selection import non_dominate_rank
 
 
 class PESA2(Algorithm):
@@ -25,38 +23,74 @@ class PESA2(Algorithm):
         self.fit = Mutable(torch.full((pop_size, n_objs), torch.inf, device=device))  # [N,M]
 
     def _get_grid_info(self, fit: torch.Tensor):
-        # 1. Calculate bounds
         fmin = torch.min(fit, dim=0)[0]
         fmax = torch.max(fit, dim=0)[0]
-
-        # 2. Calculate grid step (Bug #12: Safe Division)
-        step = (fmax - fmin) / (self.div.float() + 1e-6)
-
-        # 3. Compute coordinates
-        gloc = torch.floor((fit - fmin) / (step + 1e-6))
+        step = (fmax - fmin) / self.div.float()
+        safe_step = torch.where(step > 0, step, torch.ones_like(step))
+        gloc = torch.floor((fit - fmin) / safe_step)
+        gloc = torch.where(step > 0, gloc, torch.zeros_like(gloc))
         gloc = torch.clamp(gloc, 0, self.div - 1)
 
-        # 4. Flatten to 1D IDs (Bug #3: Unique Stability)
-        _, gid = unique_rows_sorted(gloc)
+        same_grid = (gloc.unsqueeze(1) == gloc.unsqueeze(0)).all(dim=-1)
+        density = same_grid.sum(dim=1)
 
-        # 5. Density (Vectorized)
-        crowd_g = torch.bincount(gid)
+        size = fit.shape[0]
+        lower_triangle = torch.tril(torch.ones((size, size), dtype=torch.bool, device=fit.device), diagonal=-1)
+        is_representative = ~(same_grid & lower_triangle).any(dim=1)
+        return same_grid, density, is_representative
 
-        return gid, crowd_g
+    def _mating_selection(self, fit: torch.Tensor):
+        same_grid, density, is_representative = self._get_grid_info(fit)
+        representatives = torch.where(is_representative)[0]
+        grid_count = representatives.shape[0]
+
+        grid_pair = randint(0, grid_count, (self.pop_size, 2), device=fit.device)
+        grid_pair = representatives[grid_pair]
+        pair_density = density[grid_pair]
+        random_tie = torch.rand(self.pop_size, device=fit.device) < 0.5
+        choose_first = (pair_density[:, 0] < pair_density[:, 1]) | (
+            (pair_density[:, 0] == pair_density[:, 1]) & random_tie
+        )
+        chosen_grid = torch.where(choose_first, grid_pair[:, 0], grid_pair[:, 1])
+
+        members = same_grid[chosen_grid]
+        member_priority = torch.rand(members.shape, device=fit.device).masked_fill(~members, torch.inf)
+        return torch.argmin(member_priority, dim=1)
+
+    def _truncate(self, pop: torch.Tensor, fit: torch.Tensor):
+        same_grid, _, _ = self._get_grid_info(fit)
+        size = fit.shape[0]
+        active = torch.ones(size, dtype=torch.bool, device=fit.device)
+        lower_triangle = torch.tril(torch.ones((size, size), dtype=torch.bool, device=fit.device), diagonal=-1)
+
+        for _ in range(size - self.pop_size):
+            density = (same_grid & active.unsqueeze(0)).sum(dim=1)
+            has_earlier_active = (same_grid & lower_triangle & active.unsqueeze(0)).any(dim=1)
+            representatives = active & ~has_earlier_active
+            max_density = torch.max(density[representatives])
+            crowded_grids = representatives & (density == max_density)
+
+            grid_priority = torch.rand(size, device=fit.device).masked_fill(~crowded_grids, torch.inf)
+            selected_grid = torch.argmin(grid_priority)
+            members = active & same_grid[selected_grid]
+            member_priority = torch.rand(size, device=fit.device).masked_fill(~members, torch.inf)
+            active[torch.argmin(member_priority)] = False
+
+        return pop[active], fit[active]
 
     def init_step(self) -> None:
         self.fit = self.evaluate(self.pop)
 
     def step(self) -> None:
-        device = self.pop.device
-
-        # 1. Mating Selection (Grid-based Tournament)
-        gid, crowd_g = self._get_grid_info(self.fit)
-        # Binary tournament on individuals using their grid's density
-        mating_pool = tournament_selection_multifit(self.pop_size, [crowd_g[gid].float()], tournament_size=2)
+        # 1. Select two occupied grids uniformly, prefer the less crowded
+        # grid, then sample one individual uniformly from that grid.
+        mating_pool = self._mating_selection(self.fit)
 
         # 2. Variation
-        crossovered = simulated_binary(self.pop[mating_pool])
+        parents = self.pop[mating_pool]
+        if parents.shape[0] % 2 == 1:
+            parents = torch.cat([parents, parents[:1]], dim=0)
+        crossovered = simulated_binary(parents)[: self.pop_size]
         offspring = polynomial_mutation(crossovered, self.lb, self.ub)
         offspring = clamp(offspring, self.lb, self.ub)
 
@@ -69,29 +103,15 @@ class PESA2(Algorithm):
 
         # Pareto Filter (Bug #24: Dominance Logic)
         rank = non_dominate_rank(combined_fit)
-        is_rank1 = rank == 1
-        num_rank1 = torch.sum(is_rank1.int())
+        is_rank1 = rank == 0
+        rank1_pop = combined_pop[is_rank1]
+        rank1_fit = combined_fit[is_rank1]
 
-        # Deadlock Breaker (Bug #40): If Rank 1 < N, use standard NDSort logic to fill
-        if num_rank1 < self.pop_size:
-            # Use standard NDSort logic to get exactly N individuals
-            # We use crowding distance as a secondary metric for the last front
-            self.pop, self.fit, _, _, _ = nd_environmental_selection(combined_pop, combined_fit, self.pop_size)
-        else:
-            # Brutal Static Truncation (Bug #30) on Rank 1 set
-            rank1_pop = combined_pop[is_rank1]
-            rank1_fit = combined_fit[is_rank1]
+        if rank1_pop.shape[0] > self.pop_size:
+            rank1_pop, rank1_fit = self._truncate(rank1_pop, rank1_fit)
 
-            gid_r1, crowd_g_r1 = self._get_grid_info(rank1_fit)
-
-            density_score = crowd_g_r1[gid_r1].float()
-            random_tie_breaker = torch.rand(density_score.shape[0], device=device)
-            final_score = density_score + random_tie_breaker
-
-            # Select N least crowded
-            _, top_indices = torch.topk(final_score, k=self.pop_size, largest=False)
-            self.pop = rank1_pop[top_indices]
-            self.fit = rank1_fit[top_indices]
+        self.pop = rank1_pop
+        self.fit = rank1_fit
 
 
 # === FIXED DEMO BLOCK ===
