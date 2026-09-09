@@ -66,8 +66,9 @@ def _evaluate_brax_main(
     # Take a parameter and check its size
     actual_pop_size = model_state[0].size(0)
     assert (
-        actual_pop_size == pop_size
-    ), f"The actual population size must match the pop_size parameter when creating BraxProblem. Expected: {pop_size}, Actual: {actual_pop_size}"
+        pop_size % actual_pop_size == 0 and actual_pop_size > 0
+    ), f"The evaluation batch must divide the pop_size parameter when creating BraxProblem. Expected multiple of: {pop_size}, Actual: {actual_pop_size}"
+    maintain_obs_stats = (not useless) and (actual_pop_size == pop_size)
     device = model_state[0].device
     vmap_brax_reset, vmap_brax_step, vmap_state_forward, state_keys = __brax_data__.get(
         env_id
@@ -84,20 +85,22 @@ def _evaluate_brax_main(
         key, eval_key = key, key
 
     keys = jax.random.split(eval_key, num_episodes)
-    keys = jnp.broadcast_to(keys, (pop_size, *keys.shape)).reshape(
-        pop_size * num_episodes, -1
+    keys = jnp.broadcast_to(keys, (actual_pop_size, *keys.shape)).reshape(
+        actual_pop_size * num_episodes, -1
     )
-    done = jnp.zeros((pop_size * num_episodes,), dtype=bool)
-    total_reward = jnp.zeros((pop_size * num_episodes, num_obj))
+    done = jnp.zeros((actual_pop_size * num_episodes,), dtype=bool)
+    total_reward = jnp.zeros((actual_pop_size * num_episodes, num_obj))
     counter = 0
     brax_state = vmap_brax_reset(keys)
 
     while counter < max_episode_length and ~done.all():
         model_state, action = vmap_state_forward(
             model_state,
-            from_jax_array(brax_state.obs, device).view(pop_size, num_episodes, -1),
+            from_jax_array(brax_state.obs, device).view(
+                actual_pop_size, num_episodes, -1
+            ),
         )
-        action = action.view(pop_size * num_episodes, -1)
+        action = action.view(actual_pop_size * num_episodes, -1)
         clip_val = obs_norm[0]
         std_min = obs_norm[1]
         std_max = obs_norm[2]
@@ -119,14 +122,16 @@ def _evaluate_brax_main(
             brax_state = brax_state.replace(obs=to_jax_array(norm_obs))
         brax_state = vmap_brax_step(brax_state, to_jax_array(action))
 
-        obs_buf[counter] = from_jax_array(brax_state.obs, device)
+        if maintain_obs_stats:
+            obs_buf[counter] = from_jax_array(brax_state.obs, device)
         done = jnp.tile(brax_state.done[:, jnp.newaxis], (1, num_obj))
         reward = jnp.nan_to_num(brax_state.reward)
         total_reward += (1 - done) * reward
-        jax_vm = to_jax_array(valid_mask[counter].clone())
-        valid_mask[counter] = from_jax_array(
-            (1 - brax_state.done.ravel()).reshape(jax_vm.shape) * jax_vm, device
-        )
+        if maintain_obs_stats:
+            jax_vm = to_jax_array(valid_mask[counter].clone())
+            valid_mask[counter] = from_jax_array(
+                (1 - brax_state.done.ravel()).reshape(jax_vm.shape) * jax_vm, device
+            )
         counter += 1
 
         # Update obs_param
@@ -310,11 +315,24 @@ def _fake_evaluate_brax_vmap(
     max_episode_length: int,
     key: torch.Tensor,
     model_state: List[torch.Tensor],
+    num_obj: int,
+    useless: bool,
+    obs_param: torch.Tensor,
+    observation_shape: int,
+    obs_norm: torch.Tensor,
+    obs_buf: torch.Tensor,
+    valid_mask: torch.Tensor,
 ) -> Tuple[torch.Tensor, List[torch.Tensor], torch.Tensor]:
+    flattened = (
+        model_state[0].movedim(in_dim[0], 0).flatten(0, 1)
+        if in_dim[0] is not None
+        else model_state[0]
+    )
+    actual = flattened.size(0) // batch_size
     return (
         key.new_empty(key.size()),
         [v.new_empty(v.size()).movedim(d, 0) for d, v in zip(in_dim, model_state)],
-        model_state[0].new_empty(batch_size, pop_size // batch_size, num_episodes),
+        model_state[0].new_empty(batch_size, actual, num_episodes, num_obj),
     )
 
 
@@ -520,7 +538,10 @@ class MoRobtrol(Problem):
             valid_mask=self.valid_mask,
         )
         self.key = key
-        rewards = self.reduce_fn(rewards, dim=1)
+        if self.num_obj > 1:
+            rewards = rewards.mean(dim=1)
+        else:
+            rewards = self.reduce_fn(rewards, dim=-1)
         return rewards
 
     def visualize(
