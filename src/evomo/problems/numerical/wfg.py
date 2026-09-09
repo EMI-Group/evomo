@@ -105,11 +105,11 @@ def _linear_shape(x: torch.Tensor) -> torch.Tensor:
 
 
 def _mixed(x: torch.Tensor) -> torch.Tensor:
-    return 1 - x[:, 0] - torch.cos(10 * torch.pi * x[:, 0] + torch.pi / 2) / 10 / torch.pi
+    return (1 - x[:, 0] - torch.cos(10 * torch.pi * x[:, 0] + torch.pi / 2) / 10 / torch.pi).unsqueeze(1)
 
 
 def _disc(x: torch.Tensor) -> torch.Tensor:
-    return 1 - x[:, 0] * torch.cos(5 * torch.pi * x[:, 0]) ** 2
+    return (1 - x[:, 0] * torch.cos(5 * torch.pi * x[:, 0]) ** 2).unsqueeze(1)
 
 
 def _nondominated(points: torch.Tensor, chunk_size: int = 512) -> torch.Tensor:
@@ -193,10 +193,8 @@ class WFG(Problem):
     def _calculate_x(self, t: torch.Tensor, a: torch.Tensor | None = None) -> torch.Tensor:
         if a is None:
             a = torch.ones(self.m - 1, dtype=t.dtype, device=t.device)
-        x = torch.empty((t.size(0), self.m), dtype=t.dtype, device=t.device)
-        x[:, :-1] = torch.maximum(t[:, -1:], a.unsqueeze(0)) * (t[:, :-1] - 0.5) + 0.5
-        x[:, -1] = t[:, -1]
-        return x
+        x_head = torch.maximum(t[:, -1:], a.unsqueeze(0)) * (t[:, :-1] - 0.5) + 0.5
+        return torch.cat([x_head, t[:, -1:]], dim=1)
 
     def _objectives(self, x: torch.Tensor, h: torch.Tensor) -> torch.Tensor:
         scales = 2 * torch.arange(1, self.m + 1, dtype=x.dtype, device=x.device)
@@ -204,35 +202,33 @@ class WFG(Problem):
 
     def _reduce_by_sum(self, t: torch.Tensor, weights: torch.Tensor | None = None) -> torch.Tensor:
         weights = torch.ones(t.size(1), dtype=t.dtype, device=t.device) if weights is None else weights
-        out = torch.empty((t.size(0), self.m), dtype=t.dtype, device=t.device)
         step = self.k // (self.m - 1)
+        cols = []
         for i in range(self.m - 1):
             start = i * step
-            out[:, i] = _r_sum(t[:, start : start + step], weights[start : start + step])
-        out[:, -1] = _r_sum(t[:, self.k :], weights[self.k :])
-        return out
+            cols.append(_r_sum(t[:, start : start + step], weights[start : start + step]))
+        cols.append(_r_sum(t[:, self.k :], weights[self.k :]))
+        return torch.stack(cols, dim=1)
 
 
 class WFG1(WFG):
     def evaluate(self, X: torch.Tensor) -> torch.Tensor:
         z01 = _normalize(X)
         weights = 2 * torch.arange(1, self.d + 1, dtype=X.dtype, device=X.device)
-        t1 = z01.clone()
-        t1[:, self.k :] = _s_linear(z01[:, self.k :], 0.35)
-        t2 = t1.clone()
-        t2[:, self.k :] = _b_flat(t1[:, self.k :], 0.8, 0.75, 0.85)
+        t1 = torch.cat([z01[:, : self.k], _s_linear(z01[:, self.k :], 0.35)], dim=1)
+        t2 = torch.cat([t1[:, : self.k], _b_flat(t1[:, self.k :], 0.8, 0.75, 0.85)], dim=1)
         t3 = _b_poly(t2, 0.02)
         t4 = self._reduce_by_sum(t3, weights)
         x = self._calculate_x(t4)
         h = _convex(x)
-        h[:, -1] = _mixed(x)
+        h = torch.cat([h[:, :-1], _mixed(x)], dim=1)
         return self._objectives(x, h)
 
     def pf(self) -> torch.Tensor:
         sample = uniform_sampling(self.ref_num * self.m, self.m)[0].to(dtype=torch.float64)
         x = _wfg12_x(sample, disconnected=False)
         h = _convex(x)
-        h[:, -1] = _mixed(x)
+        h = torch.cat([h[:, :-1], _mixed(x)], dim=1)
         scales = 2 * torch.arange(1, self.m + 1, dtype=h.dtype, device=h.device)
         return (h * scales.unsqueeze(0)).to(dtype=self.upper.dtype, device=self.upper.device)
 
@@ -244,22 +240,20 @@ class WFG2(WFG):
     def evaluate(self, X: torch.Tensor) -> torch.Tensor:
         z01 = _normalize(X)
         distance = self.d - self.k
-        t1 = z01.clone()
-        t1[:, self.k :] = _s_linear(z01[:, self.k :], 0.35)
-        t2 = torch.empty((X.size(0), self.k + distance // 2), dtype=X.dtype, device=X.device)
-        t2[:, : self.k] = t1[:, : self.k]
-        t2[:, self.k :] = _r_nonsep(t1[:, self.k :].reshape(X.size(0), distance // 2, 2).reshape(-1, 2), 2).reshape(X.size(0), distance // 2)
+        t1 = torch.cat([z01[:, : self.k], _s_linear(z01[:, self.k :], 0.35)], dim=1)
+        t2_tail = _r_nonsep(t1[:, self.k :].reshape(X.size(0), distance // 2, 2).reshape(-1, 2), 2).reshape(X.size(0), distance // 2)
+        t2 = torch.cat([t1[:, : self.k], t2_tail], dim=1)
         t3 = self._reduce_by_sum(t2)
         x = self._calculate_x(t3)
         h = _convex(x)
-        h[:, -1] = _disc(x)
+        h = torch.cat([h[:, :-1], _disc(x)], dim=1)
         return self._objectives(x, h)
 
     def pf(self) -> torch.Tensor:
         sample = uniform_sampling(self.ref_num * self.m, self.m)[0].to(dtype=torch.float64)
         x = _wfg12_x(sample, disconnected=True)
         h = _convex(x)
-        h[:, -1] = _disc(x)
+        h = torch.cat([h[:, :-1], _disc(x)], dim=1)
         h = _nondominated(h)
         scales = 2 * torch.arange(1, self.m + 1, dtype=h.dtype, device=h.device)
         return (h * scales.unsqueeze(0)).to(dtype=self.upper.dtype, device=self.upper.device)
@@ -269,11 +263,9 @@ class WFG3(WFG2):
     def evaluate(self, X: torch.Tensor) -> torch.Tensor:
         z01 = _normalize(X)
         distance = self.d - self.k
-        t1 = z01.clone()
-        t1[:, self.k :] = _s_linear(z01[:, self.k :], 0.35)
-        t2 = torch.empty((X.size(0), self.k + distance // 2), dtype=X.dtype, device=X.device)
-        t2[:, : self.k] = t1[:, : self.k]
-        t2[:, self.k :] = _r_nonsep(t1[:, self.k :].reshape(X.size(0), distance // 2, 2).reshape(-1, 2), 2).reshape(X.size(0), distance // 2)
+        t1 = torch.cat([z01[:, : self.k], _s_linear(z01[:, self.k :], 0.35)], dim=1)
+        t2_tail = _r_nonsep(t1[:, self.k :].reshape(X.size(0), distance // 2, 2).reshape(-1, 2), 2).reshape(X.size(0), distance // 2)
+        t2 = torch.cat([t1[:, : self.k], t2_tail], dim=1)
         t3 = self._reduce_by_sum(t2)
         a = torch.cat([torch.ones(1, dtype=X.dtype, device=X.device), torch.zeros(self.m - 2, dtype=X.dtype, device=X.device)])
         x = self._calculate_x(t3, a)
@@ -308,14 +300,14 @@ class WFG5(WFG):
 class WFG6(WFG):
     def evaluate(self, X: torch.Tensor) -> torch.Tensor:
         z01 = _normalize(X)
-        t1 = z01.clone()
-        t1[:, self.k :] = _s_linear(z01[:, self.k :], 0.35)
-        t2 = torch.empty((X.size(0), self.m), dtype=X.dtype, device=X.device)
+        t1 = torch.cat([z01[:, : self.k], _s_linear(z01[:, self.k :], 0.35)], dim=1)
         step = self.k // (self.m - 1)
+        cols = []
         for i in range(self.m - 1):
             start = i * step
-            t2[:, i] = _r_nonsep(t1[:, start : start + step], step)
-        t2[:, -1] = _r_nonsep(t1[:, self.k :], self.d - self.k)
+            cols.append(_r_nonsep(t1[:, start : start + step], step))
+        cols.append(_r_nonsep(t1[:, self.k :], self.d - self.k))
+        t2 = torch.stack(cols, dim=1)
         x = self._calculate_x(t2)
         return self._objectives(x, _concave(x))
 
@@ -325,10 +317,8 @@ class WFG7(WFG):
         z01 = _normalize(X)
         counts = torch.arange(self.d - 1, -1, -1, dtype=X.dtype, device=X.device)
         Y = (torch.flip(torch.cumsum(torch.flip(z01, dims=[1]), dim=1), dims=[1]) - z01) / torch.clamp(counts, min=1).unsqueeze(0)
-        t1 = z01.clone()
-        t1[:, : self.k] = _b_param(z01[:, : self.k], Y[:, : self.k], 0.98 / 49.98, 0.02, 50)
-        t2 = t1.clone()
-        t2[:, self.k :] = _s_linear(t1[:, self.k :], 0.35)
+        t1 = torch.cat([_b_param(z01[:, : self.k], Y[:, : self.k], 0.98 / 49.98, 0.02, 50), z01[:, self.k :]], dim=1)
+        t2 = torch.cat([t1[:, : self.k], _s_linear(t1[:, self.k :], 0.35)], dim=1)
         t3 = self._reduce_by_sum(t2)
         x = self._calculate_x(t3)
         return self._objectives(x, _concave(x))
@@ -339,10 +329,8 @@ class WFG8(WFG):
         z01 = _normalize(X)
         counts = torch.arange(self.d, dtype=X.dtype, device=X.device)
         Y = (torch.cumsum(z01, dim=1) - z01) / torch.clamp(counts, min=1).unsqueeze(0)
-        t1 = z01.clone()
-        t1[:, self.k :] = _b_param(z01[:, self.k :], Y[:, self.k :], 0.98 / 49.98, 0.02, 50)
-        t2 = t1.clone()
-        t2[:, self.k :] = _s_linear(t1[:, self.k :], 0.35)
+        t1 = torch.cat([z01[:, : self.k], _b_param(z01[:, self.k :], Y[:, self.k :], 0.98 / 49.98, 0.02, 50)], dim=1)
+        t2 = torch.cat([t1[:, : self.k], _s_linear(t1[:, self.k :], 0.35)], dim=1)
         t3 = self._reduce_by_sum(t2)
         x = self._calculate_x(t3)
         return self._objectives(x, _concave(x))
@@ -353,16 +341,16 @@ class WFG9(WFG):
         z01 = _normalize(X)
         counts = torch.arange(self.d - 1, -1, -1, dtype=X.dtype, device=X.device)
         Y = (torch.flip(torch.cumsum(torch.flip(z01, dims=[1]), dim=1), dims=[1]) - z01) / torch.clamp(counts, min=1).unsqueeze(0)
-        t1 = z01.clone()
-        t1[:, :-1] = _b_param(z01[:, :-1], Y[:, :-1], 0.98 / 49.98, 0.02, 50)
-        t2 = torch.empty_like(t1)
-        t2[:, : self.k] = _s_decept(t1[:, : self.k], 0.35, 0.001, 0.05)
-        t2[:, self.k :] = _s_multi(t1[:, self.k :], 30, 95, 0.35)
-        t3 = torch.empty((X.size(0), self.m), dtype=X.dtype, device=X.device)
+        t1 = torch.cat([_b_param(z01[:, :-1], Y[:, :-1], 0.98 / 49.98, 0.02, 50), z01[:, -1:]], dim=1)
+        t2_head = _s_decept(t1[:, : self.k], 0.35, 0.001, 0.05)
+        t2_tail = _s_multi(t1[:, self.k :], 30, 95, 0.35)
+        t2 = torch.cat([t2_head, t2_tail], dim=1)
+        cols = []
         step = self.k // (self.m - 1)
         for i in range(self.m - 1):
             start = i * step
-            t3[:, i] = _r_nonsep(t2[:, start : start + step], step)
-        t3[:, -1] = _r_nonsep(t2[:, self.k :], self.d - self.k)
+            cols.append(_r_nonsep(t2[:, start : start + step], step))
+        cols.append(_r_nonsep(t2[:, self.k :], self.d - self.k))
+        t3 = torch.stack(cols, dim=1)
         x = self._calculate_x(t3)
         return self._objectives(x, _concave(x))
