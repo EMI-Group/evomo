@@ -635,9 +635,12 @@ class MAF12(MAF):
             s2 = sum((Y - Y.roll(-o, dims=1)).abs().sum(dim=1) for o in range(1, a))
         else:
             s2 = torch.zeros_like(s1)
-        int_a2 = a // 2
+        int_a2 = (a + 1) // 2  # ceil(a/2)；a=1 时应为恒等（WFG r_nonsep 定义）
 
-        return (s1 + s2) / (Y.size(1) / a) * int_a2 * (1 + 2 * a - 2 * int_a2)
+        # 分母 = (M/a) * ceil(a/2) * (1 + 2a - 2*ceil(a/2))，与 evaluate 内
+        # last_col 的内联公式同构；旧实现误用 a//2 且把因子当乘子 → a=1 时恒 0，
+        # 使 MAF12 目标与位置变量脱钩（2026-09-09 修复）
+        return (s1 + s2) / (Y.size(1) / a) / (int_a2 * (1 + 2 * a - 2 * int_a2))
 
     def _concave(self, X: torch.Tensor):
         return torch.flip(
