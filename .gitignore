@@ -164,3 +164,5 @@ cython_debug/
 
 # Test
 test[1-6].py
+# legacy local experiment copy (pre-restructure import path; MetaRVEA still imports evox_ext.*)
+src/evox_ext/
