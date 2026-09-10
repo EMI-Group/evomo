@@ -139,7 +139,7 @@ class SNSGA2(Algorithm):
 
     def step(self) -> None:
         mating_pool_idx = tournament_selection_multifit(
-            self.pop_size, [self.front_no.float(), -self.crowd_dis], tournament_size=2
+            self.pop_size, [-self.crowd_dis, self.front_no.float()], tournament_size=2
         )
         parents = self.pop[mating_pool_idx]
 

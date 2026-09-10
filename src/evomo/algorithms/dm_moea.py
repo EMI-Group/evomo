@@ -97,7 +97,7 @@ class DMMOEA(Algorithm):
 
         # 2. Mating / Variation
         # Tournament Selection based on Rank and Crowding Distance
-        mating_pool = tournament_selection_multifit(self.pop_size, [self.rank.float(), -self.dis], tournament_size=2)
+        mating_pool = tournament_selection_multifit(self.pop_size, [-self.dis, self.rank.float()], tournament_size=2)
 
         # Real-valued variation (SBX)
         off_dec = simulated_binary(pred_dec[mating_pool], pro_c=1.0, dis_c=20.0)

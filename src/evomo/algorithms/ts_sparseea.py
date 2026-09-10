@@ -141,7 +141,7 @@ class TSSparseEA(Algorithm):
         device = self.lb.device
 
         # 1. Selection (Bug #27, #31)
-        mating_pool = tournament_selection_multifit(N, [self.rank, -self.dis], tournament_size=2)
+        mating_pool = tournament_selection_multifit(N, [-self.dis, self.rank], tournament_size=2)
 
         # 2. Mask Variation (Stage 2 Logic)
         parent_mask = self.mask[mating_pool]

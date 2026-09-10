@@ -9,7 +9,7 @@ from evox.operators.sampling import uniform_sampling
 from evox.utils import clamp
 
 
-def pbi(f, w, z):
+def pbi(f, w, z, z_max=None):
     norm_w = torch.norm(w, dim=1)
     f = f - z
     d1 = torch.sum(f * w, dim=1) / norm_w
@@ -17,19 +17,23 @@ def pbi(f, w, z):
     return d1 + 5 * d2
 
 
-def tchebycheff(f, w, z):
+def tchebycheff(f, w, z, z_max=None):
     return torch.max(torch.abs(f - z) * w, dim=1)[0]
 
 
 def tchebycheff_norm(f, w, z, z_max):
-    return torch.max(torch.abs(f - z) / (z_max - z) * w, dim=1)[0]
+    span = z_max - z
+    # Constant objectives contribute zero without introducing a division by zero.
+    safe_span = torch.where(span > 0, span, torch.ones_like(span))
+    normalized = torch.where(span > 0, torch.abs(f - z) / safe_span, 0)
+    return torch.max(normalized * w, dim=1)[0]
 
 
-def modified_tchebycheff(f, w, z):
+def modified_tchebycheff(f, w, z, z_max=None):
     return torch.max(torch.abs(f - z) / w, dim=1)[0]
 
 
-def weighted_sum(f, w):
+def weighted_sum(f, w, z=None, z_max=None):
     return torch.sum(f * w, dim=1)
 
 
@@ -121,9 +125,9 @@ class TensorMOEAD(Algorithm):
         assert self.pop_size > 10, "Population size must be greater than 10. Please reset the population size."
         self.n_neighbor = int(math.ceil(self.pop_size / 10))
 
-        length = ub - lb
+        length = self.ub - self.lb
         population = torch.rand(self.pop_size, self.dim, device=device)
-        population = length * population + lb
+        population = length * population + self.lb
 
         neighbors = torch.cdist(w, w)
         self.neighbors = torch.argsort(neighbors, dim=1, stable=True)[:, : self.n_neighbor]
@@ -132,6 +136,7 @@ class TensorMOEAD(Algorithm):
         self.pop = Mutable(population)
         self.fit = Mutable(torch.full((self.pop_size, self.n_objs), torch.inf, device=device))
         self.z = Mutable(torch.zeros((self.n_objs,), device=device))
+        self.z_max = Mutable(torch.zeros((self.n_objs,), device=device))
 
         self.aggregate_func1 = self.get_aggregation_function(aggregate_op[0])
         self.aggregate_func2 = self.get_aggregation_function(aggregate_op[1])
@@ -156,6 +161,7 @@ class TensorMOEAD(Algorithm):
         """
         self.fit = self.evaluate(self.pop)
         self.z = torch.min(self.fit, dim=0)[0]
+        self.z_max = torch.max(self.fit, dim=0)[0]
 
     def step(self):
         """Perform the optimization step of the workflow."""
@@ -168,13 +174,15 @@ class TensorMOEAD(Algorithm):
         off_fit = self.evaluate(offspring)
 
         self.z = torch.min(self.z, torch.min(off_fit, dim=0)[0])
+        # Use a common objective range for all parent/offspring comparisons this generation.
+        self.z_max = torch.maximum(self.fit.amax(dim=0), off_fit.amax(dim=0))
 
         sub_pop_indices = torch.arange(0, self.pop_size, device=self.pop.device)
         update_mask = torch.zeros((self.pop_size,), dtype=torch.bool, device=self.pop.device)
 
         def body(ind_p, ind_obj):
-            g_old = self.aggregate_func1(self.fit[ind_p], self.w[ind_p], self.z)
-            g_new = self.aggregate_func1(ind_obj, self.w[ind_p], self.z)
+            g_old = self.aggregate_func1(self.fit[ind_p], self.w[ind_p], self.z, self.z_max)
+            g_new = self.aggregate_func1(ind_obj, self.w[ind_p], self.z, self.z_max)
             temp_mask = update_mask.clone()
             temp_mask = torch.scatter(temp_mask, 0, ind_p, g_old > g_new)
             return torch.where(temp_mask, -1, sub_pop_indices.clone())
@@ -184,7 +192,7 @@ class TensorMOEAD(Algorithm):
         def update_population(sub_indices, population, pop_obj, w_ind):
             f = torch.where(sub_indices[:, None] == -1, off_fit, pop_obj)
             x = torch.where(sub_indices[:, None] == -1, offspring, population)
-            idx = torch.argmin(self.aggregate_func2(f, w_ind[None, :], self.z))
+            idx = torch.argmin(self.aggregate_func2(f, w_ind[None, :], self.z, self.z_max))
             return x[idx], f[idx]
 
         self.pop, self.fit = vmap(update_population, in_dims=(1, 0, 0, 0))(replace_indices, self.pop, self.fit, self.w)

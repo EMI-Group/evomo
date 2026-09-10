@@ -36,7 +36,7 @@ class AGEMOEA(Algorithm):
     def step(self) -> None:
         # 1. Mating
         # Primary key: front_no (min), Secondary key: crowd_dis (max)
-        mating_pool = tournament_selection_multifit(self.pop_size, [self.front_no.float(), -self.crowd_dis], tournament_size=2)
+        mating_pool = tournament_selection_multifit(self.pop_size, [-self.crowd_dis, self.front_no.float()], tournament_size=2)
 
         crossovered = simulated_binary(self.pop[mating_pool])
         offspring = polynomial_mutation(crossovered, self.lb, self.ub)

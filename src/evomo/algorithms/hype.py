@@ -95,9 +95,9 @@ class HypE(Algorithm):
         if self.crossover is None:
             self.crossover = simulated_binary
 
-        length = ub - lb
+        length = self.ub - self.lb
         population = torch.rand(self.pop_size, self.dim, device=device)
-        population = length * population + lb
+        population = length * population + self.lb
 
         self.ref = Mutable(torch.ones(n_objs, device=device))
 
