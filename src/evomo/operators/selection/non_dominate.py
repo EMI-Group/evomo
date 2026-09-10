@@ -234,27 +234,29 @@ def crowding_distance(costs: torch.Tensor, mask: torch.Tensor):
         A 1D tensor containing the crowding distance for each solution.
     """
     total_len = costs.size(0)
+    if total_len == 0:
+        return costs.new_empty((0,))
     if mask is None:
-        num_valid_elem = total_len
-        mask = torch.ones(total_len, dtype=torch.bool)
-    else:
-        num_valid_elem = mask.sum()
+        mask = torch.ones(total_len, dtype=torch.bool, device=costs.device)
+    num_valid_elem = mask.sum()
+    inverted_mask = (~mask).unsqueeze(1).expand_as(costs).to(costs.dtype)
+    order = lexsort([costs, inverted_mask], dim=0)
+    sorted_costs = torch.gather(costs, dim=0, index=order)
+    last = (num_valid_elem - 1).clamp_min(0).reshape(1, 1).expand(1, costs.size(1))
+    span = sorted_costs.gather(0, last) - sorted_costs[:1]
+    varying = span > 0
+    safe_span = torch.where(varying, span, torch.ones_like(span))
+    previous = torch.cat([sorted_costs[:1], sorted_costs[:-1]], dim=0)
+    following = torch.cat([sorted_costs[1:], sorted_costs[-1:]], dim=0)
+    distance = torch.where(varying, (following - previous) / safe_span, 0)
 
-    inverted_mask = ~mask
-
-    inverted_mask = inverted_mask.unsqueeze(1).expand(-1, costs.size(1)).to(costs.dtype)
-
-    rank = lexsort([costs, inverted_mask], dim=0)
-    costs = torch.gather(costs, dim=0, index=rank)
-    distance_range = costs[num_valid_elem - 1] - costs[0]
-    distance = torch.empty(costs.size(), device=costs.device)
-    distance = distance.scatter(0, rank[1:-1], (costs[2:] - costs[:-2]) / distance_range)
-    distance[rank[0], :] = torch.inf
-    distance[rank[num_valid_elem - 1], :] = torch.inf
-    crowding_distances = torch.where(mask.unsqueeze(1), distance, -torch.inf)
-    crowding_distances = torch.sum(crowding_distances, dim=1)
-
-    return crowding_distances
+    # Ignore constant objectives, including their arbitrary endpoints after sorting.
+    position = torch.arange(total_len, device=costs.device).unsqueeze(1)
+    boundary = (position == 0) | (position == num_valid_elem - 1)
+    distance = torch.where(boundary & varying, torch.inf, distance)
+    distance = torch.zeros_like(costs).scatter(0, order, distance).sum(dim=1)
+    distance = torch.where(num_valid_elem <= 2, torch.inf, distance)
+    return torch.where(mask, distance, -torch.inf)
 
 
 def nd_environmental_selection(x: torch.Tensor, f: torch.Tensor, topk: int, cv: torch.Tensor = None):
