@@ -164,5 +164,6 @@ cython_debug/
 
 # Test
 test[1-6].py
-# legacy evox_ext removed 2026-09-10 (migrated to evomo.problems.*; contained MAF2/10/14/15 bugs)
+# legacy evox_ext removed 2026-09-10 (migrated to evomo.problems.*; contained MAF2/10/14/15 bugs;
+# pre-restructure import-path copy kept for MetaRVEA history)
 src/evox_ext/
