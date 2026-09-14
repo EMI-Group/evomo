@@ -7,7 +7,7 @@ from evox.core import Problem
 def _generic_zdt(f1, g, h, x):
     f1_x = f1(x)
     g_x = g(x)
-    return torch.stack([f1_x, g_x * h(f1_x, g_x)],dim=1)
+    return torch.stack([f1_x, g_x * h(f1_x, g_x)], dim=1)
 
 
 class ZDT(Problem):
@@ -46,24 +46,32 @@ class ZDT(Problem):
 class ZDT1(ZDT):
     def __init__(self, n):
         super().__init__(n)
+
         def f1(x):
-            return x[:,0]
+            return x[:, 0]
+
         def g(x):
-            return 1 + 9 * torch.mean(x[:,1:])
+            return 1 + 9 * torch.mean(x[:, 1:], dim=1)
+
         def h(f1, g):
             return 1 - torch.sqrt(f1 / g)
+
         self._zdt = partial(_generic_zdt, f1, g, h)
 
 
 class ZDT2(ZDT):
     def __init__(self, n):
         super().__init__(n)
+
         def f1(x):
-            return x[:,0]
+            return x[:, 0]
+
         def g(x):
-            return 1 + 9 * torch.mean(x[:,1:])
+            return 1 + 9 * torch.mean(x[:, 1:], dim=1)
+
         def h(f1_val, g_val):
             return 1 - (f1_val / g_val) ** 2
+
         self._zdt = partial(_generic_zdt, f1, g, h)
 
     def pf(self):
@@ -74,12 +82,16 @@ class ZDT2(ZDT):
 class ZDT3(ZDT):
     def __init__(self, n):
         super().__init__(n)
+
         def f1(x):
-            return x[:,0]
+            return x[:, 0]
+
         def g(x):
-            return 1 + 9 * torch.mean(x[:,1:])
+            return 1 + 9 * torch.mean(x[:, 1:], dim=1)
+
         def h(f1, g):
             return 1 - torch.sqrt(f1 / g) - (f1 / g) * torch.sin(10 * torch.pi * f1)
+
         self._zdt = partial(_generic_zdt, f1, g, h)
 
     def pf(self):
@@ -106,24 +118,33 @@ class ZDT3(ZDT):
 class ZDT4(ZDT):
     def __init__(self, n):
         super().__init__(n)
+
         def f1(x):
-            return x[:,0]
+            return x[:, 0]
+
         def g(x):
-            return 1 + 10 * (self.n - 1) + torch.sum(x[:,1:] ** 2 - 10.0 * torch.cos(4.0 * torch.pi * x[:,1:]))
+            tail = x[:, 1:]
+            return 1 + 10 * (self.n - 1) + torch.sum(tail**2 - 10.0 * torch.cos(4.0 * torch.pi * tail), dim=1)
+
         def h(f1_val, g_val):
             return 1 - torch.sqrt(f1_val / g_val)
+
         self._zdt = partial(_generic_zdt, f1, g, h)
 
 
 class ZDT6(ZDT):
     def __init__(self, n):
         super().__init__(n)
+
         def f1(x):
-            return 1 - torch.exp(-4.0 * x[:,0]) * torch.sin(6.0 * torch.pi * x[:,0]) ** 6
+            return 1 - torch.exp(-4.0 * x[:, 0]) * torch.sin(6.0 * torch.pi * x[:, 0]) ** 6
+
         def g(x):
-            return 1 + 9.0 * (torch.sum(x[:,1:]) / 9.0) ** 0.25
+            return 1 + 9.0 * torch.mean(x[:, 1:], dim=1) ** 0.25
+
         def h(f1_val, g_val):
             return 1 - (f1_val / g_val) ** 2
+
         self._zdt = partial(_generic_zdt, f1, g, h)
 
     def pf(self):
