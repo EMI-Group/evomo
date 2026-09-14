@@ -164,3 +164,4 @@ cython_debug/
 
 # Test
 test[1-6].py
+benchmarks
