@@ -161,7 +161,10 @@ def _evaluate_brax_main(
     # Return
     new_key = from_jax_array(key, device)
     total_reward = from_jax_array(total_reward, device)
-    total_reward = total_reward.view(pop_size, num_episodes, num_obj)
+    # view by ACTUAL batch (InnerRVEAa first eval N rows < pop_size=2N;
+    # port from e5b9249 evox_ext: 26397a5 missed this line when relaxing
+    # the batch-size assert)
+    total_reward = total_reward.view(actual_pop_size, num_episodes, num_obj)
     model_state = [model_state[k] for k in state_keys]
     return new_key, model_state, total_reward
 
@@ -284,15 +287,34 @@ def _evaluate_brax_vmap(
     max_episode_length: int,
     key: torch.Tensor,
     model_state: List[torch.Tensor],
+    num_obj: int,
+    useless: bool,
+    obs_param: torch.Tensor,
+    observation_shape: int,
+    obs_norm: torch.Tensor,
+    obs_buf: torch.Tensor,
+    valid_mask: torch.Tensor,
 ) -> Tuple[
     Tuple[torch.Tensor, List[torch.Tensor], torch.Tensor],
     Tuple[int | None, List[int], int],
 ]:
-    assert all(d is None for d in in_dims[:-1]), "Cannot vmap over `BraxProblem` itself"
-    assert in_dims[-1] is not None, "Cannot vmap none of the dimensions"
+    # Under HPOProblemWrapper only `model_state` carries the instance dim
+    # (stack_module_state covers algorithm/monitor state; plain problem
+    # attributes like key/obs_* are NOT stacked, so their in_dims are None).
+    # Layout: (env_id, pop_size, rotate_key, num_episodes, max_len, key,
+    #          *model_state, num_obj, useless, obs_param, obs_shape,
+    #          obs_norm, obs_buf, valid_mask)
+    head = in_dims[:6]
+    tail = in_dims[7:]
+    # model_state arrives as ONE list-typed argument whose in_dim is a list of
+    # per-element dims, e.g. [0, 0, 0, 0] (observed under HPOProblemWrapper)
+    ms_dims = in_dims[6]
+    assert all(d is None for d in head), "Cannot vmap over `BraxProblem` itself"
+    assert all(d is None for d in tail), "Cannot vmap over `BraxProblem` state buffers"
+    ms_dims_clean = [0 if d is None else int(d) for d in ms_dims]
     key, model_state, reward = _evaluate_brax_vmap_main(
         vmap_info.batch_size,
-        in_dims[-1],
+        ms_dims_clean,
         env_id,
         pop_size,
         rotate_key,
@@ -300,6 +322,13 @@ def _evaluate_brax_vmap(
         max_episode_length,
         key,
         model_state,
+        num_obj,
+        useless,
+        obs_param,
+        observation_shape,
+        obs_norm,
+        obs_buf,
+        valid_mask,
     )
     return (key, model_state, reward), (None, [0] * len(model_state), 0)
 
