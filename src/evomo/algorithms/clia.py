@@ -66,7 +66,7 @@ class CLIA(Algorithm):
 
         # Non-dominated filter
         rank = non_dominate_rank(u_fit)
-        mask = rank == 1
+        mask = rank == 0
 
         # Deadlock Breaker: if no rank 1, take all (Bug #9)
         mask = torch.where(mask.any(), mask, torch.ones_like(mask, dtype=torch.bool))

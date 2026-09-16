@@ -38,7 +38,7 @@ class eMOEA(Algorithm):
 
         # Only first front based on grid values
         rank = non_dominate_rank(pop_grid)
-        first_front_mask = rank == 1
+        first_front_mask = rank == 0
 
         # Update Archive
         num_seeds = torch.sum(first_front_mask.int())

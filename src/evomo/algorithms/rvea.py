@@ -88,9 +88,9 @@ class RVEA(Algorithm):
 
         v0 = v.clone()
         self.pop_size = v.size(0)
-        length = ub - lb
+        length = self.ub - self.lb
         population = torch.rand(self.pop_size, self.dim, device=device)
-        population = length * population + lb
+        population = length * population + self.lb
 
         self.pop = Mutable(population)
         self.fit = Mutable(torch.full((self.pop_size, self.n_objs), torch.inf, device=device))

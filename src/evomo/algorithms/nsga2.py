@@ -8,7 +8,7 @@ from evox.operators.selection import tournament_selection_multifit
 from evox.utils import clamp
 
 from evomo.operators.selection import nd_environmental_selection
-from evomo.utils import parse_evaluate
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
 class NSGA2(Algorithm):
@@ -73,14 +73,17 @@ class NSGA2(Algorithm):
         if self.crossover is None:
             self.crossover = simulated_binary
 
-        length = ub - lb
+        length = self.ub - self.lb
         population = torch.rand(self.pop_size, self.dim, device=device)
-        population = length * population + lb
+        population = length * population + self.lb
 
         self.pop = Mutable(population)
         self.fit = Mutable(torch.empty((self.pop_size, self.n_objs), device=device).fill_(torch.inf))
         self.rank = Mutable(torch.empty(self.pop_size, device=device).fill_(torch.inf))
         self.dis = Mutable(torch.empty(self.pop_size, device=device).fill_(-torch.inf))
+        # The number of constraints is known only after the first evaluation.
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def init_step(self):
         """Perform the initialization step of the workflow."""
         self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))

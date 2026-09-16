@@ -2,10 +2,10 @@ import torch
 from evox.core import Algorithm, Mutable
 from evox.operators.crossover import simulated_binary
 from evox.operators.mutation import polynomial_mutation
-from evox.operators.selection import crowding_distance, tournament_selection_multifit
+from evox.operators.selection import tournament_selection_multifit
 from evox.utils import clamp, lexsort, randint
 
-from evomo.operators.selection import non_dominate_rank
+from evomo.operators.selection import crowding_distance, non_dominate_rank
 from evomo.utils import unique_rows_sorted
 
 
@@ -72,13 +72,20 @@ class TSSparseEA(Algorithm):
         self.fit = self.evaluate(self.pop * self.mask.float())
 
         # Initial Environmental Selection
-        self.pop, self.fit, self.rank, self.dis = self._environmental_selection(self.pop, self.mask, self.fit, self.pop_size)
+        self.pop, self.mask, self.fit, self.rank, self.dis = self._environmental_selection(
+            self.pop, self.mask, self.fit, self.pop_size
+        )
         self.is_initialized = torch.tensor(True, device=device)
 
     def _environmental_selection(self, pop, mask, fit, N):
         # Unique Filter (Bug #3)
         _, uni_idx = unique_rows_sorted(fit)
-        fit, pop, mask = fit[uni_idx], pop[uni_idx], mask[uni_idx]
+        unique_mask = torch.zeros(fit.size(0), dtype=torch.bool, device=fit.device).scatter(0, uni_idx, True)
+        # Deduplication must not leave fewer than N candidates. In that case,
+        # retain the original candidates so every selected slot has real rank
+        # and crowding state instead of falling through to the -1 sentinel.
+        keep = unique_mask | (unique_mask.sum() < N)
+        fit, pop, mask = fit[keep], pop[keep], mask[keep]
 
         ranks = non_dominate_rank(fit)
 
@@ -133,7 +140,7 @@ class TSSparseEA(Algorithm):
         sort_idx = lexsort(torch.stack([-final_dis, final_rank.float()]))
         sel_idx = selected_indices[sort_idx]
 
-        return pop[sel_idx], fit[sel_idx], final_rank[sort_idx], final_dis[sort_idx]
+        return pop[sel_idx], mask[sel_idx], fit[sel_idx], final_rank[sort_idx], final_dis[sort_idx]
 
     def step(self) -> None:
         N = self.pop_size
@@ -141,7 +148,7 @@ class TSSparseEA(Algorithm):
         device = self.lb.device
 
         # 1. Selection (Bug #27, #31)
-        mating_pool = tournament_selection_multifit(N, [self.rank, -self.dis], tournament_size=2)
+        mating_pool = tournament_selection_multifit(N, [-self.dis, self.rank], tournament_size=2)
 
         # 2. Mask Variation (Stage 2 Logic)
         parent_mask = self.mask[mating_pool]
@@ -178,7 +185,9 @@ class TSSparseEA(Algorithm):
         combined_mask = torch.cat([self.mask, off_mask], dim=0)
         combined_fit = torch.cat([self.fit, off_fit], dim=0)
 
-        self.pop, self.fit, self.rank, self.dis = self._environmental_selection(combined_pop, combined_mask, combined_fit, N)
+        self.pop, self.mask, self.fit, self.rank, self.dis = self._environmental_selection(
+            combined_pop, combined_mask, combined_fit, N
+        )
 
 
 if __name__ == "__main__":

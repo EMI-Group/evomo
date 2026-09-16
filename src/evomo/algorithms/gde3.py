@@ -6,9 +6,55 @@ from evox.utils import clamp, lexsort, randint
 from evomo.operators.selection import non_dominate_rank
 
 
+def _map_parent_draws(
+    index: torch.Tensor,
+    first_draw: torch.Tensor,
+    second_draw: torch.Tensor,
+    third_draw: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Map shrinking-range draws to three distinct population indices.
+
+    Each input draw is uniform on a compact range with respectively one, two,
+    or three indices removed.  The order-preserving remapping is a bijection,
+    so the resulting ordered parent triple is uniform without replacement.
+    """
+    dtype = index.dtype
+
+    r1 = first_draw + (first_draw >= index).to(dtype)
+
+    lower = torch.minimum(index, r1)
+    upper = torch.maximum(index, r1)
+    r2 = second_draw
+    r2 = r2 + (second_draw >= lower).to(dtype)
+    r2 = r2 + (second_draw >= upper - 1).to(dtype)
+
+    lower = torch.minimum(torch.minimum(index, r1), r2)
+    upper = torch.maximum(torch.maximum(index, r1), r2)
+    middle = index + r1 + r2 - lower - upper
+    r3 = third_draw
+    r3 = r3 + (third_draw >= lower).to(dtype)
+    r3 = r3 + (third_draw >= middle - 1).to(dtype)
+    r3 = r3 + (third_draw >= upper - 2).to(dtype)
+    return r1, r2, r3
+
+
+def _sample_parent_indices(pop_size: int, device: torch.device) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Sample DE/rand/1 parents in O(pop_size) memory."""
+    if pop_size < 4:
+        raise ValueError("GDE3 requires pop_size >= 4 to sample three parents distinct from each target.")
+
+    index = torch.arange(pop_size, device=device)
+    first_draw = randint(0, pop_size - 1, (pop_size,), device=device)
+    second_draw = randint(0, pop_size - 2, (pop_size,), device=device)
+    third_draw = randint(0, pop_size - 3, (pop_size,), device=device)
+    return _map_parent_draws(index, first_draw, second_draw, third_draw)
+
+
 class GDE3(Algorithm):
     def __init__(self, pop_size: int, n_objs: int, lb: torch.Tensor, ub: torch.Tensor, F: float = 0.5, CR: float = 0.5):
         super().__init__()
+        if pop_size < 4:
+            raise ValueError("GDE3 requires pop_size >= 4 to sample three parents distinct from each target.")
         device = lb.device
         self.pop_size = pop_size
         self.n_objs = n_objs
@@ -32,16 +78,9 @@ class GDE3(Algorithm):
         N = self.pop_size
 
         # 1. Mating (Vectorized DE/rand/1/bin)
-        # Generate r1, r2, r3 such that r1 != r2 != r3 != i
-        r1 = randint(0, N, (N,), device=device)
-        r2 = randint(0, N, (N,), device=device)
-        r3 = randint(0, N, (N,), device=device)
-
-        # Simple shift to avoid identity (Bug #29 compliance - vectorized)
-        idx = torch.arange(N, device=device)
-        r1 = torch.where(r1 == idx, (r1 + 1) % N, r1)
-        r2 = torch.where((r2 == idx) | (r2 == r1), (r2 + 2) % N, r2)
-        r3 = torch.where((r3 == idx) | (r3 == r1) | (r3 == r2), (r3 + 3) % N, r3)
+        # Draw an ordered triple uniformly without replacement, excluding the
+        # target index.  This uses only O(N) temporary storage.
+        r1, r2, r3 = _sample_parent_indices(N, device)
 
         mutant = self.pop[r1] + self.F * (self.pop[r2] - self.pop[r3])
 

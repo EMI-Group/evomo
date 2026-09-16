@@ -1,16 +1,23 @@
 import torch
 from evox.core import Algorithm, Mutable
-from evox.operators.crossover import simulated_binary
 from evox.operators.mutation import polynomial_mutation
 from evox.operators.sampling import uniform_sampling
 from evox.utils import clamp, randint
 
-from evomo.operators.selection import nd_environmental_selection, non_dominate_rank
-from evomo.utils import unique_rows_sorted
+from evomo.operators.selection import non_dominate_rank
 
 
 class BCEMOEAD(Algorithm):
-    def __init__(self, pop_size: int, n_objs: int, lb: torch.Tensor, ub: torch.Tensor, T: int = 20, nr: int = 2, **kwargs):
+    def __init__(
+        self,
+        pop_size: int,
+        n_objs: int,
+        lb: torch.Tensor,
+        ub: torch.Tensor,
+        T: int | None = None,
+        nr: int | None = None,
+        **kwargs,
+    ):
         super().__init__()
         device = lb.device
         self.pop_size = pop_size
@@ -18,152 +25,172 @@ class BCEMOEAD(Algorithm):
         self.lb = lb
         self.ub = ub
         self.dim = lb.numel()
-        self.T = T
-        self.nr = nr
-
-        # 1. Weights & Neighbors (Bug #13, #19)
+        # 1. Weights & neighbours
         W, n_actual = uniform_sampling(pop_size, n_objs)
         self.pop_size = n_actual
-        self.T = min(T, self.pop_size)
+        default_T = (self.pop_size + 9) // 10
+        default_nr = (self.pop_size + 99) // 100
+        self.T = min(max(2, default_T if T is None else T), self.pop_size)
+        self.nr = min(max(1, default_nr if nr is None else nr), self.pop_size)
         W = W.to(device)
         self.W = Mutable(W)
 
         dist = torch.cdist(W, W)
         self.B = Mutable(torch.topk(dist, self.T, largest=False).indices)
 
-        # 2. Populations (PC and NPC)
-        self.pop = Mutable(torch.rand(self.pop_size, self.dim, device=device) * (ub - lb) + lb)
+        # 2. NPC is initialized first; PC is selected from NPC in init_step.
+        initial_pop = torch.rand(self.pop_size, self.dim, device=device) * (ub - lb) + lb
+        self.pop = Mutable(initial_pop.clone())
         self.fit = Mutable(torch.full((self.pop_size, n_objs), torch.inf, device=device))
-
-        self.npc_pop = Mutable(torch.rand(self.pop_size, self.dim, device=device) * (ub - lb) + lb)
+        self.npc_pop = Mutable(initial_pop)
         self.npc_fit = Mutable(torch.full((self.pop_size, n_objs), torch.inf, device=device))
 
         self.z = Mutable(torch.zeros((1, n_objs), device=device))
         self.nND = Mutable(torch.tensor(0, dtype=torch.int32, device=device))
 
     def init_step(self) -> None:
-        self.fit = self.evaluate(self.pop)
         self.npc_fit = self.evaluate(self.npc_pop)
         self.z = torch.min(self.npc_fit, dim=0, keepdim=True).values
-
-        # Initial PC update
-        rank = non_dominate_rank(self.fit)
-        self.nND = torch.sum(rank == 1)
+        self.pop, self.fit, self.nND = self._pc_selection(self.npc_pop, self.npc_fit)
 
     def _cal_tchebycheff(self, fit: torch.Tensor, z: torch.Tensor, W: torch.Tensor) -> torch.Tensor:
         # Bug #12: Safe division
         return torch.max(torch.abs(fit - z) / (W + 1e-6), dim=-1).values
 
-    def _niche_deletion(self, fit: torch.Tensor, pop: torch.Tensor, r: torch.Tensor, N: int):
-        # Bug #41: JIT compliant peeling loop
+    def _operator_ga_half(self, parent1: torch.Tensor, parent2: torch.Tensor) -> torch.Tensor:
+        """Generate one offspring for each pair of parents."""
+        mu = torch.rand(parent1.shape, device=parent1.device)
+        beta = torch.where(mu <= 0.5, torch.pow(2 * mu, 1 / 21.0), torch.pow(2 - 2 * mu, -1 / 21.0))
+        beta = beta * (1 - torch.randint(0, 2, beta.shape, device=parent1.device) * 2)
+        beta = torch.where(torch.rand(beta.shape, device=parent1.device) < 0.5, 1, beta)
+        offspring = (parent1 + parent2) / 2 + beta * (parent1 - parent2) / 2
+        offspring = polynomial_mutation(offspring, self.lb, self.ub)
+        return clamp(offspring, self.lb, self.ub)
+
+    def _niche_deletion(self, pop: torch.Tensor, fit: torch.Tensor, topk: int):
         f_min = torch.min(fit, dim=0).values
         f_max = torch.max(fit, dim=0).values
         norm_fit = (fit - f_min) / (f_max - f_min + 1e-6)
 
         dist_matrix = torch.cdist(norm_fit, norm_fit)
-        R = torch.clamp(dist_matrix / (r + 1e-6), max=1.0)
+        dist_matrix.fill_diagonal_(torch.inf)
+        neighbor_rank = min(3, fit.shape[0])
+        radius = torch.topk(dist_matrix, neighbor_rank, largest=False).values[:, neighbor_rank - 1].mean()
+        R = torch.clamp(dist_matrix / (radius + 1e-6), max=1.0)
 
         active_mask = torch.ones(fit.shape[0], dtype=torch.bool, device=fit.device)
-
-        # Peeling Loop
-        for _ in range(fit.shape[0] - N):
-            # Calculate density only for active members
-            # R_active: [Current_N, Current_N]
+        for _ in range(fit.shape[0] - topk):
             R_curr = R[active_mask][:, active_mask]
             density = 1 - torch.prod(R_curr, dim=1)
-
-            # Map local argmax back to global index
             local_idx = torch.argmax(density)
             global_indices = torch.where(active_mask)[0]
-            idx_to_remove = global_indices[local_idx]
-            active_mask[idx_to_remove] = False
+            active_mask[global_indices[local_idx]] = False
 
         return pop[active_mask], fit[active_mask]
 
-    def step(self) -> None:
-        device = self.lb.device
-        N = self.pop_size
+    def _pc_selection(self, pop: torch.Tensor, fit: torch.Tensor):
+        rank = non_dominate_rank(fit)
+        is_nd = rank == 0
+        pc_pop = pop[is_nd]
+        pc_fit = fit[is_nd]
+        n_nd = torch.sum(is_nd).to(torch.int32)
 
-        # --- Sub-step 2.1: Exploration Trigger ---
+        permutation = torch.randperm(pc_pop.shape[0], device=pop.device)
+        pc_pop = pc_pop[permutation]
+        pc_fit = pc_fit[permutation]
+        if pc_pop.shape[0] > self.pop_size:
+            pc_pop, pc_fit = self._niche_deletion(pc_pop, pc_fit, self.pop_size)
+
+        return pc_pop, pc_fit, n_nd
+
+    def _exploration(self):
+        pc_size = self.pop.shape[0]
         f_min = torch.min(self.fit, dim=0).values
         f_max = torch.max(self.fit, dim=0).values
         norm_pc = (self.fit - f_min) / (f_max - f_min + 1e-6)
         norm_npc = (self.npc_fit - f_min) / (f_max - f_min + 1e-6)
 
         dist_pc = torch.cdist(norm_pc, norm_pc)
-        # r0 is mean of 4th nearest neighbor distances
-        r0 = torch.topk(dist_pc, 4, largest=False).values[:, 3].mean()
-        r = (self.nND.float() / N) * r0
+        dist_pc.fill_diagonal_(torch.inf)
+        neighbor_rank = min(3, pc_size)
+        r0 = torch.topk(dist_pc, neighbor_rank, largest=False).values[:, neighbor_rank - 1].mean()
+        r = (self.nND.float() / self.pop_size) * r0
 
-        dist_pc_npc = torch.cdist(norm_pc, norm_npc)
-        neighbor_count = (dist_pc_npc <= r).sum(dim=1)
-        exploration_mask = neighbor_count <= 1
+        exploration_mask = (torch.cdist(norm_pc, norm_npc) <= r).sum(dim=1) <= 1
+        random_mates = randint(0, pc_size, (pc_size,), device=self.pop.device)
+        parent1 = self.pop[exploration_mask]
+        parent2 = self.pop[random_mates[exploration_mask]]
+        return self._operator_ga_half(parent1, parent2)
 
-        # Variation on isolated individuals
-        # If no isolated, use full pop to maintain batch size for operators
-        mating_pop = torch.where(exploration_mask.any(), exploration_mask, torch.ones_like(exploration_mask))
-        offspring = simulated_binary(self.pop[mating_pop], pro_c=1.0, dis_c=20.0)
-        offspring = polynomial_mutation(offspring, self.lb, self.ub)
-        offspring = clamp(offspring, self.lb, self.ub)
-        off_fit = self.evaluate(offspring)
+    def _update_npc_with_new_pc(self, new_pc: torch.Tensor, new_pc_fit: torch.Tensor) -> None:
+        if new_pc.shape[0] == 0:
+            return
 
-        # --- Sub-step 2.2: NPC Update (Global) ---
-        self.z = torch.min(torch.cat([self.z, off_fit], dim=0), dim=0, keepdim=True).values
+        self.z = torch.min(torch.cat([self.z, new_pc_fit], dim=0), dim=0, keepdim=True).values
+        g_old = self._cal_tchebycheff(self.npc_fit, self.z, self.W)
+        diff = torch.abs(new_pc_fit.unsqueeze(1) - self.z.unsqueeze(0))
+        g_new = torch.max(diff / (self.W.unsqueeze(0) + 1e-6), dim=-1).values
+        eligible = g_new <= g_old.unsqueeze(0)
 
-        # Tchebycheff for offspring vs all NPC weights
-        # off_fit: [N_off, M], z: [1, M], W: [N, M]
-        # diff: [N_off, 1, M]
-        diff = torch.abs(off_fit.unsqueeze(1) - self.z.unsqueeze(0))
-        g_off = torch.max(diff / (self.W.unsqueeze(0) + 1e-6), dim=-1).values  # [N_off, N]
+        # A random permutation followed by the first eligible item is
+        # equivalent to selecting one eligible NPC uniformly at random.
+        priorities = torch.rand(eligible.shape, device=self.pop.device).masked_fill(~eligible, torch.inf)
+        chosen = torch.argmin(priorities, dim=1)
+        has_candidate = eligible.any(dim=1)
+        proposals = torch.zeros_like(eligible)
+        proposals.scatter_(1, chosen.unsqueeze(1), has_candidate.unsqueeze(1))
 
-        # Current NPC Tchebycheff
-        g_old = self._cal_tchebycheff(self.npc_fit, self.z, self.W)  # [N]
+        proposal_values = torch.where(proposals, g_new, torch.inf)
+        best_new_pc = torch.argmin(proposal_values, dim=0)
+        replace = proposals.any(dim=0)
+        self.npc_pop[replace] = new_pc[best_new_pc[replace]]
+        self.npc_fit[replace] = new_pc_fit[best_new_pc[replace]]
 
-        # Vectorized replacement (simplified: each offspring tries to replace its best matching weight)
-        # For each weight, find the best offspring
-        best_off_idx = torch.argmin(g_off, dim=0)  # [N]
-        best_g_val = torch.gather(g_off, 0, best_off_idx.unsqueeze(0)).squeeze(0)
+    def _evolve_npc(self):
+        N = self.pop_size
+        device = self.pop.device
 
-        replace_mask = best_g_val < g_old
-        self.npc_pop[replace_mask] = offspring[best_off_idx[replace_mask]]
-        self.npc_fit[replace_mask] = off_fit[best_off_idx[replace_mask]]
+        neighbor_order = torch.argsort(torch.rand((N, self.T), device=device), dim=1)
+        neighbor_parents = torch.gather(self.B, 1, neighbor_order[:, :2])
+        global_parents = torch.topk(torch.rand((N, N), device=device), 2, largest=False).indices
+        use_neighbor = torch.rand(N, device=device) < 0.9
+        parents = torch.where(use_neighbor.unsqueeze(1), neighbor_parents, global_parents)
 
-        # --- Sub-step 2.3: NPC Update (Neighborhood) ---
-        # Standard MOEA/D neighborhood update for each offspring
-        for i in range(offspring.shape[0]):
-            indices = self.B[randint(0, N, (1,), device=device).item()]  # Pick a random neighborhood
-            g_neigh_old = self._cal_tchebycheff(self.npc_fit[indices], self.z, self.W[indices])
-            g_neigh_off = self._cal_tchebycheff(off_fit[i].unsqueeze(0), self.z, self.W[indices])
+        new_npc = self._operator_ga_half(self.npc_pop[parents[:, 0]], self.npc_pop[parents[:, 1]])
+        new_npc_fit = self.evaluate(new_npc)
+        self.z = torch.min(torch.cat([self.z, new_npc_fit], dim=0), dim=0, keepdim=True).values
 
-            replace_neigh = g_neigh_off < g_neigh_old
-            # Limit replacements to nr (Bug #29)
-            count_mask = torch.cumsum(replace_neigh.long(), dim=0) <= self.nr
-            final_replace = replace_neigh & count_mask
+        diff = torch.abs(new_npc_fit.unsqueeze(1) - self.z.unsqueeze(0))
+        g_new = torch.max(diff / (self.W.unsqueeze(0) + 1e-6), dim=-1).values
+        g_old = self._cal_tchebycheff(self.npc_fit, self.z, self.W)
 
-            self.npc_pop[indices[final_replace]] = offspring[i]
-            self.npc_fit[indices[final_replace]] = off_fit[i]
+        neighbor_candidates = torch.zeros((N, N), dtype=torch.bool, device=device)
+        neighbor_candidates.scatter_(1, self.B, True)
+        candidates = torch.where(use_neighbor.unsqueeze(1), neighbor_candidates, torch.ones_like(neighbor_candidates))
+        eligible = candidates & (g_new <= g_old.unsqueeze(0))
 
-        # --- Sub-step 2.4: PC Selection ---
-        combined_pop = torch.cat([self.pop, offspring, self.npc_pop], dim=0)
-        combined_fit = torch.cat([self.fit, off_fit, self.npc_fit], dim=0)
+        priorities = torch.rand((N, N), device=device).masked_fill(~eligible, torch.inf)
+        selected = torch.topk(priorities, self.nr, dim=1, largest=False).indices
+        selected_valid = torch.gather(eligible, 1, selected)
+        proposals = torch.zeros_like(eligible)
+        proposals.scatter_(1, selected, selected_valid)
 
-        # Unique rows (Bug #3)
-        combined_pop, u_idx = unique_rows_sorted(combined_pop)
-        combined_fit = combined_fit[u_idx]
+        proposal_values = torch.where(proposals, g_new, torch.inf)
+        best_offspring = torch.argmin(proposal_values, dim=0)
+        replace = proposals.any(dim=0)
+        self.npc_pop[replace] = new_npc[best_offspring[replace]]
+        self.npc_fit[replace] = new_npc_fit[best_offspring[replace]]
+        return new_npc, new_npc_fit
 
-        rank = non_dominate_rank(combined_fit)
-        is_nd = rank == 1
-        nd_pop = combined_pop[is_nd]
-        nd_fit = combined_fit[is_nd]
+    def step(self) -> None:
+        new_pc = self._exploration()
+        new_pc_fit = self.evaluate(new_pc)
+        self._update_npc_with_new_pc(new_pc, new_pc_fit)
 
-        self.nND = torch.sum(is_nd).to(torch.int32)
-
-        if nd_pop.shape[0] <= N:
-            # Fill with best from other ranks if needed
-            self.pop, self.fit, _, _, _ = nd_environmental_selection(combined_pop, combined_fit, N)
-        else:
-            # Niche-based deletion
-            self.pop, self.fit = self._niche_deletion(nd_fit, nd_pop, r, N)
+        new_npc, new_npc_fit = self._evolve_npc()
+        combined_pop = torch.cat([self.pop, new_npc, new_pc], dim=0)
+        combined_fit = torch.cat([self.fit, new_npc_fit, new_pc_fit], dim=0)
+        self.pop, self.fit, self.nND = self._pc_selection(combined_pop, combined_fit)
 
 
 if __name__ == "__main__":

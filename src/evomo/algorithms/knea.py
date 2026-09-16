@@ -93,7 +93,7 @@ class KnEA(Algorithm):
 
         # Tournament
         rank = non_dominate_rank(self.fit)
-        mating_pool = tournament_selection_multifit(N, [rank, -self.knee_points.float(), -crowd], tournament_size=2)
+        mating_pool = tournament_selection_multifit(N, [-crowd, -self.knee_points.float(), rank], tournament_size=2)
 
         # Variation
         crossovered = simulated_binary(self.pop[mating_pool], pro_c=1.0, dis_c=20.0)

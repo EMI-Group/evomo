@@ -103,7 +103,7 @@ class CoMMEA(Algorithm):
         merged_fit2 = torch.cat([self.fit2, fit_off2], dim=0)
 
         rank = non_dominate_rank(merged_fit2)
-        front1_mask = rank == 1
+        front1_mask = rank == 0
         front1_fit = merged_fit2[front1_mask]
 
         # Epsilon-dominance check (Section 3D)

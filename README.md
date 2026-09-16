@@ -63,7 +63,6 @@ EvoMO is a GPU-accelerated library for evolutionary multiobjective optimization 
 
 ## Installation Guide
 
-
 To install EvoMO, you need to install EvoX first. 
 
 

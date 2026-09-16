@@ -36,7 +36,7 @@ class AGEMOEA(Algorithm):
     def step(self) -> None:
         # 1. Mating
         # Primary key: front_no (min), Secondary key: crowd_dis (max)
-        mating_pool = tournament_selection_multifit(self.pop_size, [self.front_no.float(), -self.crowd_dis], tournament_size=2)
+        mating_pool = tournament_selection_multifit(self.pop_size, [-self.crowd_dis, self.front_no.float()], tournament_size=2)
 
         crossovered = simulated_binary(self.pop[mating_pool])
         offspring = polynomial_mutation(crossovered, self.lb, self.ub)
@@ -63,7 +63,7 @@ class AGEMOEA(Algorithm):
         front_no = non_dominate_rank(f)
 
         # Corner Detection & Normalization (Front 1)
-        mask_f1 = front_no == 1
+        mask_f1 = front_no == 0
         if mask_f1.any():
             f_f1 = f[mask_f1]
         else:
@@ -108,12 +108,12 @@ class AGEMOEA(Algorithm):
         max_front = torch.max(front_no)
 
         # Iterate fronts to calculate crowding distance
-        for i in range(1, int(max_front) + 1):
+        for i in range(int(max_front) + 1):
             in_front = front_no == i
             if not in_front.any():
                 continue
 
-            if i == 1:
+            if i == 0:
                 crowd_dis[in_front] = self._calculate_front1_diversity(f_norm[in_front], self.p, extreme_indices_in_f1)
             else:
                 # Minkowski distance to ideal point (origin)

@@ -120,7 +120,7 @@ class WASFGA(Algorithm):
         # 1. Mating
         # Tournament selection: minimize front_no, maximize crowd_dis
         mating_pool = tournament_selection_multifit(
-            self.pop_size, fitnesses=[self.front_no.float(), -self.crowd_dis], tournament_size=2
+            self.pop_size, fitnesses=[-self.crowd_dis, self.front_no.float()], tournament_size=2
         )
 
         crossovered = simulated_binary(self.pop[mating_pool])

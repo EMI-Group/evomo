@@ -118,14 +118,14 @@ class NSGA3(Algorithm):
             population = torch.rand(self.pop_size, self.dim, device=device)
             population = population > 0.5
         else:
-            length = ub - lb
+            length = self.ub - self.lb
             population = torch.rand(self.pop_size, self.dim, device=device)
-            population = length * population + lb
+            population = length * population + self.lb
 
         self.pop = Mutable(population)
         self.fit = Mutable(torch.full((self.pop_size, self.n_objs), torch.inf, device=device))
         self.rank = Mutable(torch.full((self.pop_size,), torch.inf, device=device))
-        self.ref = uniform_sampling(self.pop_size, self.n_objs)[0]
+        self.ref = uniform_sampling(self.pop_size, self.n_objs)[0].to(device=device)
 
     def init_step(self):
         """

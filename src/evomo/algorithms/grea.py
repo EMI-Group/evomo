@@ -68,7 +68,7 @@ class GrEA(Algorithm):
 
         # Tournament Selection (Bug #25: Primary key last)
         # Criteria: Pareto Rank (min), Grid Rank (min), GCD (min)
-        mating_idx = tournament_selection_multifit(self.pop_size, [rank.float(), gr.float(), gcd.float()], tournament_size=2)
+        mating_idx = tournament_selection_multifit(self.pop_size, [gcd.float(), gr.float(), rank.float()], tournament_size=2)
 
         # 2. Variation
         parents = self.pop[mating_idx]

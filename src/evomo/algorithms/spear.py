@@ -66,7 +66,7 @@ class SPEAR(Algorithm):
 
         # 3.1 Normalization (Rank-1 Based)
         rank = non_dominate_rank(joint_fit)
-        front1_fit = joint_fit[rank == 1]
+        front1_fit = joint_fit[rank == 0]
 
         # Bug #18: Normalization Trigger
         f_min = torch.min(front1_fit, dim=0).values

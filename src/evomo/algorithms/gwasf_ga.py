@@ -47,8 +47,8 @@ class GWASFGA(Algorithm):
 
     def step(self) -> None:
         # 1. Mating (Selection Pressure Bug #27)
-        # Primary key: front_no (min), Secondary key: -crowd_dis (max)
-        mating_pool = tournament_selection_multifit(self.pop_size, [self.front_no.float(), -self.crowd_dis], tournament_size=2)
+        # Primary key last: minimize front_no, then maximize crowd_dis.
+        mating_pool = tournament_selection_multifit(self.pop_size, [-self.crowd_dis, self.front_no.float()], tournament_size=2)
 
         # Variation
         crossovered = simulated_binary(self.pop[mating_pool])

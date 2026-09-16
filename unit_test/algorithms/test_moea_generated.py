@@ -132,6 +132,5 @@ class TestGeneratedAlgorithms(unittest.TestCase):
                 self.assertTrue(torch.isfinite(population).all().item())
                 self.assertTrue(torch.isfinite(fitness).all().item())
 
-
 if __name__ == "__main__":
     unittest.main()
