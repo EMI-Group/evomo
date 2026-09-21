@@ -1,60 +1,105 @@
 from typing import Callable, Optional
 
 import torch
-from evox.core import Algorithm, Mutable, vmap
+from evox.core import Algorithm, Mutable
 from evox.operators.crossover import simulated_binary
 from evox.operators.mutation import polynomial_mutation
 from evox.operators.sampling import uniform_sampling
 from evox.operators.selection import tournament_selection_multifit
-from evox.utils import clamp
 
 from evomo.operators.selection import non_dominate_rank
+from evomo.operators.selection.non_dominate import _environmental_selection_rank
 
 
-def _get_table_row_inner(bool_ref_candidate: torch.Tensor, upper_bound: torch.Tensor):
-    true_indices = torch.where(
-        bool_ref_candidate,
-        torch.arange(bool_ref_candidate.size(0), dtype=torch.int32, device=bool_ref_candidate.device),
-        upper_bound,
+def _normalize(fit, mask=None):
+    """Normalize objectives using ASF extremes, with a safe fallback for degenerate fronts."""
+    if mask is None:
+        mask = torch.ones(fit.shape[0], dtype=torch.bool, device=fit.device)
+    ideal = torch.where(mask[:, None], fit, torch.inf).amin(0)
+    shifted = torch.where(mask[:, None], fit - ideal, 0)
+    m = fit.shape[1]
+    weights = torch.full((m, m), 1e-6, device=fit.device, dtype=fit.dtype)
+    weights.fill_diagonal_(1)
+    asf = (shifted[None, :, :] / weights[:, None, :]).amax(2)
+    extreme_idx = torch.where(mask[None, :], asf, torch.inf).argmin(1)
+    extreme = shifted[extreme_idx]
+    solution, info = torch.linalg.solve_ex(extreme, fit.new_ones(m), check_errors=False)
+    intercept = solution.reciprocal()
+    valid = (info == 0) & torch.isfinite(intercept).all() & (intercept > 0).all()
+    residual = (extreme @ solution - 1).abs().amax()
+    valid = valid & torch.isfinite(residual) & (residual < 1e-4)
+    span = torch.where(valid, intercept, shifted.amax(0))
+    span = torch.where(torch.isfinite(span) & (span > 0), span, torch.ones_like(span))
+    return shifted / span
+
+
+def _associate(fit, ref):
+    """Associate with reference lines and evaluate squared residuals directly.
+
+    Maximum absolute projection identifies the nearest line. Computing the
+    selected residual avoids catastrophic cancellation in ||f||^2 - projection^2
+    when comparing candidates very close to the same reference line.
+    """
+    unit = ref / ref.norm(dim=1, keepdim=True).clamp_min(torch.finfo(fit.dtype).tiny)
+    projection = fit @ unit.T
+    group = projection.abs().argmax(1)
+    chosen = unit[group]
+    along = (fit * chosen).sum(1, keepdim=True)
+    distance = (fit - along * chosen).square().sum(1)
+    return distance, group
+
+
+def _niching(group, distance, rho, count, *, valid=None, complete=None, random_order=None, tie_order=None, nearest_order=None):
+    """Return a fixed number of survivors, retaining complete fronts before niching.
+
+    ``valid`` marks cutoff-front candidates; ``complete`` marks mandatory survivors.
+    All arrays keep the merged population's shape to support fullgraph compilation.
+    Optional permutations make deterministic reference tests possible.
+    """
+    c = group.numel()
+    r = rho.numel()
+    device = group.device
+    if valid is None:
+        valid = torch.ones(c, dtype=torch.bool, device=device)
+    if complete is None:
+        complete = torch.zeros(c, dtype=torch.bool, device=device)
+    order = torch.randperm(c, device=device) if random_order is None else random_order
+    # A random permutation gives uniform within-direction sampling without replacement.
+    best_dist = torch.full((r,), torch.inf, device=device, dtype=distance.dtype)
+    best_dist.scatter_reduce_(0, group, torch.where(valid, distance, torch.inf), reduce="amin", include_self=True)
+    # Nearest-point ties must use randomness independent of the remaining queue.
+    # Reusing its permutation biases the later positions of other tied minima.
+    nearest = torch.randperm(c, device=device) if nearest_order is None else nearest_order
+    positions = torch.empty_like(order)
+    positions[nearest] = torch.arange(c, device=device)
+    best_pos = torch.full((r,), c, device=device, dtype=torch.long)
+    best_pos.scatter_reduce_(
+        0, group, torch.where(valid & (distance == best_dist[group]), positions, c), reduce="amin", include_self=True
     )
-    true_indices = torch.sort(true_indices, dim=0).values
-    return true_indices.to(torch.int32)
-
-
-vmap_get_table_row = vmap(
-    _get_table_row_inner,
-    in_dims=(0, None),
-)
-
-
-def _select_from_index_by_min_inner(
-    group_id: torch.Tensor,
-    group_dist: torch.Tensor,
-    idx: torch.Tensor,
-):
-    min_idx = torch.argmin(torch.where(group_id == idx.unsqueeze(0), group_dist, torch.inf)).to(torch.int32)
-    return min_idx
-
-
-vmap_select_from_index_by_min = vmap(
-    _select_from_index_by_min_inner,
-    in_dims=(None, None, 0),
-)
-
-
-def _get_extreme_inner(norm_fit: torch.Tensor, w: torch.Tensor):
-    return torch.argmin(torch.max(norm_fit / w.unsqueeze(0), dim=1).values)
-
-
-vmap_get_extreme = vmap(
-    _get_extreme_inner,
-    in_dims=(None, 0),
-)
+    first = valid & (rho[group] == 0) & (positions == best_pos[group])
+    # Keep invalid padding after all candidates within each direction.
+    priority = torch.where(valid, (~first).long(), 2)
+    order = order[torch.argsort(priority.gather(0, order), stable=True)]
+    order = order[torch.argsort(group[order], stable=True)]
+    sizes = torch.zeros(r, dtype=torch.long, device=device).scatter_add(0, group, torch.ones_like(group))
+    starts = sizes.cumsum(0) - sizes
+    local = torch.arange(c, device=device) - starts[group[order]]
+    # Candidate k in direction j becomes available at occupancy rho[j] + k.
+    # Random ties between equal levels implement uniform direction selection.
+    level = rho[group[order]] + local
+    level = torch.where(valid[order], level, 2 * c)
+    level = torch.where(complete[order], -1, level)
+    tie = torch.randperm(c, device=device) if tie_order is None else tie_order
+    events = tie[torch.argsort(level.gather(0, tie), stable=True)][:count]
+    return order[events]
 
 
 class NSGA3(Algorithm):
     """
     An implementation of the tensorized NSGA-III for many-objective optimization problems.
+
+    Uses rank-based tournament mating and fixed-shape reference-direction selection.
+    Initialize the workflow before compiling its step with ``fullgraph=True``.
 
     :references:
         [1] K. Deb and H. Jain, "An Evolutionary Many-Objective Optimization Algorithm Using Reference-Point-Based
@@ -136,110 +181,31 @@ class NSGA3(Algorithm):
         self.fit = self.evaluate(self.pop)
         self.rank = non_dominate_rank(self.fit)
 
-    @torch._dynamo.disable
     def step(self):
-        """Perform the optimization step of the workflow."""
-        mating_pool = self.selection(self.pop_size, [self.rank])
-        crossovered = self.crossover(self.pop[mating_pool])
-        offspring = self.mutation(crossovered, self.lb, self.ub)
-        offspring = clamp(offspring, self.lb, self.ub)
-        off_fit = self.evaluate(offspring)
-        merge_pop = torch.cat([self.pop, offspring], dim=0)
-        merge_fit = torch.cat([self.fit, off_fit], dim=0)
-        shuffled_idx = torch.randperm(merge_pop.shape[0])
-        merge_pop = merge_pop[shuffled_idx]
-        merge_fit = merge_fit[shuffled_idx]
-        rank = non_dominate_rank(merge_fit)
-        worst_rank = torch.topk(rank, self.pop_size + 1, largest=False)[0][-1]
-        candi_idx = torch.where(rank <= worst_rank)[0]
-        merge_pop = merge_pop[candi_idx]
-        merge_fit = merge_fit[candi_idx]
-        rank = rank[candi_idx]
-        device = self.pop.device
-        # Normalize
-        ideal_point = torch.min(merge_fit, dim=0)[0]
-        norm_fit = merge_fit - ideal_point
-        weight = torch.eye(self.n_objs, device=device) + 1e-6
-        ex_idx = vmap_get_extreme(norm_fit, weight)
-        extreme = norm_fit[ex_idx]
-        if torch.linalg.matrix_rank(extreme) == self.n_objs:
-            hyperplane = torch.linalg.solve(extreme, torch.ones(self.n_objs, device=device))
-            intercepts = 1.0 / hyperplane
-        else:
-            intercepts = torch.max(norm_fit, dim=0).values
-        norm_fit = norm_fit / intercepts.unsqueeze(0)
-        shuffled_idx = torch.randperm(self.ref.shape[0])
-        ref = self.ref[shuffled_idx]
-        # Calculate distances by cosine similarity
-        distances = self._compute_distances(norm_fit, ref)
-        # Associate each solution with its nearest reference point
-        group_dist, group_id = torch.min(distances, dim=1)
-        # count the number of individuals for each group id
-        selected_group_id = group_id[rank < worst_rank]
-        rho = torch.bincount(selected_group_id, minlength=ref.shape[0]).to(torch.int32)
-        selected_num = torch.sum(rho, dtype=torch.int32)
-        candi_group_id = group_id[rank == worst_rank]
-        rho_last = torch.bincount(candi_group_id, minlength=ref.shape[0]).to(torch.int32)
-        upper_bound = torch.tensor(
-            merge_pop.shape[0] + merge_pop.shape[1] + merge_fit.shape[1] + 1, dtype=torch.int32, device=device
-        )
-        rho = torch.where(rho_last == 0, upper_bound, rho)
-        group_id = torch.where(rank == worst_rank, group_id, upper_bound).to(torch.int32)
-        row_indices = torch.arange(ref.shape[0], device=device).to(torch.int32)
+        """Generate offspring and select survivors while preserving their true ranks."""
+        mating = self.selection(self.pop_size, [self.rank])
+        offspring = self.crossover(self.pop[mating])
+        offspring = self.mutation(offspring, self.lb, self.ub)
+        offspring = offspring.clamp(self.lb, self.ub)
+        merged_pop = torch.cat((self.pop, offspring))
+        merged_fit = torch.cat((self.fit, self.evaluate(offspring)))
+        selected = self._survive(merged_fit)
+        self.pop = merged_pop[selected]
+        self.fit = merged_fit[selected]
 
-        # first selection stage
-        rho_level = 0
-        _selected_ref = rho == rho_level
-        selected_ref = torch.where(_selected_ref, row_indices, upper_bound)
-        candi_idx = vmap_select_from_index_by_min(group_id, group_dist, selected_ref)
-        rank[candi_idx[_selected_ref]] = worst_rank - 1
-        rho_last = torch.where(_selected_ref, rho_last - 1, rho_last)
-        rho = torch.where(_selected_ref, rho_level + 1, rho)
-        rho = torch.where(rho_last == 0, upper_bound, rho)
-        selected_num += torch.sum(_selected_ref)
-
-        # second selection stage
-        group_id[candi_idx[_selected_ref]] = upper_bound
-        bool_ref_candidates = row_indices[:, None] == group_id[None, :]
-        ref_candidates = vmap_get_table_row(bool_ref_candidates, upper_bound)
-        ref_cand_idx = torch.zeros_like(rho)
-        while selected_num < self.pop_size:
-            rho_level = torch.min(rho)
-            _selected_ref = rho == rho_level
-            candi_idx = ref_candidates[row_indices, ref_cand_idx]
-            rank[candi_idx[_selected_ref]] = worst_rank - 1
-            ref_cand_idx = torch.where(_selected_ref, ref_cand_idx + 1, ref_cand_idx)
-            rho_last = torch.where(_selected_ref, rho_last - 1, rho_last)
-            rho = torch.where(_selected_ref, rho_level + 1, rho)
-            rho = torch.where(rho_last == 0, upper_bound, rho)
-            selected_num += torch.sum(_selected_ref)
-
-        # truncate to pop_size
-        dif = selected_num - self.pop_size
-        candi_idx = torch.where(_selected_ref, candi_idx, upper_bound)
-        sorted_index = torch.sort(candi_idx, stable=False)[0]
-        rank[sorted_index[:dif]] = worst_rank
-
-        # get final pop and fit
-        self.pop = merge_pop[rank < worst_rank]
-        self.fit = merge_fit[rank < worst_rank]
-        self.rank = rank[rank < worst_rank]
-
-    def _get_extreme(self, norm_fit: torch.Tensor, w: torch.Tensor):
-        return torch.argmin(torch.max(norm_fit / w.unsqueeze(0), dim=1).values)
-
-    def _compute_distances(self, fit: torch.Tensor, ref: torch.Tensor):
-        # Normalize solutions and reference points to unit vectors
-        fit_magnitude = torch.norm(fit, dim=1, keepdim=True).clamp_min(1e-10)
-        fit_norm = fit / fit_magnitude
-        ref_norm = ref / torch.norm(ref, dim=1, keepdim=True).clamp_min(1e-10)
-
-        # Compute cosine similarity (dot product of normalized vectors)
-        cosine_sim = torch.matmul(fit_norm, ref_norm.T)
-
-        # Compute the angular distance component (sqrt(1 - cosine_similarity^2))
-        angular_distance = torch.sqrt((1 - cosine_sim**2).clamp_min(1e-10))
-
-        # Compute the final distance by multiplying magnitude with angular distance
-        distances = fit_magnitude * angular_distance
-        return distances
+    def _survive(self, fit):
+        """Return survivor indices and update ranks without using ranks as selection flags."""
+        rank = _environmental_selection_rank(fit, self.pop_size)
+        cutoff = rank.kthvalue(self.pop_size).values
+        complete = rank < cutoff
+        last = rank == cutoff
+        # Fixed-size masks avoid nonzero, data-dependent slices and host branches.
+        normalized = _normalize(fit, rank <= cutoff)
+        ref_order = torch.randperm(self.ref.shape[0], device=fit.device)
+        # gather avoids a randperm-index pattern-matcher bug in PyTorch 2.11.
+        ref = self.ref.gather(0, ref_order[:, None].expand_as(self.ref)).to(fit.dtype)
+        distance, group = _associate(normalized, ref)
+        rho = torch.zeros(ref.shape[0], dtype=torch.long, device=fit.device).scatter_add(0, group, complete.long())
+        selected = _niching(group, distance, rho, self.pop_size, valid=last, complete=complete)
+        self.rank = rank[selected]
+        return selected

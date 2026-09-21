@@ -88,19 +88,6 @@ cd evomo
 python -m pip install -e .
 ```
 
-### Experimental coding-agent installation
-
-Give the following instruction to a coding agent with terminal access:
-
-```text
-Install this repository in editable mode for numerical and constrained optimization experiments:
-python -m pip install -e .
-python -m pip install pytest
-python -m pytest unit_test/problems/test_dtlz.py -q
-
-Report the Python version, PyTorch version, CUDA availability, and test result.
-```
-
 ## Examples
 
 ### Numerical optimization problem
@@ -191,6 +178,13 @@ problems so that NSGA-II can apply constraint-aware selection.
 
 
 ### MoRobtrol
+
+`MoRobtrol` evaluates PyTorch policies on multiobjective control tasks using Brax
+(default) or Playground/MJX. For Playground (Python 3.11+):
+
+```sh
+pip install 'evomo[playground]'
+```
 
 Solve the MoSwimmer problem in MoRobtrol using the TensorMOEA/D algorithm:
 
