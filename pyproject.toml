@@ -37,13 +37,26 @@ vis = [
 neuroevolution = [
   "torchvision >= 0.16.0",
   "brax >= 0.12.0",
-  "jax >= 0.4.6",
-  "jaxlib >= 0.4.6",
+  # Brax pipelines still use jnp.clip(a_min=...), removed in newer JAX.
+  "jax >= 0.4.6, < 0.9",
+  "jaxlib >= 0.4.6, < 0.9",
+]
+
+playground = [
+  "brax >= 0.14.2",
+  "playground >= 0.2.0, < 0.3",
+  # Playground 0.2 compares MuJoCo version strings, misreading 3.10+ in Reacher.
+  "mujoco >= 3.6.0, < 3.10",
+  "mujoco-mjx >= 3.6.0, < 3.10",
+  "jax >= 0.8.2, < 0.9",
+  "jaxlib >= 0.8.2, < 0.9",
 ]
 
 test = [
   "torchvision >= 0.16.0",
   "brax >= 0.12.0",
+  "jax >= 0.4.6, < 0.9",
+  "jaxlib >= 0.4.6, < 0.9",
   "plotly >= 5.0.0",
 ]
 

@@ -179,6 +179,21 @@ problems so that NSGA-II can apply constraint-aware selection.
 
 ### MoRobtrol
 
+`MoRobtrol` evaluates PyTorch policies on multiobjective control tasks using Brax
+(default) or Playground/MJX. For Playground (Python 3.11+):
+
+```sh
+pip install 'evomo[playground]'
+```
+
+Set `engine="playground", backend="mjx"` to use Playground tasks.
+Use `MoRobtrol.available_playground_tasks()` to list tasks and
+`MoRobtrol.playground_task_info(name)` to inspect policy dimensions and objectives.
+Native tasks have 2-4 maximized objectives, customizable through `objectives`.
+
+Visualize one policy with `problem.visualize(weights)` for HTML, or add
+`output_type="rgb_array"` for RGB frames. Pass `{}` to use the initial policy.
+
 Solve the MoSwimmer problem in MoRobtrol using the TensorMOEA/D algorithm:
 
 ```python
