@@ -1,7 +1,7 @@
-__all__ = ["constrained", "neuroevolution", "numerical"]
+__all__ = ["bilevel", "constrained", "neuroevolution", "numerical"]
 
 
-from . import constrained, numerical
+from . import bilevel, constrained, numerical
 
 try:
     from . import neuroevolution
