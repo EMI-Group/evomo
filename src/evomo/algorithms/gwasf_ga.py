@@ -9,6 +9,35 @@ from evox.utils import clamp, lexsort
 
 class GWASFGA(Algorithm):
     def __init__(self, pop_size: int, n_objs: int, lb: torch.Tensor, ub: torch.Tensor, **kwargs):
+        """Initialize the GWASFGA population and optimization state.
+
+        :param pop_size: Required. Requested number of candidate solutions. Use a positive integer; algorithm-specific
+            minimums and reference-vector sampling are described below.
+        :type pop_size: int
+        :param n_objs: Required. Number of objectives, matching the second dimension of the problem's objective tensor.
+            Objectives are minimized; this library targets two or more objectives.
+        :type n_objs: int
+        :param lb: Required. Lower decision bounds of shape ``(D,)``, where ``D`` is the number of decision variables.
+            Use floating-point bounds with the same shape, dtype and device as ``ub``, and ``lb <= ub`` elementwise.
+        :type lb: torch.Tensor
+        :param ub: Required. Upper decision bounds of shape ``(D,)``. The decision dimension is inferred from the
+            bounds, rather than passed separately. Match ``lb`` in shape, dtype and device.
+        :type ub: torch.Tensor
+        :param kwargs: Default: ``{}``. Extra keyword arguments are accepted for constructor compatibility but are not
+            read by this implementation. In particular, passing ``device=...`` here does not move tensors; place both
+            bounds on the intended device before construction.
+        :type kwargs: dict
+
+        .. note::
+
+            Use this algorithm through a workflow that connects the problem's evaluation method. Call
+            ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
+            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
+            constraint_violation)`` tuple.
+
+            Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
+            device.
+        """
         super().__init__()
         device = lb.device
         self.pop_size = pop_size
@@ -35,6 +64,12 @@ class GWASFGA(Algorithm):
         self.crowd_dis = Mutable(torch.zeros(pop_size, device=device))
 
     def init_step(self) -> None:
+        """Evaluate the initial population and initialize algorithm state.
+
+        Invoke through ``workflow.init_step()`` before the first optimization step.
+
+        :returns: ``None``; results are stored in algorithm state.
+        """
         self.fit = self.evaluate(self.pop)
         # Initial Reference Points
         self.utop = torch.min(self.fit, dim=0)[0] - 0.01
@@ -48,6 +83,12 @@ class GWASFGA(Algorithm):
     def step(self) -> None:
         # 1. Mating (Selection Pressure Bug #27)
         # Primary key last: minimize front_no, then maximize crowd_dis.
+        """Advance optimization and update population and fitness state in place.
+
+        Invoke through ``workflow.step()`` after initialization. The caller controls termination.
+
+        :returns: ``None``; results are stored in algorithm state.
+        """
         mating_pool = tournament_selection_multifit(self.pop_size, [-self.crowd_dis, self.front_no.float()], tournament_size=2)
 
         # Variation

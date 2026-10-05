@@ -31,18 +31,49 @@ class LMOCSO(Algorithm):
         selection_op: Optional[Callable] = None,
         device: torch.device | None = None,
     ):
-        """
-        Initializes the LMOCSO algorithm.
+        """Initialize the LMOCSO population and optimization state.
 
-        :param n_objs: The number of objective functions in the optimization problem.
-        :param pop_size: The size of the population.
-        :param lb: The lower bounds for the decision variables (1D tensor).
-        :param ub: The upper bounds for the decision variables (1D tensor).
-        :param alpha: The parameter controlling the rate of change of penalty in RVEA selection. Defaults to 2.0.
-        :param max_gen: The maximum number of generations for the optimization process. Defaults to 100.
-        :param mutation_op: The mutation operation, defaults to `polynomial_mutation` if not provided (optional).
-        :param selection_op: The selection operation, defaults to `ref_vec_guided` (Reference Vector Guided Selection) if not provided (optional).
-        :param device: The device on which computations should run (optional). Defaults to PyTorch's default device.
+        :param n_objs: Required. Number of objectives, matching the second dimension of the problem's objective tensor.
+            Objectives are minimized; this library targets two or more objectives.
+        :type n_objs: int
+        :param pop_size: Required. Requested number of candidate solutions. Use a positive integer; algorithm-specific
+            minimums and reference-vector sampling are described below.
+        :type pop_size: int
+        :param lb: Required. Lower decision bounds of shape ``(D,)``, where ``D`` is the number of decision variables.
+            Use floating-point bounds with the same shape, dtype and device as ``ub``, and ``lb <= ub`` elementwise.
+        :type lb: torch.Tensor
+        :param ub: Required. Upper decision bounds of shape ``(D,)``. The decision dimension is inferred from the
+            bounds, rather than passed separately. Match ``lb`` in shape, dtype and device.
+        :type ub: torch.Tensor
+        :param alpha: Default: ``2.0``. Exponent in the angle-penalty schedule ``(gen / max_gen) ** alpha`` used by
+            reference-vector guided selection. A larger positive exponent delays the growth of angular selection
+            pressure.
+        :type alpha: float
+        :param max_gen: Default: ``100``. Positive generation horizon used to normalize the algorithm's adaptation
+            schedule. Set it consistently with your run length. It does not stop the workflow; the caller controls the
+            loop.
+        :type max_gen: int
+        :param mutation_op: Default: ``None``. Mutation callable ``mutation_op(offspring, lb, ub) ->
+            mutated_offspring``. Input and output are decision tensors of shape ``(B, D)``; preserve device and return
+            an appropriate decision dtype. ``None`` selects EvoX's ``polynomial_mutation``.
+        :type mutation_op: Callable or None
+        :param selection_op: Default: ``None``. Environmental selection callable ``selection_op(pop, fit, vectors,
+            theta) -> (pop, fit)`` for the merged population. Return matching decision and fitness tensors on the input
+            device with the reference-vector output shape. ``None`` selects EvoX's ``ref_vec_guided``.
+        :type selection_op: Callable or None
+        :param device: Default: ``None``. Execution device. ``None`` uses ``torch.get_default_device()``; it does not
+            infer the device from the bounds. Bounds are copied to this device. Pass ``torch.device('cuda')`` explicitly
+            for GPU execution.
+        :type device: torch.device or None
+
+        .. note::
+
+            Use this algorithm through a workflow that connects the problem's evaluation method. Call
+            ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
+            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
+            constraint_violation)`` tuple.
+
+            Reference-vector sampling can change the requested population size. Read ``self.pop.shape[0]`` for the actual size.
         """
         super().__init__()
 
@@ -82,15 +113,21 @@ class LMOCSO(Algorithm):
         self.gen = Mutable(torch.tensor(0, dtype=int, device=device))
 
     def init_step(self):
-        """
-        Perform the initialization step of the workflow.
+        """Evaluate the initial population and initialize algorithm state.
 
-        Calls the `init_step` of the algorithm if overwritten; otherwise, its `step` method will be invoked.
+        Invoke through ``workflow.init_step()`` before the first optimization step.
+
+        :returns: ``None``; results are stored in algorithm state.
         """
         self.fit = self.evaluate(self.pop)
 
     def step(self):
-        """Perform the optimization step of the workflow."""
+        """Advance optimization and update population and fitness state in place.
+
+        Invoke through ``workflow.step()`` after initialization. The caller controls termination.
+
+        :returns: ``None``; results are stored in algorithm state.
+        """
 
         valid_mask = ~torch.isnan(self.pop).all(axis=1)
         num_valid = torch.sum(valid_mask, dtype=torch.int32)

@@ -122,17 +122,47 @@ class NSGA3(Algorithm):
         data_type: Optional[torch.dtype] = None,
         device: torch.device | None = None,
     ):
-        """Initializes the NSGA-III algorithm.
+        """Initialize NSGA-III with reference-point environmental selection.
 
-        :param pop_size: The size of the population.
-        :param n_objs: The number of objective functions in the optimization problem.
-        :param lb: The lower bounds for the decision variables (1D tensor).
-        :param ub: The upper bounds for the decision variables (1D tensor).
-        :param selection_op: The selection operation for evolutionary strategy (optional).
-        :param mutation_op: The mutation operation, defaults to `polynomial_mutation` if not provided (optional).
-        :param crossover_op: The crossover operation, defaults to `simulated_binary` if not provided (optional).
-        :param data_type: The data type for the decision variables (optional). Defaults to torch.float32.
-        :param device: The device on which computations should run (optional). Defaults to PyTorch's default device.
+        :param pop_size: Required. Requested number of candidate solutions. Use a positive integer; algorithm-specific
+            minimums and reference-vector sampling are described below.
+        :type pop_size: int
+        :param n_objs: Required. Number of objectives, matching the second dimension of the problem's objective tensor.
+            Objectives are minimized; this library targets two or more objectives.
+        :type n_objs: int
+        :param lb: Required. Lower decision bounds of shape ``(D,)``, where ``D`` is the number of decision variables.
+            Use floating-point bounds with the same shape, dtype and device as ``ub``, and ``lb <= ub`` elementwise.
+        :type lb: torch.Tensor
+        :param ub: Required. Upper decision bounds of shape ``(D,)``. The decision dimension is inferred from the
+            bounds, rather than passed separately. Match ``lb`` in shape, dtype and device.
+        :type ub: torch.Tensor
+        :param selection_op: Default: ``None``. Mating selection callable ``selection_op(pop_size, [rank]) -> indices``.
+            Return ``pop_size`` parent indices on the population device. ``None`` selects EvoX's
+            ``tournament_selection_multifit``. Reference-point environmental selection remains internal.
+        :type selection_op: Callable or None
+        :param mutation_op: Default: ``None``. Mutation callable ``mutation_op(offspring, lb, ub) ->
+            mutated_offspring``. Input and output are decision tensors of shape ``(B, D)``; preserve device and return
+            an appropriate decision dtype. ``None`` selects EvoX's ``polynomial_mutation``.
+        :type mutation_op: Callable or None
+        :param crossover_op: Default: ``None``. Crossover callable ``crossover_op(parents) -> offspring`` receiving a
+            two-dimensional decision tensor. ``None`` selects EvoX's ``simulated_binary``. Preserve the decision
+            dimension and device, and produce the offspring count expected by this algorithm.
+        :type crossover_op: Callable or None
+        :param data_type: Default: ``None``. Initialization mode. ``torch.bool`` initializes Boolean decisions; all
+            other values use continuous random initialization. This argument does not cast the population to an
+            arbitrary requested dtype. For Boolean runs, supply compatible crossover and mutation operators.
+        :type data_type: torch.dtype or None
+        :param device: Default: ``None``. Execution device. ``None`` uses ``torch.get_default_device()``; it does not
+            infer the device from the bounds. Bounds are copied to this device. Pass ``torch.device('cuda')`` explicitly
+            for GPU execution.
+        :type device: torch.device or None
+
+        .. note::
+
+            Use this algorithm through a workflow that connects the problem's evaluation method. Call
+            ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
+            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
+            constraint_violation)`` tuple.
         """
 
         super().__init__()
@@ -173,10 +203,11 @@ class NSGA3(Algorithm):
         self.ref = uniform_sampling(self.pop_size, self.n_objs)[0].to(device=device)
 
     def init_step(self):
-        """
-        Perform the initialization step of the workflow.
+        """Evaluate the initial population and initialize algorithm state.
 
-        Calls the `init_step` of the algorithm if overwritten; otherwise, its `step` method will be invoked.
+        Invoke through ``workflow.init_step()`` before the first optimization step.
+
+        :returns: ``None``; results are stored in algorithm state.
         """
         self.fit = self.evaluate(self.pop)
         self.rank = non_dominate_rank(self.fit)

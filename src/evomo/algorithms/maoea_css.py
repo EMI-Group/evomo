@@ -9,6 +9,39 @@ from evomo.utils import unique_rows_sorted
 
 class MaOEACSS(Algorithm):
     def __init__(self, pop_size: int, n_objs: int, lb: torch.Tensor, ub: torch.Tensor, t: float = 0.0, **kwargs):
+        """Initialize the MaOEACSS population and optimization state.
+
+        :param pop_size: Required. Requested number of candidate solutions. Use a positive integer; algorithm-specific
+            minimums and reference-vector sampling are described below.
+        :type pop_size: int
+        :param n_objs: Required. Number of objectives, matching the second dimension of the problem's objective tensor.
+            Objectives are minimized; this library targets two or more objectives.
+        :type n_objs: int
+        :param lb: Required. Lower decision bounds of shape ``(D,)``, where ``D`` is the number of decision variables.
+            Use floating-point bounds with the same shape, dtype and device as ``ub``, and ``lb <= ub`` elementwise.
+        :type lb: torch.Tensor
+        :param ub: Required. Upper decision bounds of shape ``(D,)``. The decision dimension is inferred from the
+            bounds, rather than passed separately. Match ``lb`` in shape, dtype and device.
+        :type ub: torch.Tensor
+        :param t: Default: ``0.0``. Convergence-difference threshold when eliminating one member of a close angular
+            pair. Differences above this threshold determine which member is removed; the fallback tie rule applies
+            otherwise. The threshold is measured on normalized convergence scores.
+        :type t: float
+        :param kwargs: Default: ``{}``. Extra keyword arguments are accepted for constructor compatibility but are not
+            read by this implementation. In particular, passing ``device=...`` here does not move tensors; place both
+            bounds on the intended device before construction.
+        :type kwargs: dict
+
+        .. note::
+
+            Use this algorithm through a workflow that connects the problem's evaluation method. Call
+            ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
+            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
+            constraint_violation)`` tuple.
+
+            Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
+            device.
+        """
         super().__init__()
         device = lb.device
         self.pop_size = pop_size
@@ -24,6 +57,12 @@ class MaOEACSS(Algorithm):
         self.zmin = Mutable(torch.full((n_objs,), torch.inf, device=device))
 
     def init_step(self) -> None:
+        """Evaluate the initial population and initialize algorithm state.
+
+        Invoke through ``workflow.init_step()`` before the first optimization step.
+
+        :returns: ``None``; results are stored in algorithm state.
+        """
         self.fit = self.evaluate(self.pop)
         self.zmin = torch.min(self.fit, dim=0).values
 
@@ -84,6 +123,12 @@ class MaOEACSS(Algorithm):
     def step(self) -> None:
         # 1. Mating Selection
         # ASF Calculation (Bug #12: Safe Division)
+        """Advance optimization and update population and fitness state in place.
+
+        Invoke through ``workflow.step()`` after initialization. The caller controls termination.
+
+        :returns: ``None``; results are stored in algorithm state.
+        """
         w = torch.clamp(self.fit / (self.fit.sum(dim=1, keepdim=True) + 1e-6), min=1e-6)
         asf = torch.max((self.fit - self.zmin) / w, dim=1).values
         asf_rank = torch.argsort(torch.argsort(asf)).float()

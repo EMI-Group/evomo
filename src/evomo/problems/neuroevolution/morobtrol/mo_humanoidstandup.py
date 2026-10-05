@@ -13,6 +13,7 @@ class MoHumanoidStandup(HumanoidStandup):
         “Brax - a differentiable physics engine for large scale rigid body simulation,” 2021.
         [Online]. Available: http://github.com/google/brax
     """
+
     def __init__(self, **kwargs):
         """Initialize the multi-objective humanoidstandup env.
 
@@ -30,7 +31,8 @@ class MoHumanoidStandup(HumanoidStandup):
         """Run one timestep of the environment's dynamics.
 
         :param quad_energy_cost: The energy consumed by the control force of the humanoidstandup robot.
-        For more information, please refer to `humanoidstandup <https://github.com/google/brax/tree/main/brax/envs/humanoidstandup.py>` env in brax.
+
+        For more information, please refer to `humanoidstandup <https://github.com/google/brax/tree/main/brax/envs/humanoidstandup.py>`_ env in brax.
         """
         state = super().step(state, action)
 

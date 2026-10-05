@@ -19,6 +19,55 @@ class MOEADFRRMAB(Algorithm):
         window_size: int = None,
         **kwargs,
     ):
+        """Initialize MOEA/D with fitness-rate-rank bandit selection among four DE operators.
+
+        :param pop_size: Required. Requested number of candidate solutions. Use a positive integer; algorithm-specific
+            minimums and reference-vector sampling are described below.
+        :type pop_size: int
+        :param n_objs: Required. Number of objectives, matching the second dimension of the problem's objective tensor.
+            Objectives are minimized; this library targets two or more objectives.
+        :type n_objs: int
+        :param lb: Required. Lower decision bounds of shape ``(D,)``, where ``D`` is the number of decision variables.
+            Use floating-point bounds with the same shape, dtype and device as ``ub``, and ``lb <= ub`` elementwise.
+        :type lb: torch.Tensor
+        :param ub: Required. Upper decision bounds of shape ``(D,)``. The decision dimension is inferred from the
+            bounds, rather than passed separately. Match ``lb`` in shape, dtype and device.
+        :type ub: torch.Tensor
+        :param T: Default: ``20``. Number of nearest weight vectors in each mating neighborhood, including the
+            subproblem itself. Use a positive integer. Values above the sampled population size are capped to that size.
+        :type T: int
+        :param delta: Default: ``0.9``. Probability in ``[0, 1]`` of drawing mating parents from the current
+            subproblem's neighborhood. The remaining draws use the full population. This controls mating, not the
+            replacement limit.
+        :type delta: float
+        :param nr: Default: ``2``. Maximum number of incumbent solutions replaced by one offspring during
+            decomposition-based updating. Use a positive integer; the number actually replaced also depends on fitness
+            comparisons.
+        :type nr: int
+        :param window_size: Default: ``None``. Positive sliding-window capacity for operator identifiers and improvement
+            rewards used in bandit credit assignment. ``None`` uses ``ceil(N / 2)`` for sampled population size ``N``.
+            It counts recorded operator/reward entries, rather than workflow generations.
+        :type window_size: int or None
+        :param kwargs: Default: ``{}``. Extra keyword arguments are accepted for constructor compatibility but are not
+            read by this implementation. In particular, passing ``device=...`` here does not move tensors; place both
+            bounds on the intended device before construction.
+        :type kwargs: dict
+
+        .. note::
+
+            Use this algorithm through a workflow that connects the problem's evaluation method. Call
+            ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
+            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
+            constraint_violation)`` tuple.
+
+            Reference-vector sampling can change the requested population size. Read ``self.pop.shape[0]`` for the actual size.
+
+            Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
+            device.
+
+            One workflow step performs five internal subgenerations and can evaluate multiple offspring batches. Count
+            evaluations explicitly when comparing budgets.
+        """
         super().__init__()
         device = lb.device
         self.n_objs = n_objs
@@ -58,6 +107,12 @@ class MOEADFRRMAB(Algorithm):
         self.gen_counter = Mutable(torch.tensor(0, dtype=torch.int32, device=device))
 
     def init_step(self) -> None:
+        """Evaluate the initial population and initialize algorithm state.
+
+        Invoke through ``workflow.init_step()`` before the first optimization step.
+
+        :returns: ``None``; results are stored in algorithm state.
+        """
         self.fit = self.evaluate(self.pop)
         self.z = torch.min(self.fit, dim=0, keepdim=True).values
 
@@ -98,6 +153,12 @@ class MOEADFRRMAB(Algorithm):
         self.sw[:, -1] = new_entry
 
     def step(self) -> None:
+        """Advance optimization and update population and fitness state in place.
+
+        Invoke through ``workflow.step()`` after initialization. The caller controls termination.
+
+        :returns: ``None``; results are stored in algorithm state.
+        """
         self.gen_counter += 1
         device = self.pop.device
 

@@ -58,17 +58,45 @@ class HypE(Algorithm):
         crossover_op: Optional[Callable] = None,
         device: torch.device | None = None,
     ):
-        """Initializes the HypE algorithm.
+        """Initialize the HypE population and optimization state.
 
-        :param pop_size: The size of the population.
-        :param n_objs: The number of objective functions in the optimization problem.
-        :param lb: The lower bounds for the decision variables (1D tensor).
-        :param ub: The upper bounds for the decision variables (1D tensor).
-        :param n_sample: The number of samples for hypervolume calculation (optional).
-        :param selection_op: The selection operation for evolutionary strategy (optional).
-        :param mutation_op: The mutation operation, defaults to `polynomial_mutation` if not provided (optional).
-        :param crossover_op: The crossover operation, defaults to `simulated_binary` if not provided (optional).
-        :param device: The device on which computations should run (optional). Defaults to PyTorch's default device.
+        :param pop_size: Required. Requested number of candidate solutions. Use a positive integer; algorithm-specific
+            minimums and reference-vector sampling are described below.
+        :type pop_size: int
+        :param n_objs: Required. Number of objectives, matching the second dimension of the problem's objective tensor.
+            Objectives are minimized; this library targets two or more objectives.
+        :type n_objs: int
+        :param lb: Required. Lower decision bounds of shape ``(D,)``, where ``D`` is the number of decision variables.
+            Use floating-point bounds with the same shape, dtype and device as ``ub``, and ``lb <= ub`` elementwise.
+        :type lb: torch.Tensor
+        :param ub: Required. Upper decision bounds of shape ``(D,)``. The decision dimension is inferred from the
+            bounds, rather than passed separately. Match ``lb`` in shape, dtype and device.
+        :type ub: torch.Tensor
+        :param n_sample: Default: ``10000``. Positive number of Monte Carlo samples for each hypervolume contribution
+            estimate. More samples reduce sampling noise at higher computation and memory cost.
+        :type n_sample: int
+        :param selection_op: Default: ``None``. Accepted in the signature, but the current constructor overwrites it
+            with EvoX's ``tournament_selection``. A custom value has no effect.
+        :type selection_op: Callable or None
+        :param mutation_op: Default: ``None``. Mutation callable ``mutation_op(offspring, lb, ub) ->
+            mutated_offspring``. Input and output are decision tensors of shape ``(B, D)``; preserve device and return
+            an appropriate decision dtype. ``None`` selects EvoX's ``polynomial_mutation``.
+        :type mutation_op: Callable or None
+        :param crossover_op: Default: ``None``. Crossover callable ``crossover_op(parents) -> offspring`` receiving a
+            two-dimensional decision tensor. ``None`` selects EvoX's ``simulated_binary``. Preserve the decision
+            dimension and device, and produce the offspring count expected by this algorithm.
+        :type crossover_op: Callable or None
+        :param device: Default: ``None``. Execution device. ``None`` uses ``torch.get_default_device()``; it does not
+            infer the device from the bounds. Bounds are copied to this device. Pass ``torch.device('cuda')`` explicitly
+            for GPU execution.
+        :type device: torch.device or None
+
+        .. note::
+
+            Use this algorithm through a workflow that connects the problem's evaluation method. Call
+            ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
+            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
+            constraint_violation)`` tuple.
         """
 
         super().__init__()
@@ -106,16 +134,22 @@ class HypE(Algorithm):
 
 
     def init_step(self):
-        """
-        Perform the initialization step of the workflow.
+        """Evaluate the initial population and initialize algorithm state.
 
-        Calls the `init_step` of the algorithm if overwritten; otherwise, its `step` method will be invoked.
+        Invoke through ``workflow.init_step()`` before the first optimization step.
+
+        :returns: ``None``; results are stored in algorithm state.
         """
         self.fit = self.evaluate(self.pop)
         self.ref = torch.full((self.n_objs,), torch.max(self.fit).item() * 1.2, device=self.fit.device)
 
     def step(self):
-        """Perform the optimization step of the workflow."""
+        """Advance optimization and update population and fitness state in place.
+
+        Invoke through ``workflow.step()`` after initialization. The caller controls termination.
+
+        :returns: ``None``; results are stored in algorithm state.
+        """
         hv = cal_hv(self.fit, self.ref, self.pop_size, self.n_sample)
         mating_pool = self.selection(self.pop_size, -hv)
         crossovered = self.crossover(self.pop[mating_pool])
