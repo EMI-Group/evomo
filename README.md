@@ -41,6 +41,9 @@
 
 EvoMO is a GPU-accelerated library for evolutionary multiobjective optimization (EMO) that leverages advanced tensorization techniques. By transforming key data structures and operations into tensor representations, EvoMO enables more efficient mathematical modeling and delivers significant performance improvements. Designed with scalability in mind, EvoMO can efficiently handle large populations and complex optimization tasks. Additionally, EvoMO includes MoRobtrol, a multiobjective robot control benchmark suite, providing a platform for testing tensorized EMO algorithms in real-world, black-box environments. EvoMO is a sister project of [EvoX](https://github.com/EMI-Group/evox).  
 
+For more details, please refer to our [Documentation](https://evomo.readthedocs.io/en/latest/)
+/ [文档](https://evomo.readthedocs.io/en/latest/zh_CN/index.html).
+
 > [!NOTE]
 > To use the JAX version of EvoMO, you can switch to the `v0.0.1-dev` branch. This branch is fully compatible with EvoX version 0.9.0.
 > 
@@ -70,12 +73,6 @@ EvoMO is a GPU-accelerated library for evolutionary multiobjective optimization 
 
 
 ## Installation Guide
-
-For the current PyTorch version, see the [English documentation](docs/index.md)
-or [简体中文文档](docs/zh_CN/index.md)
-for installation, quickstart examples, constrained optimization, workflows,
-metrics, compilation, and API reference. English is the primary documentation language.
-See [documentation build instructions](docs/README.md) to browse the Sphinx site locally.
 
 To install EvoMO, you need to install EvoX first. 
 
