@@ -13,6 +13,7 @@ Pareto front; reference fronts, metrics, and repeated runs help assess solution 
 
 EvoMO uses the following batched tensor conventions:
 
+```{container} evomo-tensor-conventions
 | Data | Shape | Meaning |
 | --- | --- | --- |
 | `population` / `pop` | `(N, D)` | N candidate solutions with D decision variables each |
@@ -20,6 +21,7 @@ EvoMO uses the following batched tensor conventions:
 | `lb`, `ub` | `(D,)` | Lower and upper bounds for each decision variable |
 | `cv` | `(N, C)` | Nonnegative violations for C constraints; some operators also accept total violations of shape `(N,)` |
 | `rank` | `(N,)` | Non-domination ranks starting at 0 |
+```
 
 Keep input tensors, algorithm state, problems, and reference fronts on consistent devices
 with compatible dtypes.

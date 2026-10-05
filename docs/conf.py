@@ -38,7 +38,7 @@ autoapi_keep_files = False
 html_theme = "shibuya"
 html_title = f"EvoMO {release} documentation"
 html_static_path = ["_static", "images"]
-html_css_files = ["languages.css", "branding.css"]
+html_css_files = ["languages.css", "branding.css", "tables.css"]
 html_theme_options = {
     "github_url": "https://github.com/EMI-Group/evomo",
     "light_logo": "_static/evox_brand_dark.svg",
