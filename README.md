@@ -20,6 +20,10 @@
     <img src="https://img.shields.io/badge/readthedocs-docs-green?style=for-the-badge&amp;logo=readthedocs"
          alt="Documentation">
   </a>
+  <a href="https://qm.qq.com/q/vTPvoMUGAw">
+    <img src="https://img.shields.io/badge/QQ-297969717-%231db4f4?style=for-the-badge&amp;logo=tencentqq"
+         alt="QQ Group: 297969717">
+  </a>
 </div>
 
 ## Table of Contents
