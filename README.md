@@ -16,6 +16,10 @@
   <a href="http://arxiv.org/abs/2503.20286">
     <img src="https://img.shields.io/badge/paper-arxiv-red?style=for-the-badge" alt="EvoMO Paper on arXiv">
   </a>
+  <a href="https://evomo.readthedocs.io/en/latest/">
+    <img src="https://img.shields.io/badge/readthedocs-docs-green?style=for-the-badge&amp;logo=readthedocs"
+         alt="Documentation">
+  </a>
 </div>
 
 ## Table of Contents
