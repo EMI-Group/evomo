@@ -10,6 +10,34 @@ from evomo.utils import unique_rows_sorted
 
 class SSCEA(Algorithm):
     def __init__(self, pop_size: int, n_objs: int, lb: torch.Tensor, ub: torch.Tensor, max_gen: int = 100):
+        """Initialize the SSCEA population and optimization state.
+
+        :param pop_size: Required. Requested number of candidate solutions. Use a positive integer; algorithm-specific
+            minimums and reference-vector sampling are described below.
+        :type pop_size: int
+        :param n_objs: Required. Number of objectives, matching the second dimension of the problem's objective tensor.
+            Objectives are minimized; this library targets two or more objectives.
+        :type n_objs: int
+        :param lb: Required. Lower decision bounds of shape ``(D,)``, where ``D`` is the number of decision variables.
+            Use floating-point bounds with the same shape, dtype and device as ``ub``, and ``lb <= ub`` elementwise.
+        :type lb: torch.Tensor
+        :param ub: Required. Upper decision bounds of shape ``(D,)``. The decision dimension is inferred from the
+            bounds, rather than passed separately. Match ``lb`` in shape, dtype and device.
+        :type ub: torch.Tensor
+        :param max_gen: Default: ``100``. Positive generation horizon used to adapt convergence-archive size and
+            variable perturbation parameters through ``gen_counter / max_gen``. The caller still controls termination.
+        :type max_gen: int
+
+        .. note::
+
+            Use this algorithm through a workflow that connects the problem's evaluation method. Call
+            ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
+            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
+            constraint_violation)`` tuple.
+
+            Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
+            device.
+        """
         super().__init__()
         device = lb.device
         self.pop_size = pop_size
@@ -74,6 +102,12 @@ class SSCEA(Algorithm):
         return torch.clamp(ca_size, min=5)
 
     def init_step(self) -> None:
+        """Evaluate the initial population and initialize algorithm state.
+
+        Invoke through ``workflow.init_step()`` before the first optimization step.
+
+        :returns: ``None``; results are stored in algorithm state.
+        """
         self.fit = self.evaluate(self.pop)
         self.archive_fit = self.evaluate(self.archive_pop)
         cv, dv = self._variable_clustering()
@@ -81,6 +115,12 @@ class SSCEA(Algorithm):
         self.dv_mask = dv
 
     def step(self) -> None:
+        """Advance optimization and update population and fitness state in place.
+
+        Invoke through ``workflow.step()`` after initialization. The caller controls termination.
+
+        :returns: ``None``; results are stored in algorithm state.
+        """
         self.gen_counter = self.gen_counter + 1
         device = self.lb.device
 

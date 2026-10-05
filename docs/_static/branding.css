@@ -1,0 +1,5 @@
+/* Keep the library name alongside the shared EvoX family logo. */
+.sy-head-brand img + strong {
+  display: inline;
+  margin-inline-start: 0.65rem;
+}

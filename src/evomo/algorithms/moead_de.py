@@ -18,6 +18,52 @@ class MOEADDE(Algorithm):
         CR: float = 1.0,
         **kwargs,
     ):
+        """Initialize the MOEADDE population and optimization state.
+
+        :param pop_size: Required. Requested number of candidate solutions. Use a positive integer; algorithm-specific
+            minimums and reference-vector sampling are described below.
+        :type pop_size: int
+        :param n_objs: Required. Number of objectives, matching the second dimension of the problem's objective tensor.
+            Objectives are minimized; this library targets two or more objectives.
+        :type n_objs: int
+        :param lb: Required. Lower decision bounds of shape ``(D,)``, where ``D`` is the number of decision variables.
+            Use floating-point bounds with the same shape, dtype and device as ``ub``, and ``lb <= ub`` elementwise.
+        :type lb: torch.Tensor
+        :param ub: Required. Upper decision bounds of shape ``(D,)``. The decision dimension is inferred from the
+            bounds, rather than passed separately. Match ``lb`` in shape, dtype and device.
+        :type ub: torch.Tensor
+        :param delta: Default: ``0.9``. Probability in ``[0, 1]`` of drawing mating parents from the current
+            subproblem's neighborhood. The remaining draws use the full population. This controls mating, not the
+            replacement limit.
+        :type delta: float
+        :param nr: Default: ``2``. Maximum number of incumbent solutions replaced by one offspring during
+            decomposition-based updating. Use a positive integer; the number actually replaced also depends on fitness
+            comparisons.
+        :type nr: int
+        :param F: Default: ``0.5``. Differential-evolution scale multiplying a difference between parent decision
+            vectors. Use a positive value; larger values produce larger differential steps before bound repair.
+        :type F: float
+        :param CR: Default: ``1.0``. Accepted and stored, but not used by the current variation step. The implementation
+            forms differential offspring and applies polynomial mutation without binomial crossover, so changing this
+            value has no effect.
+        :type CR: float
+        :param kwargs: Default: ``{}``. Extra keyword arguments are accepted for constructor compatibility but are not
+            read by this implementation. In particular, passing ``device=...`` here does not move tensors; place both
+            bounds on the intended device before construction.
+        :type kwargs: dict
+
+        .. note::
+
+            Use this algorithm through a workflow that connects the problem's evaluation method. Call
+            ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
+            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
+            constraint_violation)`` tuple.
+
+            Reference-vector sampling can change the requested population size. Read ``self.pop.shape[0]`` for the actual size.
+
+            Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
+            device.
+        """
         super().__init__()
         device = lb.device
         self.n_objs = n_objs
@@ -54,11 +100,23 @@ class MOEADDE(Algorithm):
         self.z = Mutable(torch.full((n_objs,), torch.inf, device=device))
 
     def init_step(self) -> None:
+        """Evaluate the initial population and initialize algorithm state.
+
+        Invoke through ``workflow.init_step()`` before the first optimization step.
+
+        :returns: ``None``; results are stored in algorithm state.
+        """
         self.fit = self.evaluate(self.pop)
         # Bug #10: dim=0 for objective-wise min
         self.z = torch.min(self.fit, dim=0).values
 
     def step(self) -> None:
+        """Advance optimization and update population and fitness state in place.
+
+        Invoke through ``workflow.step()`` after initialization. The caller controls termination.
+
+        :returns: ``None``; results are stored in algorithm state.
+        """
         device = self.pop.device
         N = self.pop_size
         T = self.T

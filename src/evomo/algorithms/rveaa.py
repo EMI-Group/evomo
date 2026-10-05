@@ -38,19 +38,57 @@ class RVEAa(Algorithm):
         crossover_op: Optional[Callable] = None,
         device: torch.device | None = None,
     ):
-        """Initialize the RVEAa algorithm with the given parameters.
+        """Initialize the RVEAa population and optimization state.
 
-        :param pop_size: The size of the population.
-        :param n_objs: The number of objective functions in the optimization problem.
-        :param lb: The lower bounds for the decision variables.
-        :param ub: The upper bounds for the decision variables.
-        :param alpha: A parameter for controlling the rate of change of penalty. Defaults to 2.
-        :param fr: The frequency of reference vector adaptation. Defaults to 0.1.
-        :param max_gen: The maximum number of generations. Defaults to 100.
-        :param selection_op: The selection operation for evolutionary strategy (optional).
-        :param mutation_op: The mutation operation (optional).
-        :param crossover_op: The crossover operation (optional).
-        :param device: The device on which computations should run (optional).
+        :param pop_size: Required. Requested number of candidate solutions. Use a positive integer; algorithm-specific
+            minimums and reference-vector sampling are described below.
+        :type pop_size: int
+        :param n_objs: Required. Number of objectives, matching the second dimension of the problem's objective tensor.
+            Objectives are minimized; this library targets two or more objectives.
+        :type n_objs: int
+        :param lb: Required. Lower decision bounds of shape ``(D,)``, where ``D`` is the number of decision variables.
+            Use floating-point bounds with the same shape, dtype and device as ``ub``, and ``lb <= ub`` elementwise.
+        :type lb: torch.Tensor
+        :param ub: Required. Upper decision bounds of shape ``(D,)``. The decision dimension is inferred from the
+            bounds, rather than passed separately. Match ``lb`` in shape, dtype and device.
+        :type ub: torch.Tensor
+        :param alpha: Default: ``2.0``. Exponent in the angle-penalty schedule ``(gen / max_gen) ** alpha`` used by
+            reference-vector guided selection. A larger positive exponent delays the growth of angular selection
+            pressure.
+        :type alpha: float
+        :param fr: Default: ``0.1``. Positive reference-vector adaptation rate. The current implementation adapts every
+            ``max(round(1 / fr), 1)`` steps: ``0.1`` means every 10 steps. The interval is independent of ``max_gen``.
+        :type fr: float
+        :param max_gen: Default: ``100``. Positive generation horizon used to normalize the algorithm's adaptation
+            schedule. Set it consistently with your run length. It does not stop the workflow; the caller controls the
+            loop.
+        :type max_gen: int
+        :param selection_op: Default: ``None``. Environmental selection callable ``selection_op(pop, fit, vectors,
+            theta) -> (pop, fit)``. The input includes parents and offspring. Return matching decision and fitness
+            tensors on the input device, preserving reference-vector slots and NaN padding where required. ``None``
+            selects EvoMO's ``ref_vec_guided``.
+        :type selection_op: Callable or None
+        :param mutation_op: Default: ``None``. Mutation callable ``mutation_op(offspring, lb, ub) ->
+            mutated_offspring``. Input and output are decision tensors of shape ``(B, D)``; preserve device and return
+            an appropriate decision dtype. ``None`` selects EvoX's ``polynomial_mutation``.
+        :type mutation_op: Callable or None
+        :param crossover_op: Default: ``None``. Crossover callable ``crossover_op(parents) -> offspring`` receiving a
+            two-dimensional decision tensor. ``None`` selects EvoX's ``simulated_binary``. Preserve the decision
+            dimension and device, and produce the offspring count expected by this algorithm.
+        :type crossover_op: Callable or None
+        :param device: Default: ``None``. Execution device. ``None`` uses ``torch.get_default_device()``; it does not
+            infer the device from the bounds. Bounds are copied to this device. Pass ``torch.device('cuda')`` explicitly
+            for GPU execution.
+        :type device: torch.device or None
+
+        .. note::
+
+            Use this algorithm through a workflow that connects the problem's evaluation method. Call
+            ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
+            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
+            constraint_violation)`` tuple.
+
+            Reference-vector sampling can change the requested population size. Read ``self.pop.shape[0]`` for the actual size.
         """
         super().__init__()
         self.pop_size = pop_size
@@ -99,10 +137,11 @@ class RVEAa(Algorithm):
         self.gen = Mutable(torch.tensor(0, dtype=int, device=device))
 
     def init_step(self):
-        """
-        Perform the initialization step of the workflow.
+        """Evaluate the initial population and initialize algorithm state.
 
-        Calls the `init_step` of the algorithm if overwritten; otherwise, its `step` method will be invoked.
+        Invoke through ``workflow.init_step()`` before the first optimization step.
+
+        :returns: ``None``; results are stored in algorithm state.
         """
         self.rv_adapt_every = torch.max(torch.round(1 / self.fr), torch.tensor(1.0))
         self.fit = self.evaluate(self.pop)

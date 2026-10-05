@@ -63,6 +63,12 @@ EvoMO is a GPU-accelerated library for evolutionary multiobjective optimization 
 
 ## Installation Guide
 
+For the current PyTorch version, see the [English documentation](docs/index.md)
+or [简体中文文档](docs/zh_CN/index.md)
+for installation, quickstart examples, constrained optimization, workflows,
+metrics, compilation, and API reference. English is the primary documentation language.
+See [documentation build instructions](docs/README.md) to browse the Sphinx site locally.
+
 To install EvoMO, you need to install EvoX first. 
 
 

@@ -10,6 +10,39 @@ from evomo.operators.selection import nd_environmental_selection, non_dominate_r
 
 class CoMMEA(Algorithm):
     def __init__(self, pop_size: int, n_objs: int, lb: torch.Tensor, ub: torch.Tensor, eps: float = 0.2, **kwargs):
+        """Initialize the CoMMEA population and optimization state.
+
+        :param pop_size: Required. Requested number of candidate solutions. Use a positive integer; algorithm-specific
+            minimums and reference-vector sampling are described below.
+        :type pop_size: int
+        :param n_objs: Required. Number of objectives, matching the second dimension of the problem's objective tensor.
+            Objectives are minimized; this library targets two or more objectives.
+        :type n_objs: int
+        :param lb: Required. Lower decision bounds of shape ``(D,)``, where ``D`` is the number of decision variables.
+            Use floating-point bounds with the same shape, dtype and device as ``ub``, and ``lb <= ub`` elementwise.
+        :type lb: torch.Tensor
+        :param ub: Required. Upper decision bounds of shape ``(D,)``. The decision dimension is inferred from the
+            bounds, rather than passed separately. Match ``lb`` in shape, dtype and device.
+        :type ub: torch.Tensor
+        :param eps: Default: ``0.2``. Multiplicative epsilon tolerance for comparing the second population with the
+            first population's front. Comparisons use ``(1 + eps) * front1_fit``. This is distinct from the additive
+            grid width used by ``eMOEA``; choose it with the objective scale and sign in mind.
+        :type eps: float
+        :param kwargs: Default: ``{}``. Extra keyword arguments are accepted for constructor compatibility but are not
+            read by this implementation. In particular, passing ``device=...`` here does not move tensors; place both
+            bounds on the intended device before construction.
+        :type kwargs: dict
+
+        .. note::
+
+            Use this algorithm through a workflow that connects the problem's evaluation method. Call
+            ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
+            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
+            constraint_violation)`` tuple.
+
+            Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
+            device.
+        """
         super().__init__()
         device = lb.device
         self.pop_size = pop_size
@@ -69,6 +102,12 @@ class CoMMEA(Algorithm):
         return Raw + Density
 
     def init_step(self) -> None:
+        """Evaluate the initial population and initialize algorithm state.
+
+        Invoke through ``workflow.init_step()`` before the first optimization step.
+
+        :returns: ``None``; results are stored in algorithm state.
+        """
         self.fit = self.evaluate(self.pop)
         self.fit2 = self.evaluate(self.pop2)
         self.spea2_fit1 = self._cal_spea2_fitness(self.pop, self.fit, local_niche=False)
@@ -76,6 +115,12 @@ class CoMMEA(Algorithm):
 
     def step(self) -> None:
         # 1. Mating Selection (Pop 1 & Pop 2)
+        """Advance optimization and update population and fitness state in place.
+
+        Invoke through ``workflow.step()`` after initialization. The caller controls termination.
+
+        :returns: ``None``; results are stored in algorithm state.
+        """
         idx1 = tournament_selection_multifit(self.pop_size, [self.spea2_fit1], tournament_size=2)
         idx2 = tournament_selection_multifit(self.pop_size, [self.spea2_fit2], tournament_size=2)
 

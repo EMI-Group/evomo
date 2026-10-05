@@ -1,0 +1,4 @@
+sphinx>=8.0,<9
+myst-parser>=4.0,<5
+shibuya>=2025.3,<2027
+sphinx-autoapi>=3.6,<4

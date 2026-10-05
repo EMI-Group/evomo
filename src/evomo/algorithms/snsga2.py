@@ -13,6 +13,43 @@ class SNSGA2(Algorithm):
     def __init__(
         self, pop_size: int, n_objs: int, lb: torch.Tensor, ub: torch.Tensor, sLower: float = 0.1, sUpper: float = 0.9, **kwargs
     ):
+        """Initialize the SNSGA2 population and optimization state.
+
+        :param pop_size: Required. Requested number of candidate solutions. Use a positive integer; algorithm-specific
+            minimums and reference-vector sampling are described below.
+        :type pop_size: int
+        :param n_objs: Required. Number of objectives, matching the second dimension of the problem's objective tensor.
+            Objectives are minimized; this library targets two or more objectives.
+        :type n_objs: int
+        :param lb: Required. Lower decision bounds of shape ``(D,)``, where ``D`` is the number of decision variables.
+            Use floating-point bounds with the same shape, dtype and device as ``ub``, and ``lb <= ub`` elementwise.
+        :type lb: torch.Tensor
+        :param ub: Required. Upper decision bounds of shape ``(D,)``. The decision dimension is inferred from the
+            bounds, rather than passed separately. Match ``lb`` in shape, dtype and device.
+        :type ub: torch.Tensor
+        :param sLower: Default: ``0.1``. Lower endpoint of the initial fraction of zero-valued decision components. Use
+            ``0 <= sLower <= sUpper <= 1``. The active count is ``ceil((1 - s) * D)`` as ``s`` varies across the initial
+            population.
+        :type sLower: float
+        :param sUpper: Default: ``0.9``. Upper endpoint of the initial fraction of zero-valued decision components.
+            Larger values initialize sparser solutions; this is an initialization setting, not a guaranteed sparsity
+            level for subsequent generations.
+        :type sUpper: float
+        :param kwargs: Default: ``{}``. Extra keyword arguments are accepted for constructor compatibility but are not
+            read by this implementation. In particular, passing ``device=...`` here does not move tensors; place both
+            bounds on the intended device before construction.
+        :type kwargs: dict
+
+        .. note::
+
+            Use this algorithm through a workflow that connects the problem's evaluation method. Call
+            ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
+            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
+            constraint_violation)`` tuple.
+
+            Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
+            device.
+        """
         super().__init__()
         device = lb.device
         self.pop_size = pop_size
@@ -41,6 +78,12 @@ class SNSGA2(Algorithm):
         self.crowd_dis = Mutable(torch.full((pop_size,), -1.0, dtype=torch.float32, device=device))
 
     def init_step(self) -> None:
+        """Evaluate the initial population and initialize algorithm state.
+
+        Invoke through ``workflow.init_step()`` before the first optimization step.
+
+        :returns: ``None``; results are stored in algorithm state.
+        """
         self.fit = self.evaluate(self.pop)
         # Initial Environmental Selection
         self.pop, self.fit, self.front_no, self.crowd_dis = self._environmental_selection(self.pop, self.fit)
@@ -138,6 +181,12 @@ class SNSGA2(Algorithm):
         return survivor_pop, survivor_fit, survivor_rank.to(torch.int32), survivor_dist
 
     def step(self) -> None:
+        """Advance optimization and update population and fitness state in place.
+
+        Invoke through ``workflow.step()`` after initialization. The caller controls termination.
+
+        :returns: ``None``; results are stored in algorithm state.
+        """
         mating_pool_idx = tournament_selection_multifit(
             self.pop_size, [-self.crowd_dis, self.front_no.float()], tournament_size=2
         )
