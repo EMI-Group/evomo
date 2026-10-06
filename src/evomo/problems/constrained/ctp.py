@@ -137,7 +137,6 @@ class CTP(CMOP):
     _prob = {1: ctp1, 2: ctp2, 3: ctp3, 4: ctp4, 5: ctp5, 6: ctp6, 7: ctp7, 8: ctp8}
 
     def __init__(self, prob_id, m=2, d=2, **kwargs):
-
         if prob_id not in set(range(1, 9)):
             raise ValueError("Please select a valid prob id.")
 

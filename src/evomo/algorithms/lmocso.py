@@ -174,8 +174,9 @@ class LMOCSO(Algorithm):
         merged_pop = torch.cat([self.pop, next_generation], dim=0)
         merged_fitness = torch.cat([self.fit, next_generation_fitness], dim=0)
         # RVEA Selection
-        survivor, survivor_fitness = self.selection(merged_pop, merged_fitness, self.reference_vector,
-                                                    (self.gen / self.max_gen) ** self.alpha)
+        survivor, survivor_fitness = self.selection(
+            merged_pop, merged_fitness, self.reference_vector, (self.gen / self.max_gen) ** self.alpha
+        )
 
         self.pop = survivor
         self.fit = survivor_fitness
@@ -188,16 +189,9 @@ class LMOCSO(Algorithm):
         f_max, _ = torch.max(obj, dim=0, keepdim=True)
         f_min, _ = torch.min(obj, dim=0, keepdim=True)
         f = (obj - f_min) / (f_max - f_min + 1e-10)
-        s_obj = torch.maximum(
-            f.unsqueeze(1),
-            f.unsqueeze(0)
-        )
-        dis = torch.norm(
-            f.unsqueeze(1) - s_obj,
-            p=2, dim=2
-        )
-        dis = dis + torch.diag(torch.full((n,), float('inf'), device=obj.device))
+        s_obj = torch.maximum(f.unsqueeze(1), f.unsqueeze(0))
+        dis = torch.norm(f.unsqueeze(1) - s_obj, p=2, dim=2)
+        dis = dis + torch.diag(torch.full((n,), float("inf"), device=obj.device))
         fitness, _ = torch.min(dis, dim=1)
 
         return fitness
-

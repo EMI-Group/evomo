@@ -30,8 +30,8 @@ def dominate_relation(x: torch.Tensor, y: torch.Tensor, cv_x: torch.Tensor = Non
         cv_x_sum = cv_x_expanded.sum(dim=-1) if cv_x_expanded.ndim > 2 else cv_x_expanded
         cv_y_sum = cv_y_expanded.sum(dim=-1) if cv_y_expanded.ndim > 2 else cv_y_expanded
 
-        cv_x_feasible = (cv_x_sum <= 0)
-        cv_y_feasible = (cv_y_sum <= 0)
+        cv_x_feasible = cv_x_sum <= 0
+        cv_y_feasible = cv_y_sum <= 0
 
         case1 = cv_x_feasible & ~cv_y_feasible
         case2 = (~cv_x_feasible) & (~cv_y_feasible) & (cv_x_sum < cv_y_sum)
@@ -112,9 +112,7 @@ def _vmap_iterative_get_ranks_compile(
         return r, cr, dc, pf
 
     rank = rank.expand_as(dominate_count).contiguous()  # contiguous to unify carry stride
-    rank, *_ = torch.while_loop(
-        cond_fn, body_fn, (rank, torch.tensor(0, device=rank.device), dominate_count, pareto_front)
-    )
+    rank, *_ = torch.while_loop(cond_fn, body_fn, (rank, torch.tensor(0, device=rank.device), dominate_count, pareto_front))
     return rank
 
 
@@ -158,9 +156,7 @@ def _iterative_get_ranks_compile(
         pf = dc == 0
         return r, cr, dc, pf
 
-    rank, *_ = torch.while_loop(
-        cond_fn, body_fn, (rank, torch.tensor(0, device=rank.device), dominate_count, pareto_front)
-    )
+    rank, *_ = torch.while_loop(cond_fn, body_fn, (rank, torch.tensor(0, device=rank.device), dominate_count, pareto_front))
     return rank
 
 
@@ -168,9 +164,7 @@ def _iterative_get_ranks_compile(
 _iterative_get_ranks_compile = torch.compile(_iterative_get_ranks_compile, fullgraph=True)
 
 
-@register_vmap_op(
-    fake_fn=_igr_fake, vmap_fn=_vmap_iterative_get_ranks, fake_vmap_fn=_igr_fake_vmap, max_vmap_level=2
-)
+@register_vmap_op(fake_fn=_igr_fake, vmap_fn=_vmap_iterative_get_ranks, fake_vmap_fn=_igr_fake_vmap, max_vmap_level=2)
 def _iterative_get_ranks(
     dominate_relation_matrix: torch.Tensor,
     dominate_count: torch.Tensor,
@@ -218,9 +212,7 @@ def non_dominate_rank(x: torch.Tensor, cv: torch.Tensor = None) -> torch.Tensor:
     # Identify individuals in the first Pareto front (those that are not dominated)
     pareto_front = dominate_count == 0
     # Iteratively identify Pareto fronts
-    rank = _iterative_get_ranks(
-        dominate_relation_matrix, dominate_count, rank, pareto_front, torch.compiler.is_compiling()
-    )
+    rank = _iterative_get_ranks(dominate_relation_matrix, dominate_count, rank, pareto_front, torch.compiler.is_compiling())
     return rank
 
 
@@ -251,7 +243,8 @@ def _partial_rank_compile(domination, count, rank, front, target):
         return rank, current_rank + 1, count, front, selected
 
     rank, *_ = torch.while_loop(
-        cond_fn, body_fn,
+        cond_fn,
+        body_fn,
         (rank, torch.zeros((), dtype=torch.int64, device=rank.device), count, front, selected),
     )
     return rank
@@ -284,8 +277,11 @@ def _partial_rank_impl(
 
 
 _partial_rank = register_vmap_op(
-    _partial_rank_impl, fake_fn=_partial_rank_fake, vmap_fn=_partial_rank_impl,
-    fake_vmap_fn=_partial_rank_fake, max_vmap_level=2,
+    _partial_rank_impl,
+    fake_fn=_partial_rank_fake,
+    vmap_fn=_partial_rank_impl,
+    fake_vmap_fn=_partial_rank_fake,
+    max_vmap_level=2,
 )
 
 

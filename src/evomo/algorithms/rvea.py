@@ -23,7 +23,7 @@ class RVEA(Algorithm):
         [2] Z. Liang, T. Jiang, K. Sun, and R. Cheng, "GPU-accelerated Evolutionary Multiobjective Optimization
             Using Tensorized RVEA," in Proceedings of the Genetic and Evolutionary Computation Conference,
             ser. GECCO ’24, 2024, pp. 566–575. Available: https://doi.org/10.1145/3638529.3654223
-"""
+    """
 
     def __init__(
         self,
@@ -169,10 +169,7 @@ class RVEA(Algorithm):
 
         if torch.compiler.is_compiling():
             self.reference_vector = torch.cond(
-                self.gen % self.rv_adapt_every == 0,
-                self._rv_adaptation,
-                self._no_rv_adaptation,
-                (survivor_fit,)
+                self.gen % self.rv_adapt_every == 0, self._rv_adaptation, self._no_rv_adaptation, (survivor_fit,)
             )
         else:
             if (self.gen % self.rv_adapt_every) == 0:

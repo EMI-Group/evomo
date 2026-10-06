@@ -80,9 +80,7 @@ class PESA2(Algorithm):
         grid_pair = representatives[grid_pair]
         pair_density = density[grid_pair]
         random_tie = torch.rand(self.pop_size, device=fit.device) < 0.5
-        choose_first = (pair_density[:, 0] < pair_density[:, 1]) | (
-            (pair_density[:, 0] == pair_density[:, 1]) & random_tie
-        )
+        choose_first = (pair_density[:, 0] < pair_density[:, 1]) | ((pair_density[:, 0] == pair_density[:, 1]) & random_tie)
         chosen_grid = torch.where(choose_first, grid_pair[:, 0], grid_pair[:, 1])
 
         members = same_grid[chosen_grid]

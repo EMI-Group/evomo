@@ -52,6 +52,7 @@ def shuffle_rows(matrix: torch.Tensor) -> torch.Tensor:
     permutations = torch.argsort(torch.rand(rows, cols, device=matrix.device), dim=1)
     return matrix.gather(1, permutations)
 
+
 class TensorMOEAD(Algorithm):
     """
     TensorMOEA/D
