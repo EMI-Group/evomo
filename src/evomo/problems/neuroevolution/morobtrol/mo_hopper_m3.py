@@ -11,6 +11,7 @@ class MoHopper(Hopper):
         “Brax - a differentiable physics engine for large scale rigid body simulation,” 2021.
         [Online]. Available: http://github.com/google/brax
     """
+
     def __init__(self, **kwargs):
         """Initialize the multi-objective hopper env.
 
@@ -21,7 +22,7 @@ class MoHopper(Hopper):
 
     def reset(self, rng):
         state = super().reset(rng)
-        mo_reward = jnp.zeros((self.num_obj, ))
+        mo_reward = jnp.zeros((self.num_obj,))
         return state.replace(reward=mo_reward)
 
     def step(self, state, action):
@@ -29,13 +30,14 @@ class MoHopper(Hopper):
 
         :param energy_cost: The energy consumed by the hopper robot.
         :param height: The height at which the hopper robot is located.
-        For more information, please refer to `hopper <https://github.com/google/brax/tree/main/brax/envs/hopper.py>` env in brax.
+
+        For more information, please refer to `hopper <https://github.com/google/brax/tree/main/brax/envs/hopper.py>`_ env in brax.
         """
         state = super().step(state, action)
         init_z = self.sys.link.transform.pos[0, 2]
         z = state.pipeline_state.x.pos[0, 2]
         height = 10 * (z - init_z)
-        energy_cost = state.metrics['reward_ctrl'] / self._ctrl_cost_weight
-        mo_reward = jnp.array([state.metrics['reward_forward'], height, energy_cost])
-        mo_reward += state.metrics['reward_healthy']
+        energy_cost = state.metrics["reward_ctrl"] / self._ctrl_cost_weight
+        mo_reward = jnp.array([state.metrics["reward_forward"], height, energy_cost])
+        mo_reward += state.metrics["reward_healthy"]
         return state.replace(reward=mo_reward)

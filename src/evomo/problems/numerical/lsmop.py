@@ -21,7 +21,6 @@ class LSMOP(Problem):
             vol. 47, no. 12, pp. 4108-4121, 2017. Available: https://ieeexplore.ieee.org/abstract/document/7553457
     """
 
-
     def __init__(self, d=None, m=None, ref_num=1000):
         """
         :param d: number of decision variables

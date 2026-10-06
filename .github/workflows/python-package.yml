@@ -1,39 +1,98 @@
-# This workflow will install Python dependencies, run tests and lint with a variety of Python versions
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
-
 name: Python package
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main]
   pull_request:
-    branches: [ "main" ]
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      release-tag:
+        description: Release tag to compare with the built package version
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
 
 jobs:
   build:
-    if: false
+    name: Build distributions
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install build tools
+        run: python -m pip install build twine packaging
+      - name: Build and validate distributions
+        run: |
+          python -m build
+          python -m twine check --strict dist/*
+      - name: Check package and release version
+        env:
+          RELEASE_TAG: ${{ inputs.release-tag }}
+        run: |
+          python - <<'PY'
+          import os
+          from email.parser import BytesParser
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          from packaging.version import Version
+
+          wheels = list(Path("dist").glob("*.whl"))
+          if len(wheels) != 1:
+              raise SystemExit("Expected exactly one wheel")
+          with ZipFile(wheels[0]) as wheel:
+              paths = [name for name in wheel.namelist() if name.endswith(".dist-info/METADATA")]
+              if len(paths) != 1:
+                  raise SystemExit("Expected exactly one wheel metadata file")
+              metadata = BytesParser().parsebytes(wheel.read(paths[0]))
+          if metadata["Name"] != "evomo":
+              raise SystemExit("Expected an evomo distribution")
+          tag = os.environ.get("RELEASE_TAG", "")
+          version = metadata["Version"]
+          if tag and Version(tag.removeprefix("v")) != Version(version):
+              raise SystemExit(f"Release tag {tag!r} does not match package version {version!r}")
+          print(f"Validated evomo {version}")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-distributions
+          path: dist/*
+          if-no-files-found: error
+
+  test:
+    name: Core tests (Python ${{ matrix.python-version }})
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
-
     steps:
-    - uses: actions/checkout@v7
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v6
-      with:
-        python-version: ${{ matrix.python-version }}
-    - name: Install build dependencies
-      run: |
-        python -m pip install --upgrade pip
-        python -m pip install build wheel setuptools
-        # Install CPU version of torch, as the GPU is not available in the CI
-        python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-    - name: Build and install package
-      run: |
-        output=$(python -m build --wheel)
-        pip install dist/${output##* }[test]
-    - name: Test with unittest
-      run: |
-        python -m unittest
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-distributions
+          path: dist
+      - name: Install CPU PyTorch and built wheel
+        run: |
+          python -m pip install "torch>=2.6.0" --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install dist/*.whl
+          python -m pip check
+      - name: Smoke test installed package outside checkout
+        working-directory: ${{ runner.temp }}
+        run: |
+          python -c "import evomo.algorithms, evomo.metrics, evomo.operators, evomo.problems, evomo.workflows"
+      - name: Run unit tests
+        run: python -m unittest discover -s unit_test -v

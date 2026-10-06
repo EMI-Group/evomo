@@ -31,13 +31,13 @@ def _check_input(f, cv=None):
 
 @triton.jit
 def _popcount(x):
-    return tl.inline_asm_elementwise("popc.b32 $0, $1;", constraints="=r,r", args=[x],
-                                   dtype=tl.int32, is_pure=True, pack=1)
+    return tl.inline_asm_elementwise("popc.b32 $0, $1;", constraints="=r,r", args=[x], dtype=tl.int32, is_pure=True, pack=1)
 
 
 @triton.jit
-def _pack_dom(F, CV, D, N: tl.constexpr, M: tl.constexpr, W: tl.constexpr,
-              HAS_CV: tl.constexpr, BS: tl.constexpr, BT: tl.constexpr):
+def _pack_dom(
+    F, CV, D, N: tl.constexpr, M: tl.constexpr, W: tl.constexpr, HAS_CV: tl.constexpr, BS: tl.constexpr, BT: tl.constexpr
+):
     # D[target, source_word]: source bits dominating each target.
     s = tl.program_id(0) * BS + tl.arange(0, BS)
     t = tl.program_id(1) * BT + tl.arange(0, BT)
@@ -54,9 +54,11 @@ def _pack_dom(F, CV, D, N: tl.constexpr, M: tl.constexpr, W: tl.constexpr,
         a = tl.load(CV + b * N + s, s < N, other=0)
         z = tl.load(CV + b * N + t, t < N, other=0)
         af, zf = a <= 0, z <= 0
-        d = (af[None, :] & ~zf[:, None]) | (
-            ~af[None, :] & ~zf[:, None] & (a[None, :] < z[:, None])) | (
-            ((af[None, :] & zf[:, None]) | (~af[None, :] & ~zf[:, None] & (a[None, :] == z[:, None]))) & d)
+        d = (
+            (af[None, :] & ~zf[:, None])
+            | (~af[None, :] & ~zf[:, None] & (a[None, :] < z[:, None]))
+            | (((af[None, :] & zf[:, None]) | (~af[None, :] & ~zf[:, None] & (a[None, :] == z[:, None]))) & d)
+        )
     d = d & (s[None, :] < N) & (t[:, None] < N)
     bits = d.to(tl.uint32) << (s[None, :] % 32)
     words = tl.sum(tl.reshape(bits, (BT, BS // 32, 32)), 2).to(tl.uint32)
@@ -89,8 +91,23 @@ def _pack_front(Front, Seen, Packed, NextSeen, N: tl.constexpr, W: tl.constexpr,
 
 
 @triton.jit
-def _advance(D, Count, Rank, Front, Packed, Seen, Target, Level, NewCount, NewRank, NewFront,
-             N: tl.constexpr, W: tl.constexpr, BW: tl.constexpr, BT: tl.constexpr):
+def _advance(
+    D,
+    Count,
+    Rank,
+    Front,
+    Packed,
+    Seen,
+    Target,
+    Level,
+    NewCount,
+    NewRank,
+    NewFront,
+    N: tl.constexpr,
+    W: tl.constexpr,
+    BW: tl.constexpr,
+    BT: tl.constexpr,
+):
     t = tl.program_id(0) * BT + tl.arange(0, BT)
     w = tl.arange(0, BW)
     b = tl.program_id(1)
@@ -110,10 +127,12 @@ def _advance(D, Count, Rank, Front, Packed, Seen, Target, Level, NewCount, NewRa
 def _build_fake(f: torch.Tensor, cv: torch.Tensor | None) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     n = f.shape[0]
     shape = (n,)
-    return (torch.empty((*shape, triton.cdiv(n, 32)), device=f.device, dtype=torch.uint32),
-            torch.empty(shape, device=f.device, dtype=torch.int32),
-            torch.empty(shape, device=f.device, dtype=torch.int32),
-            torch.empty(shape, device=f.device, dtype=torch.bool))
+    return (
+        torch.empty((*shape, triton.cdiv(n, 32)), device=f.device, dtype=torch.uint32),
+        torch.empty(shape, device=f.device, dtype=torch.int32),
+        torch.empty(shape, device=f.device, dtype=torch.int32),
+        torch.empty(shape, device=f.device, dtype=torch.bool),
+    )
 
 
 def _build_impl(f: torch.Tensor, cv: torch.Tensor | None) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -132,22 +151,48 @@ _build = torch.library.custom_op("evomo_triton_nd::build", _build_impl, mutates_
 _build.register_fake(_build_fake)
 
 
-def _step_fake(d: torch.Tensor, count: torch.Tensor, rank: torch.Tensor, front: torch.Tensor,
-               seen: torch.Tensor, target: torch.Tensor, level: torch.Tensor
-               ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+def _step_fake(
+    d: torch.Tensor,
+    count: torch.Tensor,
+    rank: torch.Tensor,
+    front: torch.Tensor,
+    seen: torch.Tensor,
+    target: torch.Tensor,
+    level: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     return torch.empty_like(count), torch.empty_like(rank), torch.empty_like(front), torch.empty_like(seen)
 
 
-def _step_impl(d: torch.Tensor, count: torch.Tensor, rank: torch.Tensor, front: torch.Tensor,
-               seen: torch.Tensor, target: torch.Tensor, level: torch.Tensor
-               ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+def _step_impl(
+    d: torch.Tensor,
+    count: torch.Tensor,
+    rank: torch.Tensor,
+    front: torch.Tensor,
+    seen: torch.Tensor,
+    target: torch.Tensor,
+    level: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     n, w = d.shape
     new_count, new_rank, new_front, new_seen = _step_fake(d, count, rank, front, seen, target, level)
     packed = torch.empty((w,), device=d.device, dtype=torch.uint32)
     torch.library.wrap_triton(_pack_front)[(1,)](front, seen, packed, new_seen, n, w, max(32, triton.next_power_of_2(n)))
     torch.library.wrap_triton(_advance)[(triton.cdiv(n, 16), 1)](
-        d, count, rank, front, packed, new_seen, target, level,
-        new_count, new_rank, new_front, n, w, triton.next_power_of_2(w), 16)
+        d,
+        count,
+        rank,
+        front,
+        packed,
+        new_seen,
+        target,
+        level,
+        new_count,
+        new_rank,
+        new_front,
+        n,
+        w,
+        triton.next_power_of_2(w),
+        16,
+    )
     return new_count, new_rank, new_front, new_seen
 
 
@@ -173,13 +218,15 @@ def _rank_loop(d, count, rank, front, target):
 _compiled_rank_loop = torch.compile(_rank_loop, fullgraph=True)
 
 
-def _rank_fake(d: torch.Tensor, count: torch.Tensor, rank: torch.Tensor, front: torch.Tensor,
-               target: torch.Tensor, compiling: bool) -> torch.Tensor:
+def _rank_fake(
+    d: torch.Tensor, count: torch.Tensor, rank: torch.Tensor, front: torch.Tensor, target: torch.Tensor, compiling: bool
+) -> torch.Tensor:
     return torch.empty_like(count)
 
 
-def _rank_impl(d: torch.Tensor, count: torch.Tensor, rank: torch.Tensor, front: torch.Tensor,
-               target: torch.Tensor, compiling: bool) -> torch.Tensor:
+def _rank_impl(
+    d: torch.Tensor, count: torch.Tensor, rank: torch.Tensor, front: torch.Tensor, target: torch.Tensor, compiling: bool
+) -> torch.Tensor:
     if compiling:
         return _compiled_rank_loop(d, count, rank, front, target)
     seen = torch.zeros((), dtype=torch.int32, device=d.device)
@@ -215,8 +262,7 @@ def non_dominate_rank(f, cv=None):
 
 
 @triton.jit
-def _dense_relation(X, Y, CX, CY, Out, NX: tl.constexpr, NY: tl.constexpr, M: tl.constexpr,
-                    CV: tl.constexpr, B: tl.constexpr):
+def _dense_relation(X, Y, CX, CY, Out, NX: tl.constexpr, NY: tl.constexpr, M: tl.constexpr, CV: tl.constexpr, B: tl.constexpr):
     p = tl.program_id(0) * B + tl.arange(0, B)
     batch = tl.program_id(1)
     i, j = p // NY, p % NY
@@ -246,8 +292,9 @@ def _dense_impl(x: torch.Tensor, y: torch.Tensor, cx: torch.Tensor | None, cy: t
     cx = None if cx is None else cx.contiguous()
     cy = None if cy is None else cy.contiguous()
     nx, ny = result.shape
-    _dense_relation[(triton.cdiv(nx * ny, 256), 1)](x, y, cx, cy, result, nx, ny, x.shape[1],
-                                                               cx is not None and cy is not None, 256)
+    _dense_relation[(triton.cdiv(nx * ny, 256), 1)](
+        x, y, cx, cy, result, nx, ny, x.shape[1], cx is not None and cy is not None, 256
+    )
     return result
 
 

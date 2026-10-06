@@ -35,16 +35,43 @@ class IBEA(Algorithm):
         crossover_op: Optional[Callable] = None,
         device: torch.device | None = None,
     ):
-        """Initializes the IBEA algorithm.
+        """Initialize the IBEA population and optimization state.
 
-        :param n_objs: The number of objective functions in the optimization problem.
-        :param pop_size: The size of the population.
-        :param lb: The lower bounds for the decision variables (1D tensor).
-        :param ub: The upper bounds for the decision variables (1D tensor).
-        :param kappa: The scaling factor for fitness calculation in IBEA (optional, defaults to 0.05).
-        :param mutation_op: The mutation operation, defaults to `polynomial_mutation` if not provided (optional).
-        :param crossover_op: The crossover operation, defaults to `simulated_binary` if not provided (optional).
-        :param device: The device on which computations should run (optional). Defaults to PyTorch's default device.
+        :param n_objs: Required. Number of objectives, matching the second dimension of the problem's objective tensor.
+            Objectives are minimized; this library targets two or more objectives.
+        :type n_objs: int
+        :param pop_size: Required. Requested number of candidate solutions. Use a positive integer; algorithm-specific
+            minimums and reference-vector sampling are described below.
+        :type pop_size: int
+        :param lb: Required. Lower decision bounds of shape ``(D,)``, where ``D`` is the number of decision variables.
+            Use floating-point bounds with the same shape, dtype and device as ``ub``, and ``lb <= ub`` elementwise.
+        :type lb: torch.Tensor
+        :param ub: Required. Upper decision bounds of shape ``(D,)``. The decision dimension is inferred from the
+            bounds, rather than passed separately. Match ``lb`` in shape, dtype and device.
+        :type ub: torch.Tensor
+        :param kappa: Default: ``0.05``. Positive scale in the exponential indicator-fitness calculation. Smaller values
+            make indicator differences more influential. Objective scaling also affects the resulting selection
+            pressure.
+        :type kappa: float
+        :param mutation_op: Default: ``None``. Mutation callable ``mutation_op(offspring, lb, ub) ->
+            mutated_offspring``. Input and output are decision tensors of shape ``(B, D)``; preserve device and return
+            an appropriate decision dtype. ``None`` selects EvoX's ``polynomial_mutation``.
+        :type mutation_op: Callable or None
+        :param crossover_op: Default: ``None``. Crossover callable ``crossover_op(parents) -> offspring`` receiving a
+            two-dimensional decision tensor. ``None`` selects EvoX's ``simulated_binary``. Preserve the decision
+            dimension and device, and produce the offspring count expected by this algorithm.
+        :type crossover_op: Callable or None
+        :param device: Default: ``None``. Execution device. ``None`` uses ``torch.get_default_device()``; it does not
+            infer the device from the bounds. Bounds are copied to this device. Pass ``torch.device('cuda')`` explicitly
+            for GPU execution.
+        :type device: torch.device or None
+
+        .. note::
+
+            Use this algorithm through a workflow that connects the problem's evaluation method. Call
+            ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
+            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
+            constraint_violation)`` tuple.
         """
         super().__init__()
         if device is None:
@@ -77,15 +104,21 @@ class IBEA(Algorithm):
         self.next_generation = Mutable(self.pop.clone())
 
     def init_step(self):
-        """
-        Perform the initialization step of the workflow.
+        """Evaluate the initial population and initialize algorithm state.
 
-        Calls the `init_step` of the algorithm if overwritten; otherwise, its `step` method will be invoked.
+        Invoke through ``workflow.init_step()`` before the first optimization step.
+
+        :returns: ``None``; results are stored in algorithm state.
         """
         self.fit = self.evaluate(self.pop)
 
     def step(self):
-        """Perform the optimization step of the workflow."""
+        """Advance optimization and update population and fitness state in place.
+
+        Invoke through ``workflow.step()`` after initialization. The caller controls termination.
+
+        :returns: ``None``; results are stored in algorithm state.
+        """
 
         fit, _, _ = self.cal_fitness(self.fit.clone().detach(), self.kappa)
         selected = self.selection(n_round=self.pop_size, fitness=-fit)
@@ -120,9 +153,7 @@ class IBEA(Algorithm):
 
     def cal_fitness(self, pop_obj, kappa):
         """Calculate the indicator-based fitness, indicator matrix, and scaling factor."""
-        pop_obj_normalized = (pop_obj - pop_obj.min(dim=0).values) / (
-            pop_obj.max(dim=0).values - pop_obj.min(dim=0).values
-        )
+        pop_obj_normalized = (pop_obj - pop_obj.min(dim=0).values) / (pop_obj.max(dim=0).values - pop_obj.min(dim=0).values)
         indicator_matrix = cal_max(pop_obj_normalized, pop_obj_normalized)
         C = torch.max(torch.abs(indicator_matrix), dim=0)[0]
         fit = torch.sum(-torch.exp(-indicator_matrix / C.unsqueeze(0) / kappa), dim=0) + 1

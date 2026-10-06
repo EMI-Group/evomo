@@ -37,16 +37,44 @@ class NSGA2(Algorithm):
         crossover_op: Optional[Callable] = None,
         device: torch.device | None = None,
     ):
-        """Initializes the NSGA-II algorithm.
+        """Initialize NSGA-II with rank and crowding-distance selection.
 
-        :param pop_size: The size of the population.
-        :param n_objs: The number of objective functions in the optimization problem.
-        :param lb: The lower bounds for the decision variables (1D tensor).
-        :param ub: The upper bounds for the decision variables (1D tensor).
-        :param selection_op: The selection operation for evolutionary strategy (optional).
-        :param mutation_op: The mutation operation, defaults to `polynomial_mutation` if not provided (optional).
-        :param crossover_op: The crossover operation, defaults to `simulated_binary` if not provided (optional).
-        :param device: The device on which computations should run (optional). Defaults to PyTorch's default device.
+        :param pop_size: Required. Requested number of candidate solutions. Use a positive integer; algorithm-specific
+            minimums and reference-vector sampling are described below.
+        :type pop_size: int
+        :param n_objs: Required. Number of objectives, matching the second dimension of the problem's objective tensor.
+            Objectives are minimized; this library targets two or more objectives.
+        :type n_objs: int
+        :param lb: Required. Lower decision bounds of shape ``(D,)``, where ``D`` is the number of decision variables.
+            Use floating-point bounds with the same shape, dtype and device as ``ub``, and ``lb <= ub`` elementwise.
+        :type lb: torch.Tensor
+        :param ub: Required. Upper decision bounds of shape ``(D,)``. The decision dimension is inferred from the
+            bounds, rather than passed separately. Match ``lb`` in shape, dtype and device.
+        :type ub: torch.Tensor
+        :param selection_op: Default: ``None``. Mating selection callable ``selection_op(pop_size, keys) -> indices``.
+            ``keys`` is a list of one-dimensional sort-key tensors for crowding distance, rank and, when present,
+            constraints. Return ``pop_size`` parent indices on the population device. ``None`` selects EvoX's
+            ``tournament_selection_multifit``. This does not replace environmental selection.
+        :type selection_op: Callable or None
+        :param mutation_op: Default: ``None``. Mutation callable ``mutation_op(offspring, lb, ub) ->
+            mutated_offspring``. Input and output are decision tensors of shape ``(B, D)``; preserve device and return
+            an appropriate decision dtype. ``None`` selects EvoX's ``polynomial_mutation``.
+        :type mutation_op: Callable or None
+        :param crossover_op: Default: ``None``. Crossover callable ``crossover_op(parents) -> offspring`` receiving a
+            two-dimensional decision tensor. ``None`` selects EvoX's ``simulated_binary``. Preserve the decision
+            dimension and device, and produce the offspring count expected by this algorithm.
+        :type crossover_op: Callable or None
+        :param device: Default: ``None``. Execution device. ``None`` uses ``torch.get_default_device()``; it does not
+            infer the device from the bounds. Bounds are copied to this device. Pass ``torch.device('cuda')`` explicitly
+            for GPU execution.
+        :type device: torch.device or None
+
+        .. note::
+
+            Use this algorithm through a workflow that connects the problem's evaluation method. Call
+            ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. Evaluation accepts an objective
+            tensor of shape ``(B, n_objs)`` or ``(fitness, constraint_violation)``; violations are retained in
+            selection.
         """
 
         super().__init__()
@@ -92,7 +120,12 @@ class NSGA2(Algorithm):
         )
 
     def step(self):
-        """Perform the optimization step of the workflow."""
+        """Advance optimization and update population and fitness state in place.
+
+        Invoke through ``workflow.step()`` after initialization. The caller controls termination.
+
+        :returns: ``None``; results are stored in algorithm state.
+        """
         sort_keys = [-self.dis, self.rank]
         if self.cv is not None:
             sort_keys.append(self.cv.sum(dim=1) if self.cv.ndim > 1 else self.cv)

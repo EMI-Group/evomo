@@ -16,6 +16,14 @@
   <a href="http://arxiv.org/abs/2503.20286">
     <img src="https://img.shields.io/badge/paper-arxiv-red?style=for-the-badge" alt="EvoMO Paper on arXiv">
   </a>
+  <a href="https://evomo.readthedocs.io/en/latest/">
+    <img src="https://img.shields.io/badge/readthedocs-docs-green?style=for-the-badge&amp;logo=readthedocs"
+         alt="Documentation">
+  </a>
+  <a href="https://qm.qq.com/q/vTPvoMUGAw">
+    <img src="https://img.shields.io/badge/QQ-297969717-%231db4f4?style=for-the-badge&amp;logo=tencentqq"
+         alt="QQ Group: 297969717">
+  </a>
 </div>
 
 ## Table of Contents
@@ -32,6 +40,9 @@
 ## Overview  
 
 EvoMO is a GPU-accelerated library for evolutionary multiobjective optimization (EMO) that leverages advanced tensorization techniques. By transforming key data structures and operations into tensor representations, EvoMO enables more efficient mathematical modeling and delivers significant performance improvements. Designed with scalability in mind, EvoMO can efficiently handle large populations and complex optimization tasks. Additionally, EvoMO includes MoRobtrol, a multiobjective robot control benchmark suite, providing a platform for testing tensorized EMO algorithms in real-world, black-box environments. EvoMO is a sister project of [EvoX](https://github.com/EMI-Group/evox).  
+
+For more details, please refer to our [Documentation](https://evomo.readthedocs.io/en/latest/)
+/ [文档](https://evomo.readthedocs.io/en/latest/zh_CN/index.html).
 
 > [!NOTE]
 > To use the JAX version of EvoMO, you can switch to the `v0.0.1-dev` branch. This branch is fully compatible with EvoX version 0.9.0.
@@ -170,12 +181,6 @@ if __name__ == "__main__":
 
 `UnifiedWorkflow` preserves the `(fitness, constraint_violation)` output returned by constrained
 problems so that NSGA-II can apply constraint-aware selection.
-
-> [!NOTE]  
-> **For Windows users**: If you encounter `FileNotFoundError: [Error 2] No such file or directory: 'C:\\Users\\...'`, it may be caused by the system path length limitation.  
-> Please enable long path support to resolve this issue.
-
-
 
 ### MoRobtrol
 

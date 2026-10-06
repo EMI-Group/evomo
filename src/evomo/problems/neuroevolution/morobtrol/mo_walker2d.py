@@ -13,6 +13,7 @@ class MoWalker2d(Walker2d):
         “Brax - a differentiable physics engine for large scale rigid body simulation,” 2021.
         [Online]. Available: http://github.com/google/brax
     """
+
     def __init__(self, **kwargs):
         """Initialize the multi-objective walker2d env.
 
@@ -23,7 +24,7 @@ class MoWalker2d(Walker2d):
 
     def reset(self, rng):
         state = super().reset(rng)
-        mo_reward = jnp.zeros((self.num_obj, ))
+        mo_reward = jnp.zeros((self.num_obj,))
         return state.replace(reward=mo_reward)
 
     def step(self, state: State, action: jax.Array):
@@ -32,7 +33,7 @@ class MoWalker2d(Walker2d):
         For more information, please refer to `walker2d <https://github.com/google/brax/tree/main/brax/envs/walker2d.py>` env in brax.
         """
         state = super().step(state, action)
-        mo_reward = jnp.array([state.metrics['reward_forward'], state.metrics['reward_ctrl']])
-        mo_reward += state.metrics['reward_healthy']
+        mo_reward = jnp.array([state.metrics["reward_forward"], state.metrics["reward_ctrl"]])
+        mo_reward += state.metrics["reward_healthy"]
 
         return state.replace(reward=mo_reward)

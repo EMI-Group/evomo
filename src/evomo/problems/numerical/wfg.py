@@ -79,19 +79,36 @@ def _r_nonsep(y: torch.Tensor, a: int) -> torch.Tensor:
 
 def _convex(x: torch.Tensor) -> torch.Tensor:
     left = torch.flip(
-        torch.cumprod(torch.cat([torch.ones((x.size(0), 1), dtype=x.dtype, device=x.device), 1 - torch.cos(x[:, :-1] * torch.pi / 2)], dim=1), dim=1),
+        torch.cumprod(
+            torch.cat(
+                [torch.ones((x.size(0), 1), dtype=x.dtype, device=x.device), 1 - torch.cos(x[:, :-1] * torch.pi / 2)], dim=1
+            ),
+            dim=1,
+        ),
         dims=[1],
     )
-    right = torch.cat([torch.ones((x.size(0), 1), dtype=x.dtype, device=x.device), 1 - torch.sin(torch.flip(x[:, :-1], dims=[1]) * torch.pi / 2)], dim=1)
+    right = torch.cat(
+        [
+            torch.ones((x.size(0), 1), dtype=x.dtype, device=x.device),
+            1 - torch.sin(torch.flip(x[:, :-1], dims=[1]) * torch.pi / 2),
+        ],
+        dim=1,
+    )
     return left * right
 
 
 def _concave(x: torch.Tensor) -> torch.Tensor:
     left = torch.flip(
-        torch.cumprod(torch.cat([torch.ones((x.size(0), 1), dtype=x.dtype, device=x.device), torch.sin(x[:, :-1] * torch.pi / 2)], dim=1), dim=1),
+        torch.cumprod(
+            torch.cat([torch.ones((x.size(0), 1), dtype=x.dtype, device=x.device), torch.sin(x[:, :-1] * torch.pi / 2)], dim=1),
+            dim=1,
+        ),
         dims=[1],
     )
-    right = torch.cat([torch.ones((x.size(0), 1), dtype=x.dtype, device=x.device), torch.cos(torch.flip(x[:, :-1], dims=[1]) * torch.pi / 2)], dim=1)
+    right = torch.cat(
+        [torch.ones((x.size(0), 1), dtype=x.dtype, device=x.device), torch.cos(torch.flip(x[:, :-1], dims=[1]) * torch.pi / 2)],
+        dim=1,
+    )
     return left * right
 
 
@@ -248,7 +265,9 @@ class WFG2(WFG):
         t1[:, self.k :] = _s_linear(z01[:, self.k :], 0.35)
         t2 = torch.empty((X.size(0), self.k + distance // 2), dtype=X.dtype, device=X.device)
         t2[:, : self.k] = t1[:, : self.k]
-        t2[:, self.k :] = _r_nonsep(t1[:, self.k :].reshape(X.size(0), distance // 2, 2).reshape(-1, 2), 2).reshape(X.size(0), distance // 2)
+        t2[:, self.k :] = _r_nonsep(t1[:, self.k :].reshape(X.size(0), distance // 2, 2).reshape(-1, 2), 2).reshape(
+            X.size(0), distance // 2
+        )
         t3 = self._reduce_by_sum(t2)
         x = self._calculate_x(t3)
         h = _convex(x)
@@ -273,7 +292,9 @@ class WFG3(WFG2):
         t1[:, self.k :] = _s_linear(z01[:, self.k :], 0.35)
         t2 = torch.empty((X.size(0), self.k + distance // 2), dtype=X.dtype, device=X.device)
         t2[:, : self.k] = t1[:, : self.k]
-        t2[:, self.k :] = _r_nonsep(t1[:, self.k :].reshape(X.size(0), distance // 2, 2).reshape(-1, 2), 2).reshape(X.size(0), distance // 2)
+        t2[:, self.k :] = _r_nonsep(t1[:, self.k :].reshape(X.size(0), distance // 2, 2).reshape(-1, 2), 2).reshape(
+            X.size(0), distance // 2
+        )
         t3 = self._reduce_by_sum(t2)
         a = torch.cat([torch.ones(1, dtype=X.dtype, device=X.device), torch.zeros(self.m - 2, dtype=X.dtype, device=X.device)])
         x = self._calculate_x(t3, a)
@@ -324,7 +345,9 @@ class WFG7(WFG):
     def evaluate(self, X: torch.Tensor) -> torch.Tensor:
         z01 = _normalize(X)
         counts = torch.arange(self.d - 1, -1, -1, dtype=X.dtype, device=X.device)
-        Y = (torch.flip(torch.cumsum(torch.flip(z01, dims=[1]), dim=1), dims=[1]) - z01) / torch.clamp(counts, min=1).unsqueeze(0)
+        Y = (torch.flip(torch.cumsum(torch.flip(z01, dims=[1]), dim=1), dims=[1]) - z01) / torch.clamp(counts, min=1).unsqueeze(
+            0
+        )
         t1 = z01.clone()
         t1[:, : self.k] = _b_param(z01[:, : self.k], Y[:, : self.k], 0.98 / 49.98, 0.02, 50)
         t2 = t1.clone()
@@ -352,7 +375,9 @@ class WFG9(WFG):
     def evaluate(self, X: torch.Tensor) -> torch.Tensor:
         z01 = _normalize(X)
         counts = torch.arange(self.d - 1, -1, -1, dtype=X.dtype, device=X.device)
-        Y = (torch.flip(torch.cumsum(torch.flip(z01, dims=[1]), dim=1), dims=[1]) - z01) / torch.clamp(counts, min=1).unsqueeze(0)
+        Y = (torch.flip(torch.cumsum(torch.flip(z01, dims=[1]), dim=1), dims=[1]) - z01) / torch.clamp(counts, min=1).unsqueeze(
+            0
+        )
         t1 = z01.clone()
         t1[:, :-1] = _b_param(z01[:, :-1], Y[:, :-1], 0.98 / 49.98, 0.02, 50)
         t2 = torch.empty_like(t1)

@@ -75,9 +75,7 @@ class TestZDT(TestCase):
                     )
 
             zdt6 = ZDT6(n=n)
-            torch.testing.assert_close(
-                zdt6.evaluate(zeros), torch.tensor([[1.0, 0.0]], dtype=zeros.dtype), rtol=0, atol=0
-            )
+            torch.testing.assert_close(zdt6.evaluate(zeros), torch.tensor([[1.0, 0.0]], dtype=zeros.dtype), rtol=0, atol=0)
             tail_ones = torch.ones((1, n), dtype=torch.float64)
             tail_ones[:, 0] = 0
             torch.testing.assert_close(

@@ -11,6 +11,7 @@ class MoSwimmer(Swimmer):
         “Brax - a differentiable physics engine for large scale rigid body simulation,” 2021.
         [Online]. Available: http://github.com/google/brax
     """
+
     def __init__(self, **kwargs):
         """Initialize the multi-objective swimmer env.
 
@@ -21,7 +22,7 @@ class MoSwimmer(Swimmer):
 
     def reset(self, rng):
         state = super().reset(rng)
-        mo_reward = jnp.zeros((self.num_obj, ))
+        mo_reward = jnp.zeros((self.num_obj,))
         return state.replace(reward=mo_reward)
 
     def step(self, state, action):
@@ -30,5 +31,5 @@ class MoSwimmer(Swimmer):
         For more information, please refer to `swimmer <https://github.com/google/brax/tree/main/brax/envs/swimmer.py>` env in brax.
         """
         state = super().step(state, action)
-        mo_reward = jnp.array([state.metrics['reward_fwd'], state.metrics['reward_ctrl']])
+        mo_reward = jnp.array([state.metrics["reward_fwd"], state.metrics["reward_ctrl"]])
         return state.replace(reward=mo_reward)
