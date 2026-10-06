@@ -66,14 +66,14 @@ def _niching(group, distance, rho, count, *, valid=None, complete=None, random_o
     order = torch.randperm(c, device=device) if random_order is None else random_order
     # A random permutation gives uniform within-direction sampling without replacement.
     best_dist = torch.full((r,), torch.inf, device=device, dtype=distance.dtype)
-    best_dist.scatter_reduce_(0, group, torch.where(valid, distance, torch.inf), reduce="amin", include_self=True)
+    best_dist = best_dist.scatter_reduce(0, group, torch.where(valid, distance, torch.inf), reduce="amin", include_self=True)
     # Nearest-point ties must use randomness independent of the remaining queue.
     # Reusing its permutation biases the later positions of other tied minima.
     nearest = torch.randperm(c, device=device) if nearest_order is None else nearest_order
     positions = torch.empty_like(order)
     positions[nearest] = torch.arange(c, device=device)
     best_pos = torch.full((r,), c, device=device, dtype=torch.long)
-    best_pos.scatter_reduce_(
+    best_pos = best_pos.scatter_reduce(
         0, group, torch.where(valid & (distance == best_dist[group]), positions, c), reduce="amin", include_self=True
     )
     first = valid & (rho[group] == 0) & (positions == best_pos[group])

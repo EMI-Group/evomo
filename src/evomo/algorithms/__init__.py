@@ -31,6 +31,7 @@ __all__ = [
     "NSBiDiCo",
     "NSGA2",
     "NSGA3",
+    "NestedNSGA2",
     "NSGAII_SDR",
     "OSP_NSDE",
     "PESA2",
@@ -88,6 +89,7 @@ from .moead_dyts import MOEADDYTS
 from .moead_frrmab import MOEADFRRMAB
 from .moead_pas import MOEAD_PaS
 from .moead_uraw import MOEAURAW
+from .nested_nsga2 import NestedNSGA2
 from .nsbidico import NSBiDiCo
 from .nsga2 import NSGA2
 from .nsga2_sdr import NSGAII_SDR

@@ -1,9 +1,11 @@
-"""DS1--DS5, using the equations and domains in Deb and Sinha (2010).
+"""DS1--DS5 and DS1D--DS3D, using Deb and Sinha (2010).
 
 The 2008 construction paper numbers different problems; it must not be used to
 assign the later DS1--DS5 names. DS3's leader x1 has lattice spacing 0.1.
 DS4/DS5 retain the printed [-1, 1] domain for the first follower variable;
 the commonly distributed [0, 1] implementation is a different domain.
+DS1D--DS3D fix tau=-1 in the upper-level linked term, as named in
+Wang, Singh and Ray (2024), arXiv:2409.03328. Their lower problems are unchanged.
 """
 
 import math
@@ -167,17 +169,20 @@ class DS(BLMOP):
         return torch.cat((first, tail), -1)
 
     def pf(self):
+        # The linked terms vanish on the entire lower-level Pareto set in
+        # DS1--DS3. Their true bilevel fronts are independent of tau, including
+        # the deceptive tau=-1 case; off-response upper values are not feasible.
         angle = torch.linspace(0, torch.pi / 2, self.ref_num, device=self.device, dtype=self.dtype)
-        if self.prob_id == 1 and self.alpha == self.gamma == self.tau == 1:
+        if self.prob_id == 1 and self.alpha == self.gamma == 1:
             return (1 + self.r) * (1 - torch.stack((torch.cos(angle), torch.sin(angle)), -1))
-        if self.prob_id == 2 and self.gamma == 4 and self.tau == 1:
+        if self.prob_id == 2 and self.gamma == 4:
             y = torch.tensor([0.001, 0.2, 0.4, 0.6, 0.8, 1], device=self.device, dtype=self.dtype)
             c, s = math.cos(0.2 * math.pi), math.sin(0.2 * math.pi)
             bump = torch.sqrt(torch.abs(0.02 * torch.sin(5 * torch.pi * y)))
             centers = torch.stack((c * y + s * bump, -s * y + c * bump), -1)
             points = centers[:, None, :] - self.r * torch.stack((torch.cos(angle), torch.sin(angle)), -1)
             return _front_2d(points.reshape(-1, 2))
-        if self.prob_id == 3 and self.tau == 1:
+        if self.prob_id == 3:
             y1 = torch.arange(10 * self.k + 1, device=self.device, dtype=self.dtype) / 10
             y2 = (1 - y1.square()).clamp_min(0)
             centers = torch.stack((y1, y2), -1)
@@ -201,6 +206,27 @@ class DS2(DS):
 class DS3(DS):
     def __init__(self, k: int = 10, **kwargs):
         super().__init__(3, k, **kwargs)
+
+
+class DS1D(DS1):
+    """Deceptive DS1 with a fixed upper-level coupling coefficient tau=-1."""
+
+    def __init__(self, k: int = 10, **kwargs):
+        super().__init__(k, tau=-1.0, **kwargs)
+
+
+class DS2D(DS2):
+    """Deceptive DS2 with a fixed upper-level coupling coefficient tau=-1."""
+
+    def __init__(self, k: int = 10, **kwargs):
+        super().__init__(k, tau=-1.0, **kwargs)
+
+
+class DS3D(DS3):
+    """Deceptive DS3 with a fixed upper-level coupling coefficient tau=-1."""
+
+    def __init__(self, k: int = 10, **kwargs):
+        super().__init__(k, tau=-1.0, **kwargs)
 
 
 class DS4(DS):
