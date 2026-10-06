@@ -1,5 +1,21 @@
-/* Keep the library name alongside the shared EvoX family logo. */
+/* Keep the library name visible in the header on smaller screens. */
 .sy-head-brand img + strong {
   display: inline;
   margin-inline-start: 0.65rem;
+}
+
+.evomo-sidebar-brand {
+  display: block;
+  margin-bottom: 1.5rem;
+  color: var(--sy-c-heading);
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.25;
+  text-decoration: none;
+}
+
+@media (min-width: 48rem) {
+  .sy-head-brand img + strong {
+    display: none;
+  }
 }

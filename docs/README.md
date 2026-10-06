@@ -33,7 +33,8 @@ The generated output under `docs/_build/` is ignored by Git.
 - `reference/citation.md` and its Chinese counterpart: the README's EvoMO and related algorithm papers.
 - `_static/evomo.bib`: shared, downloadable BibTeX entries used by both citation pages.
 - `images/evox_brand_*.svg`: the existing EvoX family logos, reused by the light and dark document headers.
-- `_static/branding.css`: keeps the EvoMO name beside the shared family logo.
+- `_templates/partials/globaltoc-above.html`, `_static/branding.css`: place the EvoMO home link above
+  the sidebar navigation and keep the name in the header on smaller screens.
 
 ## Writing API docstrings
 
