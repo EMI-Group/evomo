@@ -5,7 +5,14 @@ from evox.operators.mutation import polynomial_mutation
 from evox.operators.selection import tournament_selection_multifit
 from evox.utils import clamp, nanmax, nanmin
 
-from evomo.operators.selection import non_dominate_rank
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    constraint_keys,
+    constraint_priority,
+    rank_with_constraints,
+    take_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
 class VaEA(Algorithm):
@@ -33,8 +40,8 @@ class VaEA(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -51,6 +58,8 @@ class VaEA(Algorithm):
         self.pop = Mutable(torch.rand(pop_size, D, device=device) * (ub - lb) + lb)  # [N,D]
         self.fit = Mutable(torch.full((pop_size, n_objs), torch.inf, device=device))  # [N,M]
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -58,7 +67,7 @@ class VaEA(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)  # [N,M]
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))  # [N,M]
 
     def _cosine_distance_matrix(self, x: torch.Tensor) -> torch.Tensor:
         # [Bug #12] Safe Division & [Bug #29] Vectorization
@@ -80,7 +89,7 @@ class VaEA(Algorithm):
 
         # 1. Mating (Binary Tournament Selection on sum of objectives)
         scalar_fit = torch.sum(self.fit, dim=1)
-        mating_pool = tournament_selection_multifit(N, [scalar_fit], tournament_size=2)
+        mating_pool = tournament_selection_multifit(N, constraint_keys([scalar_fit], self.cv), tournament_size=2)
         parents = self.pop[mating_pool]
 
         offspring = simulated_binary(parents, pro_c=1.0, dis_c=20.0)
@@ -88,14 +97,15 @@ class VaEA(Algorithm):
         offspring = clamp(offspring, self.lb, self.ub)
 
         # 2. Evaluation
-        off_fit = self.evaluate(offspring)
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
 
         # 3. Environmental Selection
         C_pop = torch.cat([self.pop, offspring], dim=0)
         C_fit = torch.cat([self.fit, off_fit], dim=0)
 
         # NDSort
-        rank = non_dominate_rank(C_fit)
+        C_cv = cat_violation(self.cv, off_cv)
+        rank = rank_with_constraints(C_fit, C_cv)
 
         # Front Peeling
         select_mask = torch.zeros(2 * N, dtype=torch.bool, device=device)
@@ -127,9 +137,13 @@ class VaEA(Algorithm):
 
         if select_idx.shape[0] == 0:
             # Extreme solutions for each objective
-            extremes = torch.argmin(norm_fit, dim=0)
+            seed_fit = norm_fit if C_cv is None else torch.where((rank == current_rank)[:, None], norm_fit, torch.inf)
+            extremes = torch.argmin(seed_fit, dim=0)
             # Best convergence solutions
-            _, best_conv_idx = torch.topk(conv, k=M, largest=False)
+            seed_conv = conv if C_cv is None else torch.where(rank == current_rank, conv, torch.inf)
+            _, best_conv_idx = torch.topk(seed_conv, k=M, largest=False)
+            if C_cv is not None:
+                best_conv_idx = best_conv_idx[rank[best_conv_idx] == current_rank]
             select_idx = torch.unique(torch.cat([extremes, best_conv_idx]))
 
         # F_k candidates
@@ -152,7 +166,12 @@ class VaEA(Algorithm):
                 not_selected_idx = torch.where(not_selected_mask)[0]
                 needed = N - select_idx.shape[0]
                 if not_selected_idx.shape[0] > 0:
-                    _, add_idx = torch.topk(conv[not_selected_idx], k=min(needed, not_selected_idx.shape[0]), largest=False)
+                    if C_cv is None:
+                        _, add_idx = torch.topk(conv[not_selected_idx], k=min(needed, not_selected_idx.shape[0]), largest=False)
+                    else:
+                        add_idx = constraint_priority(conv[not_selected_idx], C_cv[not_selected_idx]).argsort(stable=True)[
+                            :needed
+                        ]
                     select_idx = torch.cat([select_idx, not_selected_idx[add_idx]])
                 break
 
@@ -168,7 +187,9 @@ class VaEA(Algorithm):
             nearest_neighbor = select_idx[nn_local_idx]
 
             if angles_to_selected[nn_local_idx] < threshold:
-                if conv[best_candidate] < conv[nearest_neighbor]:
+                if (conv[best_candidate] < conv[nearest_neighbor]) & (
+                    True if C_cv is None else rank[best_candidate] == rank[nearest_neighbor]
+                ):
                     # Replace nearest neighbor
                     select_idx[nn_local_idx] = best_candidate
                     in_select[nearest_neighbor] = False
@@ -183,6 +204,7 @@ class VaEA(Algorithm):
         final_idx = select_idx[:N]
         self.pop = C_pop[final_idx]
         self.fit = C_fit[final_idx]
+        self.cv = take_violation(C_cv, final_idx)
 
 
 # === FIXED DEMO BLOCK ===

@@ -4,6 +4,14 @@ from evox.operators.mutation import polynomial_mutation
 from evox.operators.sampling import uniform_sampling
 from evox.utils import clamp
 
+from evomo.operators.selection.constraint_handling import (
+    prefer_by_constraint,
+    total_violation,
+    update_by_proposals,
+    update_last_proposals,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer
+
 
 class MOEADDE(Algorithm):
     def __init__(
@@ -56,8 +64,8 @@ class MOEADDE(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Reference-vector sampling can change the requested population size. Read ``self.pop.shape[0]`` for the actual size.
 
@@ -99,6 +107,8 @@ class MOEADDE(Algorithm):
         # 5. Ideal Point
         self.z = Mutable(torch.full((n_objs,), torch.inf, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -106,7 +116,7 @@ class MOEADDE(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
         # Bug #10: dim=0 for objective-wise min
         self.z = torch.min(self.fit, dim=0).values
 
@@ -141,7 +151,7 @@ class MOEADDE(Algorithm):
         off_pop = clamp(off_pop, self.lb, self.ub)
 
         # 3. Evaluation
-        off_fit = self.evaluate(off_pop)
+        off_fit, off_cv = parse_evaluate(self.evaluate(off_pop))
 
         # 4. Update Ideal Point (Bug #10)
         self.z = torch.min(self.z, torch.min(off_fit, dim=0).values)
@@ -158,16 +168,16 @@ class MOEADDE(Algorithm):
 
         # Replacement Logic with nr constraint (Bug #29, Bug #41)
         better_mask = g_new <= g_old
+        if self.cv is not None:
+            better_mask = prefer_by_constraint(better_mask, total_violation(off_cv)[:, None], total_violation(self.cv)[self.B])
+            self.pop, self.fit, self.cv = update_by_proposals(
+                self.pop, self.fit, self.cv, off_pop, off_fit, off_cv, self.B, better_mask, g_new, self.nr
+            )
+            return
         # Use cumsum to limit to nr replacements per offspring
         final_mask = better_mask & (torch.cumsum(better_mask.to(torch.int32), dim=1) <= self.nr)
 
-        # In-place Update (Parallel)
-        indices_to_replace = self.B[final_mask]
-        offspring_to_use = torch.arange(N, device=device).unsqueeze(1).expand(N, T)[final_mask]
-
-        # Update population and fitness
-        self.pop[indices_to_replace] = off_pop[offspring_to_use]
-        self.fit[indices_to_replace] = off_fit[offspring_to_use]
+        self.pop, self.fit = update_last_proposals(self.pop, self.fit, off_pop, off_fit, self.B, final_mask)
 
 
 def _tchebycheff_scalarization(weight: torch.Tensor, fit: torch.Tensor, z: torch.Tensor) -> torch.Tensor:

@@ -8,14 +8,18 @@ from evox.operators.sampling import uniform_sampling
 from evox.operators.selection import tournament_selection_multifit
 
 from evomo.operators.selection import non_dominate_rank
+from evomo.operators.selection.constraint_handling import constrained_rank as _constrained_rank
+from evomo.operators.selection.constraint_handling import total_violation as _total_violation
 from evomo.operators.selection.non_dominate import _environmental_selection_rank
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
-def _normalize(fit, mask=None):
+def _normalize(fit, mask=None, ideal=None):
     """Normalize objectives using ASF extremes, with a safe fallback for degenerate fronts."""
     if mask is None:
         mask = torch.ones(fit.shape[0], dtype=torch.bool, device=fit.device)
-    ideal = torch.where(mask[:, None], fit, torch.inf).amin(0)
+    if ideal is None:
+        ideal = torch.where(mask[:, None], fit, torch.inf).amin(0)
     shifted = torch.where(mask[:, None], fit - ideal, 0)
     m = fit.shape[1]
     weights = torch.full((m, m), 1e-6, device=fit.device, dtype=fit.dtype)
@@ -98,7 +102,8 @@ class NSGA3(Algorithm):
     """
     An implementation of the tensorized NSGA-III for many-objective optimization problems.
 
-    Uses rank-based tournament mating and fixed-shape reference-direction selection.
+    Uses rank-based tournament mating for unconstrained problems and violation-based
+    mating for constrained problems, with fixed-shape reference-direction selection.
     Initialize the workflow before compiling its step with ``fullgraph=True``.
 
     :references:
@@ -138,7 +143,8 @@ class NSGA3(Algorithm):
         :type ub: torch.Tensor
         :param selection_op: Default: ``None``. Mating selection callable ``selection_op(pop_size, [rank]) -> indices``.
             Return ``pop_size`` parent indices on the population device. ``None`` selects EvoX's
-            ``tournament_selection_multifit``. Reference-point environmental selection remains internal.
+            ``tournament_selection_multifit``. Constrained runs supply ``[total_positive_violation]`` instead of
+            ``[rank]``, following PlatEMO NSGA-III. Reference-point environmental selection remains internal.
         :type selection_op: Callable or None
         :param mutation_op: Default: ``None``. Mutation callable ``mutation_op(offspring, lb, ub) ->
             mutated_offspring``. Input and output are decision tensors of shape ``(B, D)``; preserve device and return
@@ -160,9 +166,11 @@ class NSGA3(Algorithm):
         .. note::
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
-            ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. Evaluation accepts an objective
+            tensor of shape ``(B, n_objs)`` or ``(fitness, constraint_violation)``. Violations of shape ``(B,)`` or
+            ``(B, C)`` are retained in ``self.cv``. Feasible solutions precede infeasible ones; infeasible solutions
+            are ranked by total positive violation, with equal violations sharing a front. Normalization uses the
+            historical feasible ideal point ``self.z_min``; before any feasible evaluation, its fallback is all ones.
         """
 
         super().__init__()
@@ -200,6 +208,8 @@ class NSGA3(Algorithm):
         self.pop = Mutable(population)
         self.fit = Mutable(torch.full((self.pop_size, self.n_objs), torch.inf, device=device))
         self.rank = Mutable(torch.full((self.pop_size,), torch.inf, device=device))
+        register_lazy_buffer(self, "cv", device_like="pop")
+        register_lazy_buffer(self, "z_min", device_like="pop")
         self.ref = uniform_sampling(self.pop_size, self.n_objs)[0].to(device=device)
 
     def init_step(self):
@@ -209,29 +219,45 @@ class NSGA3(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
-        self.rank = non_dominate_rank(self.fit)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
+        if self.cv is None:
+            self.z_min = None
+            self.rank = non_dominate_rank(self.fit)
+        else:
+            feasible = _total_violation(self.cv) == 0
+            self.z_min = torch.where(feasible[:, None], self.fit, torch.inf).amin(0)
+            self.rank = _constrained_rank(self.fit, self.cv)
 
     def step(self):
         """Generate offspring and select survivors while preserving their true ranks."""
-        mating = self.selection(self.pop_size, [self.rank])
+        keys = [self.rank] if self.cv is None else [_total_violation(self.cv)]
+        mating = self.selection(self.pop_size, keys)
         offspring = self.crossover(self.pop[mating])
         offspring = self.mutation(offspring, self.lb, self.ub)
         offspring = offspring.clamp(self.lb, self.ub)
         merged_pop = torch.cat((self.pop, offspring))
-        merged_fit = torch.cat((self.fit, self.evaluate(offspring)))
-        selected = self._survive(merged_fit)
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
+        merged_fit = torch.cat((self.fit, off_fit))
+        if self.cv is None:
+            selected = self._survive(merged_fit)
+        else:
+            merged_cv = torch.cat((self.cv, off_cv))
+            feasible = _total_violation(off_cv) == 0
+            self.z_min = torch.minimum(self.z_min, torch.where(feasible[:, None], off_fit, torch.inf).amin(0))
+            selected = self._survive(merged_fit, merged_cv)
+            self.cv = merged_cv[selected]
         self.pop = merged_pop[selected]
         self.fit = merged_fit[selected]
 
-    def _survive(self, fit):
+    def _survive(self, fit, cv=None):
         """Return survivor indices and update ranks without using ranks as selection flags."""
-        rank = _environmental_selection_rank(fit, self.pop_size)
+        rank = _environmental_selection_rank(fit, self.pop_size) if cv is None else _constrained_rank(fit, cv, self.pop_size)
         cutoff = rank.kthvalue(self.pop_size).values
         complete = rank < cutoff
         last = rank == cutoff
         # Fixed-size masks avoid nonzero, data-dependent slices and host branches.
-        normalized = _normalize(fit, rank <= cutoff)
+        ideal = None if cv is None else torch.where(torch.isfinite(self.z_min), self.z_min, torch.ones_like(self.z_min))
+        normalized = _normalize(fit, rank <= cutoff, ideal)
         ref_order = torch.randperm(self.ref.shape[0], device=fit.device)
         # gather avoids a randperm-index pattern-matcher bug in PyTorch 2.11.
         ref = self.ref.gather(0, ref_order[:, None].expand_as(self.ref)).to(fit.dtype)

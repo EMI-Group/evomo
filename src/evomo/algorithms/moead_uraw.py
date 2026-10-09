@@ -2,9 +2,16 @@ import torch
 from evox.core import Algorithm, Mutable
 from evox.operators.crossover import simulated_binary
 from evox.operators.mutation import polynomial_mutation
-from evox.utils import clamp
+from evox.utils import clamp, lexsort
 
-from evomo.utils import unique_rows_sorted
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    constraint_dominance_matrix,
+    prefer_by_constraint,
+    take_violation,
+    total_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer, unique_rows_sorted
 
 
 class MOEAURAW(Algorithm):
@@ -54,8 +61,8 @@ class MOEAURAW(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -100,6 +107,9 @@ class MOEAURAW(Algorithm):
         self.archive_fit = Mutable(torch.empty((0, n_objs), device=device))
         self.gen = Mutable(torch.zeros(1, dtype=torch.int32, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+        register_lazy_buffer(self, "archive_cv", device_like="pop")
+
     def _calc_product_dist_score(self, fit: torch.Tensor, M: int) -> torch.Tensor:
         # Bug #26 & Helper Contract Compliance
         if fit.shape[0] == 0:
@@ -113,7 +123,7 @@ class MOEAURAW(Algorithm):
         k = min(M, sorted_D.shape[1])
         return torch.prod(sorted_D[:, :k], dim=1)
 
-    def _update_ep(self, off_pop: torch.Tensor, off_fit: torch.Tensor):
+    def _update_ep(self, off_pop: torch.Tensor, off_fit: torch.Tensor, off_cv=None):
         combined_pop = torch.cat([self.archive_pop, off_pop], dim=0)
         combined_fit = torch.cat([self.archive_fit, off_fit], dim=0)
 
@@ -126,12 +136,14 @@ class MOEAURAW(Algorithm):
         # Shape: (N, N, M)
         diff_le = (u_fit.unsqueeze(1) <= u_fit.unsqueeze(0)).all(dim=-1)
         diff_lt = (u_fit.unsqueeze(1) < u_fit.unsqueeze(0)).any(dim=-1)
-        dom_matrix = diff_le & diff_lt
+        u_cv = take_violation(cat_violation(self.archive_cv, off_cv), u_idx)
+        dom_matrix = constraint_dominance_matrix(diff_le & diff_lt, u_cv)
         # If any individual j dominates i, i is not non-dominated
         is_dominated = dom_matrix.any(dim=0)
 
         ep_pop = u_pop[~is_dominated]
         ep_fit = u_fit[~is_dominated]
+        ep_cv = take_violation(u_cv, ~is_dominated)
 
         curr_size = ep_pop.shape[0]
         if curr_size > self.nEP:
@@ -139,9 +151,11 @@ class MOEAURAW(Algorithm):
             _, keep_idx = torch.topk(score, k=self.nEP, largest=True)
             ep_pop = ep_pop[keep_idx]
             ep_fit = ep_fit[keep_idx]
+            ep_cv = take_violation(ep_cv, keep_idx)
 
         self.archive_pop = ep_pop
         self.archive_fit = ep_fit
+        self.archive_cv = ep_cv
 
     def _update_weight(self):
         nus = self.pop_size // 20  # 0.05 * N
@@ -155,6 +169,8 @@ class MOEAURAW(Algorithm):
         score = self._calc_product_dist_score(self.fit, self.n_objs)
         num_to_del = min(nus, self.archive_fit.shape[0])
         _, del_idx = torch.topk(score, k=num_to_del, largest=False)
+        if self.cv is not None:
+            del_idx = lexsort([score, -total_violation(self.cv)])[:num_to_del]
 
         # 2. Add new subproblems from EP greedily
         C_pop = self.archive_pop
@@ -191,6 +207,8 @@ class MOEAURAW(Algorithm):
 
         self.pop[del_idx] = added_pop
         self.fit[del_idx] = added_fit
+        if self.cv is not None:
+            self.cv[del_idx] = self.archive_cv[selected_c_indices]
         self.w[del_idx] = new_w
 
         # Recompute neighborhoods
@@ -205,9 +223,10 @@ class MOEAURAW(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
         self.z = torch.min(self.fit, dim=0, keepdim=True).values
-        self._update_ep(self.pop, self.fit)
+        self.archive_cv = None if self.cv is None else self.cv[:0]
+        self._update_ep(self.pop, self.fit, self.cv)
 
     def step(self) -> None:
         """Advance optimization and update population and fitness state in place.
@@ -240,7 +259,7 @@ class MOEAURAW(Algorithm):
         offspring = polynomial_mutation(offspring, self.lb, self.ub)
         offspring = clamp(offspring, self.lb, self.ub)
 
-        off_fit = self.evaluate(offspring)
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
         self.z = torch.min(self.z, off_fit.min(dim=0, keepdim=True).values)
 
         # Tchebycheff Update (Iterate over subproblems to apply 'nr' limit)
@@ -251,14 +270,18 @@ class MOEAURAW(Algorithm):
             g_new = torch.max(torch.abs(off_fit[i] - self.z) * self.w[P], dim=1).values
 
             better_mask = g_new <= g_old
+            if self.cv is not None:
+                better_mask = prefer_by_constraint(better_mask, total_violation(off_cv)[i], total_violation(self.cv)[P])
             if better_mask.any():
                 better_indices = P[better_mask]
                 # Limit replacement to nr
                 update_idx = better_indices[: self.nr]
                 self.pop[update_idx] = offspring[i]
                 self.fit[update_idx] = off_fit[i]
+                if self.cv is not None:
+                    self.cv[update_idx] = off_cv[i]
 
-        self._update_ep(offspring, off_fit)
+        self._update_ep(offspring, off_fit, off_cv)
 
         # Adaptation moment: 0.05 of max generations
         # In Evox workflow, we don't have maxFE directly, so we use a fixed interval

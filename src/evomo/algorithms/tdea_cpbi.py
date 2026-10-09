@@ -6,7 +6,13 @@ from evox.operators.sampling import uniform_sampling
 from evox.operators.selection import tournament_selection_multifit
 from evox.utils import clamp, lexsort
 
-from evomo.operators.selection import non_dominate_rank
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    constraint_keys,
+    rank_with_constraints,
+    take_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
 class tDEA_CPBI(Algorithm):
@@ -34,8 +40,8 @@ class tDEA_CPBI(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Reference-vector sampling can change the requested population size. Read ``self.pop.shape[0]`` for the actual size.
 
@@ -65,6 +71,8 @@ class tDEA_CPBI(Algorithm):
         self.z = Mutable(torch.full((n_objs,), torch.inf, device=device))
         self.znad = Mutable(torch.full((n_objs,), -torch.inf, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -72,7 +80,7 @@ class tDEA_CPBI(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
         self.z = torch.min(self.fit, dim=0)[0]
         self.znad = torch.max(self.fit, dim=0)[0]
 
@@ -115,13 +123,13 @@ class tDEA_CPBI(Algorithm):
         N = self.W.shape[0]
 
         # 1. Mating
-        mating_idx = tournament_selection_multifit(N, [self.fit.sum(dim=1)], tournament_size=2)
+        mating_idx = tournament_selection_multifit(N, constraint_keys([self.fit.sum(dim=1)], self.cv), tournament_size=2)
         off_pop = simulated_binary(self.pop[mating_idx], pro_c=1.0, dis_c=20.0)
         off_pop = polynomial_mutation(off_pop, self.lb, self.ub)
         off_pop = clamp(off_pop, self.lb, self.ub)
 
         # 2. Evaluation
-        off_fit = self.evaluate(off_pop)
+        off_fit, off_cv = parse_evaluate(self.evaluate(off_pop))
 
         # 3. Selection
         combined_pop = torch.cat([self.pop, off_pop], dim=0)
@@ -151,7 +159,8 @@ class tDEA_CPBI(Algorithm):
 
         # Selection Strategy
         g = d1_assigned + self.theta[cluster_idx] * d2_assigned
-        pareto_rank = non_dominate_rank(combined_fit)
+        combined_cv = cat_violation(self.cv, off_cv)
+        pareto_rank = rank_with_constraints(combined_fit, combined_cv)
 
         # Calculate sub-rank within clusters (Vectorized)
         # Sort by cluster index first, then by pareto rank, then by g
@@ -175,11 +184,12 @@ class tDEA_CPBI(Algorithm):
         original_sub_ranks[sort_idx] = cluster_sub_rank.int()
 
         # Final Selection: Primary: sub_rank, Secondary: pareto_rank, Tertiary: g
-        final_sort_idx = lexsort(torch.stack([g, pareto_rank.float(), original_sub_ranks.float()]))
+        final_sort_idx = lexsort(constraint_keys([g, pareto_rank.float(), original_sub_ranks.float()], combined_cv))
 
         survivor_idx = final_sort_idx[:N]
         self.pop = combined_pop[survivor_idx]
         self.fit = combined_fit[survivor_idx]
+        self.cv = take_violation(combined_cv, survivor_idx)
 
 
 if __name__ == "__main__":

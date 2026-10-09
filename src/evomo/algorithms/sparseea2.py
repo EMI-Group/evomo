@@ -5,8 +5,15 @@ from evox.operators.mutation import polynomial_mutation
 from evox.operators.selection import crowding_distance, tournament_selection_multifit
 from evox.utils import clamp
 
-from evomo.operators.selection import nd_environmental_selection, non_dominate_rank
-from evomo.utils import unique_rows_sorted
+from evomo.operators.selection import nd_environmental_selection
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    constrained_crowding_selection,
+    rank_with_constraint_objective,
+    rank_with_constraints,
+    take_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer, unique_rows_sorted
 
 
 class SparseEA2(Algorithm):
@@ -34,8 +41,8 @@ class SparseEA2(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -56,6 +63,8 @@ class SparseEA2(Algorithm):
         self.rank = Mutable(torch.zeros(pop_size, device=device))
         self.dis = Mutable(torch.zeros(pop_size, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -72,10 +81,10 @@ class SparseEA2(Algorithm):
         # Evaluate identity-masked population to estimate variable importance
         # We use the first D individuals or repeat if N < D
         init_pop_for_var = self.pop[0].repeat(D, 1) * mask_eye
-        fits_var = self.evaluate(init_pop_for_var)
+        fits_var, cv_var = parse_evaluate(self.evaluate(init_pop_for_var))
 
         # Ranking (NDSort) - Lower rank is better
-        ranks = non_dominate_rank(fits_var)
+        ranks = rank_with_constraint_objective(fits_var, cv_var)
         self.var_fit = ranks.float()
 
         # 2. Initial Mask Generation via Tournament Selection
@@ -98,10 +107,14 @@ class SparseEA2(Algorithm):
         init_mask[row_idx, col_idx] = mask_threshold
 
         self.mask = init_mask
-        self.fit = self.evaluate(self.pop * self.mask)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop * self.mask))
 
         # Initial Environmental Selection
-        self.pop, self.fit, self.rank, self.dis, _ = nd_environmental_selection(self.pop, self.fit, N)
+        if self.cv is None:
+            self.pop, self.fit, self.rank, self.dis, _ = nd_environmental_selection(self.pop, self.fit, N)
+        else:
+            indices, self.rank, self.dis = constrained_crowding_selection(self.fit, self.cv, N)
+            self.pop, self.fit, self.mask, self.cv = self.pop[indices], self.fit[indices], self.mask[indices], self.cv[indices]
 
     def _sparse_tournament(self, indices: torch.Tensor, var_fit: torch.Tensor) -> torch.Tensor:
         # Performs tournament selection on the var_fit values
@@ -177,7 +190,7 @@ class SparseEA2(Algorithm):
         off_pop = clamp(off_pop, self.lb, self.ub)
 
         # 3. Evaluation
-        off_fit = self.evaluate(off_pop * off_mask)
+        off_fit, off_cv = parse_evaluate(self.evaluate(off_pop * off_mask))
 
         # 4. Environmental Selection
         all_pop = torch.cat([self.pop, off_pop], dim=0)
@@ -188,9 +201,10 @@ class SparseEA2(Algorithm):
         merged_pop, u_idx = unique_rows_sorted(all_pop)
         merged_fit = all_fit[u_idx]
         merged_mask = all_mask[u_idx]
+        merged_cv = take_violation(cat_violation(self.cv, off_cv), u_idx)
 
         # Non-Dominated Sort
-        rank = non_dominate_rank(merged_fit)
+        rank = rank_with_constraints(merged_fit, merged_cv)
 
         # Integrated Peeling (Bug #9)
         num_merged = merged_pop.shape[0]
@@ -234,6 +248,7 @@ class SparseEA2(Algorithm):
 
         self.pop = merged_pop[selected_indices]
         self.fit = merged_fit[selected_indices]
+        self.cv = take_violation(merged_cv, selected_indices)
         self.mask = merged_mask[selected_indices]
         self.rank = rank[selected_indices]
         # Re-calculate distance for the new population for next mating

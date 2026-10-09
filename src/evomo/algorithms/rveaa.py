@@ -6,9 +6,11 @@ from evox.core import Algorithm, Mutable, Parameter
 from evox.operators.crossover import simulated_binary
 from evox.operators.mutation import polynomial_mutation
 from evox.operators.sampling import uniform_sampling
-from evox.utils import clamp, nanmax, nanmin, randint
+from evox.utils import clamp, lexsort, nanmax, nanmin, randint
 
 from evomo.operators.selection import non_dominate_rank, ref_vec_guided
+from evomo.operators.selection.constraint_handling import total_violation
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
 class RVEAa(Algorithm):
@@ -66,7 +68,8 @@ class RVEAa(Algorithm):
         :param selection_op: Default: ``None``. Environmental selection callable ``selection_op(pop, fit, vectors,
             theta) -> (pop, fit)``. The input includes parents and offspring. Return matching decision and fitness
             tensors on the input device, preserving reference-vector slots and NaN padding where required. ``None``
-            selects EvoMO's ``ref_vec_guided``.
+            selects EvoMO's ``ref_vec_guided``. Constrained runs call ``selection_op(pop, fit, vectors, theta, cv)``
+            and expect ``(pop, fit, cv)``.
         :type selection_op: Callable or None
         :param mutation_op: Default: ``None``. Mutation callable ``mutation_op(offspring, lb, ub) ->
             mutated_offspring``. Input and output are decision tensors of shape ``(B, D)``; preserve device and return
@@ -84,9 +87,11 @@ class RVEAa(Algorithm):
         .. note::
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
-            ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. Evaluation accepts objectives
+            or ``(fitness, cv)`` with violations of shape ``(B,)`` or ``(B, C)``. First-front filtering jointly compares
+            objectives and total violation. Each partition favors feasible APD winners, or minimum violation
+            when no feasible solution exists. Final batch truncation also prioritizes violation. Selected violations
+            and NaN padding are retained in ``self.cv``. Unconstrained selection and truncation remain unchanged.
 
             Reference-vector sampling can change the requested population size. Read ``self.pop.shape[0]`` for the actual size.
         """
@@ -132,6 +137,7 @@ class RVEAa(Algorithm):
 
         self.pop = Mutable(population)
         self.fit = Mutable(torch.empty((self.pop_size, self.n_objs), device=device).fill_(torch.inf))
+        register_lazy_buffer(self, "cv", device_like="pop")
         self.reference_vector = Mutable(v)
         self.init_v = v0
         self.gen = Mutable(torch.tensor(0, dtype=int, device=device))
@@ -144,12 +150,15 @@ class RVEAa(Algorithm):
         :returns: ``None``; results are stored in algorithm state.
         """
         self.rv_adapt_every = torch.max(torch.round(1 / self.fr), torch.tensor(1.0))
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
 
     def _rv_adaptation(self, pop_obj: torch.Tensor):
         max_vals = nanmax(pop_obj, dim=0)[0]
         min_vals = nanmin(pop_obj, dim=0)[0]
-        return self.init_v * (max_vals - min_vals)
+        span = max_vals - min_vals
+        if self.cv is not None:
+            span = torch.where(span > 0, span, torch.ones_like(span))
+        return self.init_v * span
 
     def _no_rv_adaptation(self, pop_obj: torch.Tensor):
         return self.reference_vector[: self.pop_size].clone()
@@ -175,7 +184,10 @@ class RVEAa(Algorithm):
         associate = torch.where(input_tensor[:, 0] == -torch.inf, -1, associate)
 
         invalid = torch.sum((associate.unsqueeze(1) == torch.arange(v.size(0), device=pop_obj.device)), dim=0)
-        rand = torch.rand((v.size(0), v.size(1)), device=pop_obj.device) * nanmax(pop_obj, dim=0).values
+        span = nanmax(pop_obj, dim=0).values
+        if self.cv is not None:
+            span = torch.where(span > 0, span, torch.ones_like(span))
+        rand = torch.rand((v.size(0), v.size(1)), device=pop_obj.device) * span
         new_v = torch.where((invalid == 0).unsqueeze(1), rand, v)
 
         return new_v
@@ -205,24 +217,69 @@ class RVEAa(Algorithm):
     def _no_batch_truncation(self, pop: torch.Tensor, obj: torch.Tensor):
         return pop.clone(), obj.clone()
 
-    def _update_pop_and_rv(self, survivor: torch.Tensor, survivor_fit: torch.Tensor):
+    def _constrained_keep_mask(self, obj, cv):
+        """Keep up to N valid slots by violation, then angular batch diversity."""
+        total = total_violation(cv)
+        valid = torch.isfinite(obj).all(1) & torch.isfinite(total)
+        cosine = F.cosine_similarity(obj[:, None, :], obj[None, :, :], dim=-1)
+        pairs = valid[:, None] & valid[None, :] & ~torch.eye(len(obj), dtype=torch.bool, device=obj.device)
+        crowding = torch.where(pairs, cosine, -torch.inf).amax(1)
+        order = lexsort([crowding, torch.where(valid, total, torch.inf)])
+        position = torch.empty_like(order).scatter(0, order, torch.arange(len(obj), device=obj.device))
+        return valid & (position < self.pop_size)
+
+    def _no_constrained_keep_mask(self, obj, cv):
+        return torch.ones(len(obj), dtype=torch.bool, device=obj.device)
+
+    def _constrained_batch_truncation(self, pop, obj, cv):
+        keep = self._constrained_keep_mask(obj, cv)
+        cv_mask = keep if cv.ndim == 1 else keep[:, None]
+        return (
+            torch.where(keep[:, None], pop, torch.nan),
+            torch.where(keep[:, None], obj, torch.nan),
+            torch.where(cv_mask, cv, torch.nan),
+        )
+
+    def _no_constrained_batch_truncation(self, pop, obj, cv):
+        return pop.clone(), obj.clone(), cv.clone()
+
+    def _update_pop_and_rv(self, survivor: torch.Tensor, survivor_fit: torch.Tensor, survivor_cv=None):
         v_regen = self._rv_regeneration(survivor_fit, self.reference_vector[self.pop_size :])
         if torch.compiler.is_compiling():
             v_adapt = torch.cond(
                 self.gen % self.rv_adapt_every == 0, self._rv_adaptation, self._no_rv_adaptation, (survivor_fit,)
             )
-            self.pop, self.fit = torch.cond(
-                self.gen == self.max_gen, self._batch_truncation, self._no_batch_truncation, (survivor, survivor_fit)
-            )
+            if self.cv is None:
+                self.pop, self.fit = torch.cond(
+                    self.gen == self.max_gen, self._batch_truncation, self._no_batch_truncation, (survivor, survivor_fit)
+                )
+            else:
+                # A single mask output avoids a torch.cond/vmap tuple-unflatten bug.
+                keep = torch.cond(
+                    self.gen == self.max_gen,
+                    self._constrained_keep_mask,
+                    self._no_constrained_keep_mask,
+                    (survivor_fit, survivor_cv),
+                )
+                cv_mask = keep if survivor_cv.ndim == 1 else keep[:, None]
+                self.pop = torch.where(keep[:, None], survivor, torch.nan)
+                self.fit = torch.where(keep[:, None], survivor_fit, torch.nan)
+                self.cv = torch.where(cv_mask, survivor_cv, torch.nan)
         else:
             if self.gen % self.rv_adapt_every == 0:
                 v_adapt = self._rv_adaptation(survivor_fit)
             else:
                 v_adapt = self._no_rv_adaptation(survivor_fit)
-            if self.gen == self.max_gen:
-                self.pop, self.fit = self._batch_truncation(survivor, survivor_fit)
+            if self.cv is None:
+                if self.gen == self.max_gen:
+                    self.pop, self.fit = self._batch_truncation(survivor, survivor_fit)
+                else:
+                    self.pop, self.fit = self._no_batch_truncation(survivor, survivor_fit)
             else:
-                self.pop, self.fit = self._no_batch_truncation(survivor, survivor_fit)
+                if self.gen == self.max_gen:
+                    self.pop, self.fit, self.cv = self._constrained_batch_truncation(survivor, survivor_fit, survivor_cv)
+                else:
+                    self.pop, self.fit, self.cv = self._no_constrained_batch_truncation(survivor, survivor_fit, survivor_cv)
         self.reference_vector = torch.cat([v_adapt, v_regen], dim=0)
 
     def step(self):
@@ -233,19 +290,30 @@ class RVEAa(Algorithm):
         crossovered = self.crossover(pop)
         offspring = self.mutation(crossovered, self.lb, self.ub)
         offspring = clamp(offspring, self.lb, self.ub)
-        off_fit = self.evaluate(offspring)
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
         merge_pop = torch.cat([self.pop, offspring], dim=0)
         merge_fit = torch.cat([self.fit, off_fit], dim=0)
 
-        rank = non_dominate_rank(merge_fit)
+        if self.cv is None:
+            rank = non_dominate_rank(merge_fit)
+        else:
+            merge_cv = torch.cat([self.cv, off_cv], dim=0)
+            total = total_violation(merge_cv)
+            valid = torch.isfinite(merge_fit).all(1) & torch.isfinite(total)
+            # Treat CV as an extra objective: preserve objective/CV tradeoffs until
+            # partition selection, rather than collapsing to the single best CV.
+            joint = torch.cat([merge_fit, total[:, None]], dim=1)
+            rank = non_dominate_rank(torch.where(valid[:, None], joint, torch.inf))
+            rank = torch.where(valid, rank, -1)
         merge_fit = torch.where(rank.unsqueeze(1) == 0, merge_fit, torch.nan)
         merge_pop = torch.where(rank.unsqueeze(1) == 0, merge_pop, torch.nan)
 
-        survivor, survivor_fit = self.selection(
-            merge_pop,
-            merge_fit,
-            self.reference_vector,
-            (self.gen / self.max_gen) ** self.alpha,
-        )
-
-        self._update_pop_and_rv(survivor, survivor_fit)
+        theta = (self.gen / self.max_gen) ** self.alpha
+        if self.cv is None:
+            survivor, survivor_fit = self.selection(merge_pop, merge_fit, self.reference_vector, theta)
+            self._update_pop_and_rv(survivor, survivor_fit)
+        else:
+            cv_mask = rank == 0 if merge_cv.ndim == 1 else (rank == 0)[:, None]
+            merge_cv = torch.where(cv_mask, merge_cv, torch.nan)
+            survivor, survivor_fit, survivor_cv = self.selection(merge_pop, merge_fit, self.reference_vector, theta, merge_cv)
+            self._update_pop_and_rv(survivor, survivor_fit, survivor_cv)

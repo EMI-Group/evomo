@@ -4,7 +4,13 @@ from evox.operators.crossover import simulated_binary
 from evox.operators.mutation import polynomial_mutation
 from evox.utils import clamp, randint
 
-from evomo.utils import unique_rows_sorted
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    prefer_by_constraint,
+    take_violation,
+    total_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer, unique_rows_sorted
 
 
 class MaOEACSS(Algorithm):
@@ -36,8 +42,8 @@ class MaOEACSS(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -56,6 +62,8 @@ class MaOEACSS(Algorithm):
         self.fit = Mutable(torch.full((pop_size, n_objs), torch.inf, device=device))
         self.zmin = Mutable(torch.full((n_objs,), torch.inf, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -63,7 +71,7 @@ class MaOEACSS(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
         self.zmin = torch.min(self.fit, dim=0).values
 
     def _get_cosine_angle_matrix(self, x: torch.Tensor) -> torch.Tensor:
@@ -73,7 +81,7 @@ class MaOEACSS(Algorithm):
         angle = torch.acos(torch.clamp(cos_sim, -1 + 1e-7, 1 - 1e-7))
         return angle
 
-    def _sequential_elimination(self, fit: torch.Tensor, zmin: torch.Tensor, n_required: int) -> torch.Tensor:
+    def _sequential_elimination(self, fit: torch.Tensor, zmin: torch.Tensor, n_required: int, cv=None) -> torch.Tensor:
         # Bug #30: Brutal Static Truncation with Masking
         n_total = fit.shape[0]
         f_norm = fit - zmin
@@ -91,7 +99,11 @@ class MaOEACSS(Algorithm):
         # Sequential logic using masking to keep it JIT-friendly.
         for _ in range(n_to_remove):
             # Find global minimum angle among active individuals
-            active_mask = mask.unsqueeze(1) & mask.unsqueeze(0)
+            eligible = mask
+            if cv is not None:
+                totals = total_violation(cv)
+                eligible = mask & (totals == torch.where(mask, totals, -torch.inf).amax())
+            active_mask = eligible.unsqueeze(1) & eligible.unsqueeze(0)
             active_angles = torch.where(active_mask, angle_matrix, torch.full_like(angle_matrix, sentinel_inf))
 
             # Bug #41: Find indices of min angle without .item()
@@ -111,6 +123,8 @@ class MaOEACSS(Algorithm):
             )
 
             idx_to_remove = torch.where(remove_i, i, j)
+            if cv is not None:
+                idx_to_remove = torch.where(eligible.sum() == 1, eligible.long().argmax(), idx_to_remove)
 
             # Update mask and matrix
             mask[idx_to_remove] = False
@@ -148,6 +162,9 @@ class MaOEACSS(Algorithm):
         p1 = randint(0, self.pop_size, (self.pop_size,), device=self.pop.device)
         p2 = randint(0, self.pop_size, (self.pop_size,), device=self.pop.device)
         winner_mask = (asf[p1] < asf[p2]) & (a_min[p1] > a_min[p2])
+        if self.cv is not None:
+            totals = total_violation(self.cv)
+            winner_mask = prefer_by_constraint(winner_mask, totals[p1], totals[p2])
         selected_idx = torch.where(winner_mask, p1, p2)
 
         # Probabilistic Refinement
@@ -160,9 +177,9 @@ class MaOEACSS(Algorithm):
 
         # 2. Variation
         off_pop = simulated_binary(self.pop[final_idx], pro_c=1.0, dis_c=20.0)
-        off_pop = polynomial_mutation(off_pop, self.lb, self.ub, pro_m=1.0 / self.dim, dis_m=20.0)
+        off_pop = polynomial_mutation(off_pop, self.lb, self.ub, pro_m=1.0, dis_m=20.0)
         off_pop = clamp(off_pop, self.lb, self.ub)
-        off_fit = self.evaluate(off_pop)
+        off_fit, off_cv = parse_evaluate(self.evaluate(off_pop))
 
         # Update zmin
         self.zmin = torch.min(torch.min(off_fit, dim=0).values, self.zmin)
@@ -176,10 +193,12 @@ class MaOEACSS(Algorithm):
         u_fit = total_fit[u_idx]
 
         # Sequential Elimination
-        survivor_mask = self._sequential_elimination(u_fit, self.zmin, self.pop_size)
+        u_cv = take_violation(cat_violation(self.cv, off_cv), u_idx)
+        survivor_mask = self._sequential_elimination(u_fit, self.zmin, self.pop_size, u_cv)
 
         self.pop = u_pop[survivor_mask]
         self.fit = u_fit[survivor_mask]
+        self.cv = take_violation(u_cv, survivor_mask)
 
 
 if __name__ == "__main__":

@@ -1,11 +1,19 @@
 import torch
 from evox.core import Algorithm, Mutable
 from evox.operators.crossover import simulated_binary
+from evox.operators.mutation import polynomial_mutation
 from evox.operators.selection import crowding_distance, tournament_selection_multifit
 from evox.utils import clamp, lexsort
 
-from evomo.operators.selection import nd_environmental_selection, non_dominate_rank
-from evomo.utils import unique_rows_sorted
+from evomo.operators.selection import nd_environmental_selection
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    constrained_crowding_selection,
+    rank_with_constraint_objective,
+    rank_with_constraints,
+    take_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer, unique_rows_sorted
 
 
 class DMMOEA(Algorithm):
@@ -33,8 +41,8 @@ class DMMOEA(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -62,6 +70,8 @@ class DMMOEA(Algorithm):
         self.dis = Mutable(torch.zeros(pop_size, device=device))
         self.rank = Mutable(torch.full((pop_size,), torch.iinfo(torch.int32).max, dtype=torch.int32, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -75,15 +85,19 @@ class DMMOEA(Algorithm):
         test_dec = torch.full((self.dim, self.dim), 0.5, device=device) * (self.ub - self.lb) + self.lb
 
         # Evaluate D solutions where each solution i has only variable i active
-        test_fit = self.evaluate(test_dec * test_mask)
-        ranks = non_dominate_rank(test_fit)
+        test_fit, test_cv = parse_evaluate(self.evaluate(test_dec * test_mask))
+        ranks = rank_with_constraint_objective(test_fit, test_cv)
         self.var_fit = ranks.float()
 
         # Initial Population Evaluation
-        self.fit = self.evaluate(self.pop * self.mask)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop * self.mask))
 
         # Initial Selection to set rank/dis
-        _, _, self.rank, self.dis, _ = nd_environmental_selection(self.pop, self.fit, self.pop_size)
+        if self.cv is None:
+            _, _, self.rank, self.dis, _ = nd_environmental_selection(self.pop, self.fit, self.pop_size)
+        else:
+            indices, self.rank, self.dis = constrained_crowding_selection(self.fit, self.cv, self.pop_size)
+            self.pop, self.fit, self.mask, self.cv = self.pop[indices], self.fit[indices], self.mask[indices], self.cv[indices]
 
     def _batched_mlp_predict(self, history: torch.Tensor) -> torch.Tensor:
         # history: (P, N, D) -> (N*D, P)
@@ -141,18 +155,33 @@ class DMMOEA(Algorithm):
         mating_pool = tournament_selection_multifit(self.pop_size, [-self.dis, self.rank.float()], tournament_size=2)
 
         # Real-valued variation (SBX)
-        off_dec = simulated_binary(pred_dec[mating_pool], pro_c=1.0, dis_c=20.0)
+        parent_dec = pred_dec[mating_pool]
+        if self.pop_size % 2:
+            parent_dec = torch.cat([parent_dec, parent_dec[:1]])
+        off_dec = simulated_binary(parent_dec, pro_c=1.0, dis_c=20.0)
+        if self.pop_size % 2:
+            off_dec = off_dec[: self.pop_size]
+        if self.cv is not None:
+            # PlatEMO's real-valued sparse operator includes mutation; SBX
+            # alone cannot escape a collapsed decision population.
+            off_dec = polynomial_mutation(off_dec, self.lb, self.ub)
         off_dec = clamp(off_dec, self.lb, self.ub)
 
         # Mask variation
-        p1_idx = mating_pool[: self.pop_size // 2]
-        p2_idx = mating_pool[self.pop_size // 2 :]
+        mask_parents = mating_pool
+        if self.pop_size % 2:
+            mask_parents = torch.cat([mask_parents, mask_parents[:1]])
+        half = mask_parents.shape[0] // 2
+        p1_idx = mask_parents[:half]
+        p2_idx = mask_parents[half:]
         mask_p1 = pred_mask[p1_idx]
         mask_p2 = pred_mask[p2_idx]
 
         # Crossover masks
-        off_mask = torch.where(torch.rand(self.pop_size // 2, self.dim, device=device) < 0.5, mask_p1, mask_p2)
-        off_mask = torch.cat([off_mask, off_mask], dim=0)  # Match pop_size
+        off_mask = torch.where(torch.rand(half, self.dim, device=device) < 0.5, mask_p1, mask_p2)
+        off_mask = torch.cat([off_mask, off_mask], dim=0)
+        if self.pop_size % 2:
+            off_mask = off_mask[: self.pop_size]
 
         # Mutation masks (Bug #20 Compliance)
         mut_prob = 1.0 / self.dim
@@ -162,7 +191,7 @@ class DMMOEA(Algorithm):
         off_mask = torch.where(mut_mask, ~off_mask, off_mask)
 
         # 3. Evaluation
-        off_fit = self.evaluate(off_dec * off_mask)
+        off_fit, off_cv = parse_evaluate(self.evaluate(off_dec * off_mask))
 
         # 4. Environmental Selection (Bug #9 & #21 Compliance)
         merged_pop = torch.cat([self.pop, off_dec], dim=0)
@@ -172,10 +201,14 @@ class DMMOEA(Algorithm):
         # Unique Filtering (Bug #3)
         u_pop_combined = torch.cat([merged_pop, merged_mask.float()], dim=1)
         _, u_idx = unique_rows_sorted(u_pop_combined)
+        if u_idx.shape[0] < self.pop_size:
+            # Keep a full population even when all candidates are duplicates.
+            u_idx = u_idx[torch.arange(self.pop_size, device=device) % u_idx.shape[0]]
         merged_pop, merged_mask, merged_fit = merged_pop[u_idx], merged_mask[u_idx], merged_fit[u_idx]
 
         # Non-dominated sorting
-        ranks = non_dominate_rank(merged_fit)
+        merged_cv = take_violation(cat_violation(self.cv, off_cv), u_idx)
+        ranks = rank_with_constraints(merged_fit, merged_cv)
 
         # Front Peeling Loop (Bug #9)
         num_selected = 0
@@ -227,6 +260,7 @@ class DMMOEA(Algorithm):
         self.pop = merged_pop[next_indices]
         self.mask = merged_mask[next_indices]
         self.fit = merged_fit[next_indices]
+        self.cv = take_violation(merged_cv, next_indices)
         self.rank = final_ranks
         self.dis = final_dis
 

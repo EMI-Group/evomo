@@ -4,8 +4,15 @@ from evox.operators.crossover import simulated_binary
 from evox.operators.mutation import polynomial_mutation
 from evox.utils import clamp, randint
 
-from evomo.operators.selection import nd_environmental_selection, non_dominate_rank
-from evomo.utils import unique_rows_sorted
+from evomo.operators.selection import nd_environmental_selection
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    constrained_crowding_selection,
+    rank_with_constraints,
+    take_violation,
+    worst_constraint_index,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer, unique_rows_sorted
 
 
 class BCE_IBEA(Algorithm):
@@ -37,8 +44,8 @@ class BCE_IBEA(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -60,6 +67,9 @@ class BCE_IBEA(Algorithm):
         self.npc_pop = Mutable(torch.rand(pop_size, D, device=device) * (ub - lb) + lb)
         self.npc_fit = Mutable(torch.full((pop_size, n_objs), torch.inf, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+        register_lazy_buffer(self, "npc_cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -67,8 +77,8 @@ class BCE_IBEA(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
-        self.npc_fit = self.evaluate(self.npc_pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
+        self.npc_fit, self.npc_cv = parse_evaluate(self.evaluate(self.npc_pop))
 
     def step(self) -> None:
         """Advance optimization and update population and fitness state in place.
@@ -97,26 +107,30 @@ class BCE_IBEA(Algorithm):
         # Tournament selection for mating pool
         mating_idx = pc_indices[randint(0, pc_indices.numel(), (N,), device=device)]
         off_pc = self.mutation(self.crossover(self.pop[mating_idx]), self.lb, self.ub)
-        off_pc_fit = self.evaluate(off_pc)
+        off_pc_fit, off_pc_cv = parse_evaluate(self.evaluate(off_pc))
 
         # 3. NPC Mating (Standard IBEA style selection)
         npc_mating_idx = randint(0, N, (N,), device=device)
         off_npc = self.mutation(self.crossover(self.npc_pop[npc_mating_idx]), self.lb, self.ub)
-        off_npc_fit = self.evaluate(off_npc)
+        off_npc_fit, off_npc_cv = parse_evaluate(self.evaluate(off_npc))
 
         # 4. Environmental Selection for PC
         merged_pc_pop = torch.cat([self.pop, off_pc, off_npc], dim=0)
         merged_pc_fit = torch.cat([self.fit, off_pc_fit, off_npc_fit], dim=0)
         u_pc_pop, u_pc_idx = unique_rows_sorted(merged_pc_pop)
         u_pc_fit = merged_pc_fit[u_pc_idx]
-        self.pop, self.fit = _pc_selection(u_pc_pop, u_pc_fit, N)
+        self.pop, self.fit, self.cv = _pc_selection(
+            u_pc_pop, u_pc_fit, N, take_violation(cat_violation(self.cv, off_pc_cv, off_npc_cv), u_pc_idx)
+        )
 
         # 5. Environmental Selection for NPC
         merged_npc_pop = torch.cat([self.npc_pop, off_pc, off_npc], dim=0)
         merged_npc_fit = torch.cat([self.npc_fit, off_pc_fit, off_npc_fit], dim=0)
         u_npc_pop, u_npc_idx = unique_rows_sorted(merged_npc_pop)
         u_npc_fit = merged_npc_fit[u_npc_idx]
-        self.npc_pop, self.npc_fit = _ibea_selection(u_npc_pop, u_npc_fit, N, self.kappa)
+        self.npc_pop, self.npc_fit, self.npc_cv = _ibea_selection(
+            u_npc_pop, u_npc_fit, N, self.kappa, take_violation(cat_violation(self.npc_cv, off_pc_cv, off_npc_cv), u_npc_idx)
+        )
 
     def crossover(self, x):
         return simulated_binary(x)
@@ -125,7 +139,7 @@ class BCE_IBEA(Algorithm):
         return clamp(polynomial_mutation(x, lb, ub), lb, ub)
 
 
-def _ibea_selection(pop, fit, K, kappa):
+def _ibea_selection(pop, fit, K, kappa, cv=None):
     N = pop.shape[0]
     f_min = torch.min(fit, dim=0)[0]
     f_max = torch.max(fit, dim=0)[0]
@@ -146,24 +160,27 @@ def _ibea_selection(pop, fit, K, kappa):
     for _ in range(N - K):
         # Find worst among active
         temp_fit = torch.where(mask, fitness, sentinel)
-        worst = torch.argmin(temp_fit)
+        worst = torch.argmin(temp_fit) if cv is None else worst_constraint_index(fitness, mask, cv)
         mask[worst] = False
         # Update fitness of remaining
         fitness += torch.exp(-indicator[worst, :] / (C * kappa + 1e-6))
 
-    return pop[mask], fit[mask]
+    return pop[mask], fit[mask], take_violation(cv, mask)
 
 
-def _pc_selection(pop, fit, K):
+def _pc_selection(pop, fit, K, cv=None):
     # 1. Non-dominated Filtering
-    rank = non_dominate_rank(fit)
+    rank = rank_with_constraints(fit, cv)
     mask_rank1 = rank == 0
 
     # If rank 1 is not enough, take more from subsequent ranks
     if torch.sum(mask_rank1) <= K:
         # Standard ND selection if rank 1 is small
+        if cv is not None:
+            indices, _, _ = constrained_crowding_selection(fit, cv, K)
+            return pop[indices], fit[indices], cv[indices]
         new_pop, new_fit, _, _, _ = nd_environmental_selection(pop, fit, K)
-        return new_pop, new_fit
+        return new_pop, new_fit, None
 
     # Pruning Rank 1
     p_pop = pop[mask_rank1]
@@ -184,7 +201,7 @@ def _pc_selection(pop, fit, K):
         active_mask[worst] = False
         P = P / (R[worst, :] + 1e-6)
 
-    return p_pop[active_mask], p_fit[active_mask]
+    return p_pop[active_mask], p_fit[active_mask], take_violation(take_violation(cv, mask_rank1), active_mask)
 
 
 # === FIXED DEMO BLOCK ===

@@ -4,8 +4,14 @@ from evox.operators.crossover import simulated_binary
 from evox.operators.mutation import polynomial_mutation
 from evox.utils import clamp, nanmax, nanmin
 
-from evomo.operators.selection import non_dominate_rank
-from evomo.utils import unique_rows_sorted
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    rank_with_constraints,
+    take_violation,
+    total_violation,
+    worst_constraint_index,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer, unique_rows_sorted
 
 
 class SSCEA(Algorithm):
@@ -32,8 +38,8 @@ class SSCEA(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -61,6 +67,9 @@ class SSCEA(Algorithm):
         self.cv_mask = Mutable(torch.zeros(self.dim, dtype=torch.bool, device=device))
         self.gen_counter = Mutable(torch.tensor(0, dtype=torch.int32, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+        register_lazy_buffer(self, "archive_cv", device_like="pop")
+
     def _variable_clustering(self):
         # Logic: Sensitivity analysis via perturbations
         n_sel = 5
@@ -84,10 +93,12 @@ class SSCEA(Algorithm):
 
             # Evaluate (Note: In a real workflow, evaluate is external,
             # but for clustering we use a local approximation or the problem)
-            p_fit = self.evaluate(p_pop)
+            p_fit, p_cv = parse_evaluate(self.evaluate(p_pop))
             # Standard deviation across perturbations as sensitivity proxy
             p_fit_reshaped = p_fit.view(n_sel, n_per, self.n_objs)
             sensitivity[j] = torch.mean(torch.std(p_fit_reshaped, dim=1))
+            if p_cv is not None:
+                sensitivity[j] = sensitivity[j] + total_violation(p_cv).reshape(n_sel, n_per).std(dim=1).mean()
 
         # Split based on median sensitivity
         threshold = torch.median(sensitivity)
@@ -108,8 +119,8 @@ class SSCEA(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
-        self.archive_fit = self.evaluate(self.archive_pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
+        self.archive_fit, self.archive_cv = parse_evaluate(self.evaluate(self.archive_pop))
         cv, dv = self._variable_clustering()
         self.cv_mask = cv
         self.dv_mask = dv
@@ -143,7 +154,7 @@ class SSCEA(Algorithm):
             condition, off_pop * self.cv_mask + parents * (~self.cv_mask), off_pop * self.dv_mask + parents * (~self.dv_mask)
         )
 
-        off_fit = self.evaluate(final_off)
+        off_fit, off_cv = parse_evaluate(self.evaluate(final_off))
 
         # 2. Update CA: Indicator-based Peeling
         merged_ca_pop = torch.cat([self.pop, final_off], dim=0)
@@ -152,6 +163,7 @@ class SSCEA(Algorithm):
         # Unique rows
         merged_ca_pop, u_idx = unique_rows_sorted(merged_ca_pop)
         merged_ca_fit = merged_ca_fit[u_idx]
+        merged_ca_cv = take_violation(cat_violation(self.cv, off_cv), u_idx)
 
         # Normalization
         f_min = nanmin(merged_ca_fit, dim=0)[0]
@@ -180,13 +192,14 @@ class SSCEA(Algorithm):
         for _ in range(num_to_remove):
             # Find worst (min fitness in this formulation)
             active_F = torch.where(current_indices, F, sentinel_fit)
-            worst = torch.argmin(active_F)
+            worst = torch.argmin(active_F) if merged_ca_cv is None else worst_constraint_index(F, current_indices, merged_ca_cv)
             current_indices[worst] = False
             # Update remaining: F_i = F_i + exp(-I_worst_i / ...)
             F = F + kernel[worst, :]
 
         self.pop = merged_ca_pop[current_indices]
         self.fit = merged_ca_fit[current_indices]
+        self.cv = take_violation(merged_ca_cv, current_indices)
 
         # 3. Update DA: Diversity Selection
         merged_da_pop = torch.cat([self.archive_pop, final_off], dim=0)
@@ -195,7 +208,8 @@ class SSCEA(Algorithm):
         merged_da_fit = merged_da_fit[u_idx_da]
 
         # Rank-1 Extraction
-        rank = non_dominate_rank(merged_da_fit)
+        merged_da_cv = take_violation(cat_violation(self.archive_cv, off_cv), u_idx_da)
+        rank = rank_with_constraints(merged_da_fit, merged_da_cv)
         mask_r1 = rank == 0
         da_pop_r1 = merged_da_pop[mask_r1]
         da_fit_r1 = merged_da_fit[mask_r1]
@@ -226,6 +240,7 @@ class SSCEA(Algorithm):
 
         self.archive_pop = da_pop_r1[selected_mask]
         self.archive_fit = da_fit_r1[selected_mask]
+        self.archive_cv = take_violation(take_violation(merged_da_cv, mask_r1), selected_mask)
 
 
 if __name__ == "__main__":

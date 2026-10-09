@@ -7,6 +7,14 @@ from evox.operators.sampling import uniform_sampling
 from evox.operators.selection import ref_vec_guided
 from evox.utils import clamp, randint
 
+from evomo.operators.selection import ref_vec_guided as constrained_ref_vec_guided
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    prefer_by_constraint,
+    total_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer
+
 
 class LMOCSO(Algorithm):
     """
@@ -70,8 +78,8 @@ class LMOCSO(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Reference-vector sampling can change the requested population size. Read ``self.pop.shape[0]`` for the actual size.
         """
@@ -112,6 +120,8 @@ class LMOCSO(Algorithm):
         self.fit = Mutable(torch.full((self.pop_size, self.n_objs), torch.inf, device=device))
         self.gen = Mutable(torch.tensor(0, dtype=int, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def init_step(self):
         """Evaluate the initial population and initialize algorithm state.
 
@@ -119,7 +129,7 @@ class LMOCSO(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
 
     def step(self):
         """Advance optimization and update population and fitness state in place.
@@ -147,6 +157,9 @@ class LMOCSO(Algorithm):
         randperm = torch.randperm(self.pop_size // 2 * 2, device=self.pop.device).reshape(2, -1)
 
         mask = sde_fitness[randperm[0, :]] > sde_fitness[randperm[1, :]]
+        if self.cv is not None:
+            selected_cv = total_violation(self.cv)[sorted_indices[mating_pool]]
+            mask = prefer_by_constraint(mask, selected_cv[randperm[0]], selected_cv[randperm[1]])
         winner = torch.where(mask, randperm[0, :], randperm[1, :])
         loser = torch.where(mask, randperm[1, :], randperm[0, :])
 
@@ -167,16 +180,26 @@ class LMOCSO(Algorithm):
         self.velocity = new_velocity
 
         next_generation = self.mutation(new_population, self.lb, self.ub)
-        next_generation_fitness = self.evaluate(next_generation)
+        next_generation_fitness, next_cv = parse_evaluate(self.evaluate(next_generation))
 
         self.gen = self.gen + 1
 
         merged_pop = torch.cat([self.pop, next_generation], dim=0)
         merged_fitness = torch.cat([self.fit, next_generation_fitness], dim=0)
         # RVEA Selection
-        survivor, survivor_fitness = self.selection(
-            merged_pop, merged_fitness, self.reference_vector, (self.gen / self.max_gen) ** self.alpha
-        )
+        if self.cv is None:
+            survivor, survivor_fitness = self.selection(
+                merged_pop, merged_fitness, self.reference_vector, (self.gen / self.max_gen) ** self.alpha
+            )
+        else:
+            selector = constrained_ref_vec_guided if self.selection is ref_vec_guided else self.selection
+            survivor, survivor_fitness, self.cv = selector(
+                merged_pop,
+                merged_fitness,
+                self.reference_vector,
+                (self.gen / self.max_gen) ** self.alpha,
+                cat_violation(self.cv, next_cv),
+            )
 
         self.pop = survivor
         self.fit = survivor_fitness

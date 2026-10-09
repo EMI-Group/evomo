@@ -4,7 +4,15 @@ from evox.operators.mutation import polynomial_mutation
 from evox.operators.sampling import uniform_sampling
 from evox.utils import clamp, randint
 
-from evomo.operators.selection import non_dominate_rank
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    prefer_by_constraint,
+    rank_with_constraints,
+    take_violation,
+    total_violation,
+    update_by_proposals,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
 class BCEMOEAD(Algorithm):
@@ -47,8 +55,8 @@ class BCEMOEAD(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Reference-vector sampling can change the requested population size. Read ``self.pop.shape[0]`` for the actual size.
 
@@ -85,6 +93,9 @@ class BCEMOEAD(Algorithm):
         self.z = Mutable(torch.zeros((1, n_objs), device=device))
         self.nND = Mutable(torch.tensor(0, dtype=torch.int32, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+        register_lazy_buffer(self, "npc_cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -92,9 +103,9 @@ class BCEMOEAD(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.npc_fit = self.evaluate(self.npc_pop)
+        self.npc_fit, self.npc_cv = parse_evaluate(self.evaluate(self.npc_pop))
         self.z = torch.min(self.npc_fit, dim=0, keepdim=True).values
-        self.pop, self.fit, self.nND = self._pc_selection(self.npc_pop, self.npc_fit)
+        self.pop, self.fit, self.nND = self._pc_selection(self.npc_pop, self.npc_fit, self.npc_cv)
 
     def _cal_tchebycheff(self, fit: torch.Tensor, z: torch.Tensor, W: torch.Tensor) -> torch.Tensor:
         # Bug #12: Safe division
@@ -110,7 +121,7 @@ class BCEMOEAD(Algorithm):
         offspring = polynomial_mutation(offspring, self.lb, self.ub)
         return clamp(offspring, self.lb, self.ub)
 
-    def _niche_deletion(self, pop: torch.Tensor, fit: torch.Tensor, topk: int):
+    def _niche_deletion(self, pop: torch.Tensor, fit: torch.Tensor, topk: int, cv=None):
         f_min = torch.min(fit, dim=0).values
         f_max = torch.max(fit, dim=0).values
         norm_fit = (fit - f_min) / (f_max - f_min + 1e-6)
@@ -129,10 +140,11 @@ class BCEMOEAD(Algorithm):
             global_indices = torch.where(active_mask)[0]
             active_mask[global_indices[local_idx]] = False
 
+        self.cv = take_violation(cv, active_mask)
         return pop[active_mask], fit[active_mask]
 
-    def _pc_selection(self, pop: torch.Tensor, fit: torch.Tensor):
-        rank = non_dominate_rank(fit)
+    def _pc_selection(self, pop: torch.Tensor, fit: torch.Tensor, cv=None):
+        rank = rank_with_constraints(fit, cv)
         is_nd = rank == 0
         pc_pop = pop[is_nd]
         pc_fit = fit[is_nd]
@@ -141,8 +153,9 @@ class BCEMOEAD(Algorithm):
         permutation = torch.randperm(pc_pop.shape[0], device=pop.device)
         pc_pop = pc_pop[permutation]
         pc_fit = pc_fit[permutation]
+        self.cv = take_violation(take_violation(cv, is_nd), permutation)
         if pc_pop.shape[0] > self.pop_size:
-            pc_pop, pc_fit = self._niche_deletion(pc_pop, pc_fit, self.pop_size)
+            pc_pop, pc_fit = self._niche_deletion(pc_pop, pc_fit, self.pop_size, self.cv)
 
         return pc_pop, pc_fit, n_nd
 
@@ -165,7 +178,7 @@ class BCEMOEAD(Algorithm):
         parent2 = self.pop[random_mates[exploration_mask]]
         return self._operator_ga_half(parent1, parent2)
 
-    def _update_npc_with_new_pc(self, new_pc: torch.Tensor, new_pc_fit: torch.Tensor) -> None:
+    def _update_npc_with_new_pc(self, new_pc: torch.Tensor, new_pc_fit: torch.Tensor, new_pc_cv=None) -> None:
         if new_pc.shape[0] == 0:
             return
 
@@ -174,6 +187,8 @@ class BCEMOEAD(Algorithm):
         diff = torch.abs(new_pc_fit.unsqueeze(1) - self.z.unsqueeze(0))
         g_new = torch.max(diff / (self.W.unsqueeze(0) + 1e-6), dim=-1).values
         eligible = g_new <= g_old.unsqueeze(0)
+        if self.npc_cv is not None:
+            eligible = prefer_by_constraint(eligible, total_violation(new_pc_cv)[:, None], total_violation(self.npc_cv)[None])
 
         # A random permutation followed by the first eligible item is
         # equivalent to selecting one eligible NPC uniformly at random.
@@ -183,6 +198,12 @@ class BCEMOEAD(Algorithm):
         proposals = torch.zeros_like(eligible)
         proposals.scatter_(1, chosen.unsqueeze(1), has_candidate.unsqueeze(1))
 
+        if self.npc_cv is not None:
+            targets = torch.arange(self.pop_size, device=self.pop.device)[None].expand_as(proposals)
+            self.npc_pop, self.npc_fit, self.npc_cv = update_by_proposals(
+                self.npc_pop, self.npc_fit, self.npc_cv, new_pc, new_pc_fit, new_pc_cv, targets, proposals, g_new
+            )
+            return
         proposal_values = torch.where(proposals, g_new, torch.inf)
         best_new_pc = torch.argmin(proposal_values, dim=0)
         replace = proposals.any(dim=0)
@@ -200,7 +221,7 @@ class BCEMOEAD(Algorithm):
         parents = torch.where(use_neighbor.unsqueeze(1), neighbor_parents, global_parents)
 
         new_npc = self._operator_ga_half(self.npc_pop[parents[:, 0]], self.npc_pop[parents[:, 1]])
-        new_npc_fit = self.evaluate(new_npc)
+        new_npc_fit, new_npc_cv = parse_evaluate(self.evaluate(new_npc))
         self.z = torch.min(torch.cat([self.z, new_npc_fit], dim=0), dim=0, keepdim=True).values
 
         diff = torch.abs(new_npc_fit.unsqueeze(1) - self.z.unsqueeze(0))
@@ -211,6 +232,10 @@ class BCEMOEAD(Algorithm):
         neighbor_candidates.scatter_(1, self.B, True)
         candidates = torch.where(use_neighbor.unsqueeze(1), neighbor_candidates, torch.ones_like(neighbor_candidates))
         eligible = candidates & (g_new <= g_old.unsqueeze(0))
+        if self.npc_cv is not None:
+            eligible = candidates & prefer_by_constraint(
+                g_new <= g_old[None], total_violation(new_npc_cv)[:, None], total_violation(self.npc_cv)[None]
+            )
 
         priorities = torch.rand((N, N), device=device).masked_fill(~eligible, torch.inf)
         selected = torch.topk(priorities, self.nr, dim=1, largest=False).indices
@@ -219,11 +244,17 @@ class BCEMOEAD(Algorithm):
         proposals.scatter_(1, selected, selected_valid)
 
         proposal_values = torch.where(proposals, g_new, torch.inf)
+        if self.npc_cv is not None:
+            targets = torch.arange(N, device=device)[None].expand_as(proposals)
+            self.npc_pop, self.npc_fit, self.npc_cv = update_by_proposals(
+                self.npc_pop, self.npc_fit, self.npc_cv, new_npc, new_npc_fit, new_npc_cv, targets, proposals, g_new
+            )
+            return new_npc, new_npc_fit, new_npc_cv
         best_offspring = torch.argmin(proposal_values, dim=0)
         replace = proposals.any(dim=0)
         self.npc_pop[replace] = new_npc[best_offspring[replace]]
         self.npc_fit[replace] = new_npc_fit[best_offspring[replace]]
-        return new_npc, new_npc_fit
+        return new_npc, new_npc_fit, new_npc_cv
 
     def step(self) -> None:
         """Advance optimization and update population and fitness state in place.
@@ -233,13 +264,20 @@ class BCEMOEAD(Algorithm):
         :returns: ``None``; results are stored in algorithm state.
         """
         new_pc = self._exploration()
-        new_pc_fit = self.evaluate(new_pc)
-        self._update_npc_with_new_pc(new_pc, new_pc_fit)
+        if self.cv is not None and new_pc.shape[0] == 0:
+            # Some constrained evaluators omit constraint columns for empty
+            # inputs. No evaluation is needed for an empty exploration batch.
+            new_pc_fit, new_pc_cv = self.fit[:0], self.cv[:0]
+        else:
+            new_pc_fit, new_pc_cv = parse_evaluate(self.evaluate(new_pc))
+        self._update_npc_with_new_pc(new_pc, new_pc_fit, new_pc_cv)
 
-        new_npc, new_npc_fit = self._evolve_npc()
+        new_npc, new_npc_fit, new_npc_cv = self._evolve_npc()
         combined_pop = torch.cat([self.pop, new_npc, new_pc], dim=0)
         combined_fit = torch.cat([self.fit, new_npc_fit, new_pc_fit], dim=0)
-        self.pop, self.fit, self.nND = self._pc_selection(combined_pop, combined_fit)
+        self.pop, self.fit, self.nND = self._pc_selection(
+            combined_pop, combined_fit, cat_violation(self.cv, new_npc_cv, new_pc_cv)
+        )
 
 
 if __name__ == "__main__":

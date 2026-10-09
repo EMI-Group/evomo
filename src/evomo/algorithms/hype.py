@@ -8,32 +8,38 @@ from evox.operators.selection import tournament_selection
 from evox.utils import clamp, lexsort
 
 from evomo.operators.selection import non_dominate_rank
+from evomo.operators.selection.constraint_handling import constrained_rank, constraint_priority
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
-def cal_hv(fit: torch.Tensor, ref: torch.Tensor, pop_size: int, n_sample: int):
+def cal_hv(fit: torch.Tensor, ref: torch.Tensor, pop_size: int, n_sample: int, valid: torch.Tensor | None = None):
+    """Estimate contributions, optionally masking a fixed-shape cutoff front."""
     n, m = fit.size()
+    active_n = n if valid is None else valid.sum()
     alpha = torch.cumprod(
         torch.cat(
             [
                 torch.ones(1, device=fit.device),
-                (pop_size - torch.arange(1, n, device=fit.device)) / (n - torch.arange(1, n, device=fit.device)),
+                (pop_size - torch.arange(1, n, device=fit.device)) / (active_n - torch.arange(1, n, device=fit.device)),
             ]
         ),
         dim=0,
     ) / torch.arange(1, n + 1, device=fit.device)
     alpha = torch.nan_to_num(alpha)
 
-    f_min = torch.min(fit, dim=0).values
+    f_min = torch.min(fit if valid is None else torch.where(valid[:, None], fit, torch.inf), dim=0).values
 
     samples = torch.rand(n_sample, m, device=fit.device) * (ref - f_min) + f_min
 
     ds = torch.zeros(n_sample, dtype=torch.int64, device=fit.device)
     pds = (fit.unsqueeze(0).expand(n_sample, -1, -1) - samples.unsqueeze(1).expand(-1, n, -1) <= 0).all(dim=2)
+    if valid is not None:
+        pds = pds & valid[None, :]
     ds = torch.sum(torch.where(pds, ds.unsqueeze(1) + 1, ds.unsqueeze(1)), dim=1)
     ds = torch.where(ds == 0, ds, ds - 1)
 
     temp = torch.where(pds.T, ds.unsqueeze(0), -1)
-    value = torch.where(temp != -1, alpha[temp], torch.tensor(0, dtype=torch.float32))
+    value = torch.where(temp != -1, alpha[temp], fit.new_zeros(()))
     f = torch.sum(value, dim=1)
 
     f = f * torch.prod(ref - f_min) / n_sample
@@ -102,9 +108,11 @@ class HypE(Algorithm):
         .. note::
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
-            ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. Evaluation accepts objectives
+            or ``(fitness, cv)`` with violations of shape ``(B,)`` or ``(B, C)``. The constrained extension prioritizes
+            total positive violation in mating and constrained fronts in survival. Equal-violation infeasible points
+            share a front. Hypervolume estimates resolve the cutoff front, using fixed-shape masks. Selected
+            violations are saved in ``self.cv``. Unconstrained runs retain the existing batch HV selection.
         """
 
         super().__init__()
@@ -139,6 +147,7 @@ class HypE(Algorithm):
 
         self.pop = Mutable(population)
         self.fit = Mutable(torch.full((self.pop_size, self.n_objs), torch.inf, device=device))
+        register_lazy_buffer(self, "cv", device_like="pop")
 
     def init_step(self):
         """Evaluate the initial population and initialize algorithm state.
@@ -147,8 +156,11 @@ class HypE(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
-        self.ref = torch.full((self.n_objs,), torch.max(self.fit).item() * 1.2, device=self.fit.device)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
+        if self.cv is None:
+            self.ref = torch.full((self.n_objs,), torch.max(self.fit).item() * 1.2, device=self.fit.device)
+        else:
+            self.ref = (torch.max(self.fit) * 1.2).expand(self.n_objs).clone()
 
     def step(self):
         """Advance optimization and update population and fitness state in place.
@@ -158,24 +170,37 @@ class HypE(Algorithm):
         :returns: ``None``; results are stored in algorithm state.
         """
         hv = cal_hv(self.fit, self.ref, self.pop_size, self.n_sample)
-        mating_pool = self.selection(self.pop_size, -hv)
+        mating_fitness = -hv if self.cv is None else constraint_priority(-hv, self.cv)
+        mating_pool = self.selection(self.pop_size, mating_fitness)
         crossovered = self.crossover(self.pop[mating_pool])
         offspring = self.mutation(crossovered, self.lb, self.ub)
         offspring = clamp(offspring, self.lb, self.ub)
-        off_fit = self.evaluate(offspring)
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
 
         merge_pop = torch.cat([self.pop, offspring], dim=0)
         merge_fit = torch.cat([self.fit, off_fit], dim=0)
 
-        rank = non_dominate_rank(merge_fit)
+        if self.cv is None:
+            rank = non_dominate_rank(merge_fit)
+        else:
+            merge_cv = torch.cat([self.cv, off_cv], dim=0)
+            rank = constrained_rank(merge_fit, merge_cv, self.pop_size)
         order = torch.argsort(rank)
-        worst_rank = rank[order[self.pop_size - 1]]
+        if self.cv is None:
+            worst_rank = rank[order[self.pop_size - 1]]
+        else:
+            worst_rank = rank.gather(0, order[self.pop_size - 1 : self.pop_size]).squeeze(0)
         mask = rank <= worst_rank
 
-        hv = cal_hv(merge_fit, self.ref, torch.sum(mask) - self.pop_size, self.n_sample)
+        if self.cv is None:
+            hv = cal_hv(merge_fit, self.ref, torch.sum(mask) - self.pop_size, self.n_sample)
+        else:
+            hv = cal_hv(merge_fit, self.ref, torch.sum(mask) - self.pop_size, self.n_sample, valid=rank == worst_rank)
         dis = torch.where(mask, hv, -torch.inf)
 
         combined_indices = lexsort([-dis, rank])[: self.pop_size]
 
         self.pop = merge_pop[combined_indices]
         self.fit = merge_fit[combined_indices]
+        if self.cv is not None:
+            self.cv = merge_cv[combined_indices]

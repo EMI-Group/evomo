@@ -6,6 +6,14 @@ from evox.operators.sampling import uniform_sampling
 from evox.operators.selection import crowding_distance, tournament_selection_multifit
 from evox.utils import clamp, lexsort
 
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    constraint_keys,
+    take_violation,
+    total_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer
+
 
 class GWASFGA(Algorithm):
     def __init__(self, pop_size: int, n_objs: int, lb: torch.Tensor, ub: torch.Tensor, **kwargs):
@@ -32,8 +40,8 @@ class GWASFGA(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -63,6 +71,8 @@ class GWASFGA(Algorithm):
         self.front_no = Mutable(torch.full((pop_size,), sentinel, dtype=torch.int32, device=device))
         self.crowd_dis = Mutable(torch.zeros(pop_size, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -70,13 +80,13 @@ class GWASFGA(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
         # Initial Reference Points
         self.utop = torch.min(self.fit, dim=0)[0] - 0.01
         self.nadir = torch.max(self.fit, dim=0)[0] + 0.01
 
         # Initial Sorting
-        f_no, c_dis = _gwasf_sort(self.fit, self.vectors, self.utop, self.nadir, self.pop_size)
+        f_no, c_dis = _gwasf_sort(self.fit, self.vectors, self.utop, self.nadir, self.pop_size, self.cv)
         self.front_no = f_no
         self.crowd_dis = c_dis
 
@@ -89,7 +99,9 @@ class GWASFGA(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        mating_pool = tournament_selection_multifit(self.pop_size, [-self.crowd_dis, self.front_no.float()], tournament_size=2)
+        mating_pool = tournament_selection_multifit(
+            self.pop_size, constraint_keys([-self.crowd_dis, self.front_no.float()], self.cv), tournament_size=2
+        )
 
         # Variation
         crossovered = simulated_binary(self.pop[mating_pool])
@@ -97,7 +109,7 @@ class GWASFGA(Algorithm):
         offspring = clamp(offspring, self.lb, self.ub)
 
         # 2. Evaluation
-        off_fit = self.evaluate(offspring)
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
 
         # 3. Environmental Selection
         combined_pop = torch.cat([self.pop, offspring], dim=0)
@@ -108,21 +120,25 @@ class GWASFGA(Algorithm):
         self.nadir = torch.max(combined_fit, dim=0)[0] + 0.01
 
         # Core GWASF Sorting
-        f_no, c_dis = _gwasf_sort(combined_fit, self.vectors, self.utop, self.nadir, self.pop_size)
+        f_no, c_dis = _gwasf_sort(
+            combined_fit, self.vectors, self.utop, self.nadir, self.pop_size, cat_violation(self.cv, off_cv)
+        )
 
         # Truncation using Lexsort (Bug #25: Primary key last)
         # We want to minimize front_no and maximize crowd_dis
-        idx = lexsort(torch.stack([-c_dis, f_no.float()]))
+        combined_cv = cat_violation(self.cv, off_cv)
+        idx = lexsort(constraint_keys([-c_dis, f_no.float()], combined_cv))
         survivor_idx = idx[: self.pop_size]
 
         self.pop = combined_pop[survivor_idx]
         self.fit = combined_fit[survivor_idx]
+        self.cv = take_violation(combined_cv, survivor_idx)
         self.front_no = f_no[survivor_idx]
         self.crowd_dis = c_dis[survivor_idx]
 
 
 def _gwasf_sort(
-    fit: torch.Tensor, vectors: torch.Tensor, utop: torch.Tensor, nadir: torch.Tensor, N: int
+    fit: torch.Tensor, vectors: torch.Tensor, utop: torch.Tensor, nadir: torch.Tensor, N: int, cv=None
 ) -> tuple[torch.Tensor, torch.Tensor]:
     num_combined = fit.shape[0]
     device = fit.device
@@ -153,7 +169,11 @@ def _gwasf_sort(
         asf_mat = torch.where(torch.tensor(current_front % 2 != 0, device=device), asf_u_mat, asf_n_mat)
 
         # Mask already selected individuals
-        masked_asf = torch.where(selected_mask.unsqueeze(1), torch.tensor(float("inf"), device=device), asf_mat)
+        eligible = ~selected_mask
+        if cv is not None:
+            totals = total_violation(cv)
+            eligible = eligible & (totals == torch.where(eligible, totals, torch.inf).amin())
+        masked_asf = torch.where(eligible.unsqueeze(1), asf_mat, torch.inf)
 
         # For each vector, find best individual
         best_indices = torch.argmin(masked_asf, dim=0)  # (L,)

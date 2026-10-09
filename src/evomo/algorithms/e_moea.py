@@ -4,7 +4,17 @@ from evox.operators.crossover import simulated_binary
 from evox.operators.mutation import polynomial_mutation
 from evox.utils import clamp, lexsort
 
-from evomo.operators.selection import non_dominate_rank
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    constrained_dominates,
+    constraint_dominance_matrix,
+    constraint_keys,
+    rank_with_constraints,
+    take_violation,
+    update_by_proposals,
+    update_last_proposals,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
 class eMOEA(Algorithm):
@@ -36,8 +46,8 @@ class eMOEA(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -62,6 +72,9 @@ class eMOEA(Algorithm):
         self.archive_fit = Mutable(torch.full((pop_size * 2, n_objs), torch.inf, device=device))
         self.archive_mask = Mutable(torch.zeros(pop_size * 2, dtype=torch.bool, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+        register_lazy_buffer(self, "archive_cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -69,14 +82,14 @@ class eMOEA(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
 
         # Grid Calculation for Archive Seed
         f_min = torch.min(self.fit, dim=0)[0]
         pop_grid = torch.floor((self.fit - f_min) / (self.epsilon + 1e-6))
 
         # Only first front based on grid values
-        rank = non_dominate_rank(pop_grid)
+        rank = rank_with_constraints(pop_grid, self.cv)
         first_front_mask = rank == 0
 
         # Update Archive
@@ -87,6 +100,9 @@ class eMOEA(Algorithm):
         self.archive_pop[fill_mask] = self.pop[first_front_mask]
         self.archive_fit[fill_mask] = self.fit[first_front_mask]
         self.archive_mask[fill_mask] = True
+        if self.cv is not None:
+            self.archive_cv = self.cv.new_full((self.archive_pop.shape[0],) + self.cv.shape[1:], torch.inf)
+            self.archive_cv[fill_mask] = self.cv[first_front_mask]
 
     def step(self) -> None:
         """Advance optimization and update population and fitness state in place.
@@ -106,6 +122,9 @@ class eMOEA(Algorithm):
         # Dominance check for tournament
         dom12 = (fit1 <= fit2).all(-1) & (fit1 < fit2).any(-1)
         dom21 = (fit2 <= fit1).all(-1) & (fit2 < fit1).any(-1)
+        if self.cv is not None:
+            dom12 = constrained_dominates(fit1, self.cv[idx1], fit2, self.cv[idx2])
+            dom21 = constrained_dominates(fit2, self.cv[idx2], fit1, self.cv[idx1])
         parent_idx_pop = torch.where(dom21 & ~dom12, idx2, idx1)
         parents_pop = self.pop[parent_idx_pop]
 
@@ -118,23 +137,21 @@ class eMOEA(Algorithm):
         parents_arc = self.archive_pop[valid_arc_indices[rand_idx]]
 
         # Variation (SBX + PM)
-        interleaved_parents = torch.empty((self.pop_size * 2, self.dim), device=device)
-        interleaved_parents[0::2] = parents_pop
-        interleaved_parents[1::2] = parents_arc
-
-        off_pop = simulated_binary(interleaved_parents, pro_c=1.0, dis_c=20.0)
+        parents = torch.cat([parents_pop, parents_arc], dim=0)
+        off_pop = simulated_binary(parents, pro_c=1.0, dis_c=20.0)
         off_pop = off_pop[: self.pop_size]
         off_pop = polynomial_mutation(off_pop, self.lb, self.ub)
         off_pop = clamp(off_pop, self.lb, self.ub)
 
         # 2. Evaluation
-        off_fit = self.evaluate(off_pop)
+        off_fit, off_cv = parse_evaluate(self.evaluate(off_pop))
 
         # 3. Population Update (Vectorized Steady-State)
         # Check if population members dominate offspring
         pop_dom_off = (self.fit.unsqueeze(1) <= off_fit.unsqueeze(0)).all(-1) & (
             self.fit.unsqueeze(1) < off_fit.unsqueeze(0)
         ).any(-1)
+        pop_dom_off = constraint_dominance_matrix(pop_dom_off, self.cv, off_cv)
         is_dominated_by_pop = pop_dom_off.any(dim=0)
 
         # Check if offspring dominate population members
@@ -152,9 +169,12 @@ class eMOEA(Algorithm):
 
         # Find first dominated member for each offspring (if any)
         # off_dom_pop is (N_off, N_pop). We want an index i for each j.
+        off_dom_pop = constraint_dominance_matrix(off_dom_pop, off_cv, self.cv)
         has_dominated = off_dom_pop.any(dim=1)
-        # Use argmax to find the first True index in each row
-        dominated_idx = torch.argmax(off_dom_pop.float(), dim=1)
+        # Random dominated targets spread batch proposals across incumbents,
+        # as in PlatEMO's random steady-state replacement.
+        priority = torch.rand(off_dom_pop.shape, device=device).masked_fill(~off_dom_pop, torch.inf)
+        dominated_idx = priority.argmin(dim=1)
 
         target_indices = torch.where(has_dominated, dominated_idx, random_targets)
 
@@ -163,16 +183,30 @@ class eMOEA(Algorithm):
 
         # Apply updates. Since multiple offspring might target the same index,
         # the last one in the batch wins, which is acceptable for steady-state.
-        self.pop[target_indices[update_mask]] = off_pop[update_mask]
-        self.fit[target_indices[update_mask]] = off_fit[update_mask]
+        if self.cv is None:
+            self.pop, self.fit = update_last_proposals(
+                self.pop, self.fit, off_pop, off_fit, target_indices[:, None], update_mask[:, None]
+            )
+        else:
+            self.pop, self.fit, self.cv = update_by_proposals(
+                self.pop,
+                self.fit,
+                self.cv,
+                off_pop,
+                off_fit,
+                off_cv,
+                target_indices[:, None],
+                update_mask[:, None],
+                off_fit.sum(dim=1, keepdim=True),
+            )
 
         # 4. Archive Update (Epsilon-Dominance)
-        self.archive_pop, self.archive_fit, self.archive_mask = _update_archive(
-            self.archive_pop, self.archive_fit, self.archive_mask, off_pop, off_fit, self.epsilon
+        self.archive_pop, self.archive_fit, self.archive_mask, self.archive_cv = _update_archive(
+            self.archive_pop, self.archive_fit, self.archive_mask, off_pop, off_fit, self.epsilon, self.archive_cv, off_cv
         )
 
 
-def _update_archive(arc_pop, arc_fit, arc_mask, off_pop, off_fit, epsilon):
+def _update_archive(arc_pop, arc_fit, arc_mask, off_pop, off_fit, epsilon, arc_cv=None, off_cv=None):
     device = arc_pop.device
     valid_idx = torch.where(arc_mask)[0]
     curr_arc_pop = arc_pop[valid_idx]
@@ -186,6 +220,8 @@ def _update_archive(arc_pop, arc_fit, arc_mask, off_pop, off_fit, epsilon):
 
     # Grid Dominance
     dom = (G.unsqueeze(1) <= G.unsqueeze(0)).all(-1) & (G.unsqueeze(1) < G.unsqueeze(0)).any(-1)
+    total_cv = cat_violation(take_violation(arc_cv, valid_idx), off_cv)
+    dom = constraint_dominance_matrix(dom, total_cv)
     is_dominated = dom.any(dim=0)
 
     # Distance to Corner (Tie-breaker)
@@ -193,7 +229,7 @@ def _update_archive(arc_pop, arc_fit, arc_mask, off_pop, off_fit, epsilon):
     dist = torch.sqrt(torch.sum((total_fit - corner) ** 2, dim=1) + 1e-6)
 
     # Lexsort keys: Distance (primary), then Grid coordinates (secondary)
-    keys = [dist]
+    keys = constraint_keys([dist], total_cv)
     G_cols = torch.unbind(G, dim=1)
     for col in reversed(G_cols):
         keys.append(col)
@@ -226,7 +262,11 @@ def _update_archive(arc_pop, arc_fit, arc_mask, off_pop, off_fit, epsilon):
     out_fit[copy_mask] = new_fit[:num_to_copy]
     out_mask[copy_mask] = True
 
-    return out_pop, out_fit, out_mask
+    out_cv = None
+    if arc_cv is not None:
+        out_cv = torch.full_like(arc_cv, torch.inf)
+        out_cv[copy_mask] = total_cv[final_keep_mask][:num_to_copy]
+    return out_pop, out_fit, out_mask, out_cv
 
 
 if __name__ == "__main__":

@@ -5,8 +5,12 @@ from evox.operators.mutation import polynomial_mutation
 from evox.operators.selection import crowding_distance, tournament_selection_multifit
 from evox.utils import clamp
 
-from evomo.operators.selection import non_dominate_rank
-from evomo.utils import unique_rows_sorted
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    rank_with_constraints,
+    take_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer, unique_rows_sorted
 
 
 class SNSGA2(Algorithm):
@@ -44,8 +48,8 @@ class SNSGA2(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -77,6 +81,8 @@ class SNSGA2(Algorithm):
         self.front_no = Mutable(torch.full((pop_size,), sentinel, dtype=torch.int32, device=device))
         self.crowd_dis = Mutable(torch.full((pop_size,), -1.0, dtype=torch.float32, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -84,9 +90,9 @@ class SNSGA2(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
         # Initial Environmental Selection
-        self.pop, self.fit, self.front_no, self.crowd_dis = self._environmental_selection(self.pop, self.fit)
+        self.pop, self.fit, self.front_no, self.crowd_dis = self._environmental_selection(self.pop, self.fit, self.cv)
 
     def _sparse_sbx(self, p1: torch.Tensor, p2: torch.Tensor) -> torch.Tensor:
         # SSBX Logic
@@ -138,12 +144,13 @@ class SNSGA2(Algorithm):
 
         return new_pop
 
-    def _environmental_selection(self, merge_pop: torch.Tensor, merge_fit: torch.Tensor):
+    def _environmental_selection(self, merge_pop: torch.Tensor, merge_fit: torch.Tensor, merge_cv=None):
         N = self.pop_size
         X, u_idx = unique_rows_sorted(merge_pop)
         F = merge_fit[u_idx]
 
-        rank = non_dominate_rank(F)
+        cv = take_violation(merge_cv, u_idx)
+        rank = rank_with_constraints(F, cv)
         num_selected = 0
         selected_indices = torch.full((N,), -1, dtype=torch.long, device=X.device)
         all_crowd_dis = torch.zeros(F.shape[0], device=X.device)
@@ -173,6 +180,7 @@ class SNSGA2(Algorithm):
                 selected_indices[num_selected:N] = top_indices
                 num_selected = N
 
+        self.cv = take_violation(cv, selected_indices)
         survivor_pop = X[selected_indices]
         survivor_fit = F[selected_indices]
         survivor_rank = rank[selected_indices]
@@ -204,12 +212,14 @@ class SNSGA2(Algorithm):
         off_pop = self._sparse_mutate_mask(off_pop, target_W)
 
         off_pop = clamp(off_pop, self.lb, self.ub)
-        off_fit = self.evaluate(off_pop)
+        off_fit, off_cv = parse_evaluate(self.evaluate(off_pop))
 
         merge_pop = torch.cat([self.pop, off_pop], dim=0)
         merge_fit = torch.cat([self.fit, off_fit], dim=0)
 
-        self.pop, self.fit, self.front_no, self.crowd_dis = self._environmental_selection(merge_pop, merge_fit)
+        self.pop, self.fit, self.front_no, self.crowd_dis = self._environmental_selection(
+            merge_pop, merge_fit, cat_violation(self.cv, off_cv)
+        )
 
 
 if __name__ == "__main__":

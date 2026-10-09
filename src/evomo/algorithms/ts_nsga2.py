@@ -6,8 +6,15 @@ from evox.operators.sampling import uniform_sampling
 from evox.operators.selection import tournament_selection_multifit
 from evox.utils import clamp, lexsort
 
-from evomo.operators.selection import non_dominate_rank
-from evomo.utils import unique_rows_sorted
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    constraint_keys,
+    constraint_priority,
+    rank_with_constraints,
+    take_violation,
+    total_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer, unique_rows_sorted
 
 
 class TSNSGAII(Algorithm):
@@ -35,8 +42,8 @@ class TSNSGAII(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -63,6 +70,8 @@ class TSNSGAII(Algorithm):
         self.d2 = Mutable(torch.zeros(pop_size, device=device))
         self.fe = Mutable(torch.tensor(0, dtype=torch.int32, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -70,10 +79,10 @@ class TSNSGAII(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
         self.fe = self.fe + self.pop_size
         # Initial Selection to populate keys
-        self.pop, self.fit, self.front_no, self.d2 = self._environmental_selection(self.pop, self.fit)
+        self.pop, self.fit, self.front_no, self.d2 = self._environmental_selection(self.pop, self.fit, self.cv)
 
     def step(self) -> None:
         # 1. Mating
@@ -84,22 +93,26 @@ class TSNSGAII(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        mating_pool = tournament_selection_multifit(self.pop_size, [self.d2, self.front_no.float()], tournament_size=2)
+        mating_pool = tournament_selection_multifit(
+            self.pop_size, constraint_keys([self.d2, self.front_no.float()], self.cv), tournament_size=2
+        )
         offspring = simulated_binary(self.pop[mating_pool], pro_c=1.0, dis_c=20.0)
-        offspring = polynomial_mutation(offspring, self.lb, self.ub, pro_m=1.0 / self.lb.numel(), dis_m=20.0)
+        offspring = polynomial_mutation(offspring, self.lb, self.ub, pro_m=1.0, dis_m=20.0)
         offspring = clamp(offspring, self.lb, self.ub)
 
         # 2. Evaluation
-        off_fit = self.evaluate(offspring)
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
         self.fe = self.fe + self.pop_size
 
         # 3. Selection
         merged_pop = torch.cat([self.pop, offspring], dim=0)
         merged_fit = torch.cat([self.fit, off_fit], dim=0)
 
-        self.pop, self.fit, self.front_no, self.d2 = self._environmental_selection(merged_pop, merged_fit)
+        self.pop, self.fit, self.front_no, self.d2 = self._environmental_selection(
+            merged_pop, merged_fit, cat_violation(self.cv, off_cv)
+        )
 
-    def _environmental_selection(self, pop, fit):
+    def _environmental_selection(self, pop, fit, cv=None):
         N = self.pop_size
         M = self.n_objs
 
@@ -131,9 +144,10 @@ class TSNSGAII(Algorithm):
             front_no = self._spd_sort(fit, spd_score, closest_w_idx)
 
             # Selection via Lexsort
-            rank_indices = lexsort(torch.stack([spd_score, front_no.float()]))
+            rank_indices = lexsort(constraint_keys([spd_score, front_no.float()], cv))
             survivor_idx = rank_indices[:N]
 
+            self.cv = take_violation(cv, survivor_idx)
             return pop[survivor_idx], fit[survivor_idx], front_no[survivor_idx], d2[survivor_idx]
 
         else:
@@ -143,12 +157,13 @@ class TSNSGAII(Algorithm):
             torch.max((fit - f_min) / (interval + 1e-6), dim=1)[0].floor()
 
             # Greedy Selection (Vectorized)
-            survivor_idx = self._level_sort_selection(norm_fit, self.w, N)
+            survivor_idx = self._level_sort_selection(norm_fit, self.w, N, cv)
 
             # Re-calculate front_no and d2 for the next mating step
             new_fit = fit[survivor_idx]
             new_norm = norm_fit[survivor_idx]
-            new_front = non_dominate_rank(new_fit)
+            self.cv = take_violation(cv, survivor_idx)
+            new_front = rank_with_constraints(new_fit, self.cv)
 
             # Update d2 for mating
             new_norm_val = torch.norm(new_norm, dim=1, keepdim=True)
@@ -171,7 +186,7 @@ class TSNSGAII(Algorithm):
         num_dominated = torch.sum(total_dom, dim=0)
         return num_dominated.int()
 
-    def _level_sort_selection(self, norm_fit, w, n_required):
+    def _level_sort_selection(self, norm_fit, w, n_required, cv=None):
         # Vectorized Greedy Selection
         # Calculate cosine similarity between all individuals and all weights
         norm_val = torch.norm(norm_fit, dim=1, keepdim=True)
@@ -179,7 +194,11 @@ class TSNSGAII(Algorithm):
         cosine = (norm_fit @ w.T) / (norm_val @ w_norm.T + 1e-6)  # [2N, N]
 
         # For each weight, find the individual with max cosine similarity
-        best_match_for_w = torch.argmax(cosine, dim=0)  # [N]
+        eligible_cosine = cosine
+        if cv is not None:
+            totals = total_violation(cv)
+            eligible_cosine = torch.where((totals == totals.amin())[:, None], cosine, -torch.inf)
+        best_match_for_w = torch.argmax(eligible_cosine, dim=0)  # [N]
 
         # Handle potential duplicates if one individual is best for multiple weights
         # But for TSNSGAII Stage 2, we typically take the best for each weight
@@ -195,7 +214,12 @@ class TSNSGAII(Algorithm):
         remaining_indices = torch.where(~mask)[0]
         # Sort remaining by max similarity to any weight
         max_sim_to_any = torch.max(cosine, dim=1)[0]
-        rem_sorted = remaining_indices[torch.argsort(max_sim_to_any[remaining_indices], descending=True)]
+        rem_order = (
+            torch.argsort(max_sim_to_any[remaining_indices], descending=True)
+            if cv is None
+            else constraint_priority(-max_sim_to_any[remaining_indices], cv[remaining_indices]).argsort(stable=True)
+        )
+        rem_sorted = remaining_indices[rem_order]
 
         combined = torch.cat([u_idx, rem_sorted], dim=0)
         return combined[:n_required]

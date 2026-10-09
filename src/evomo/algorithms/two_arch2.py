@@ -4,8 +4,14 @@ from evox.operators.crossover import simulated_binary
 from evox.operators.mutation import polynomial_mutation
 from evox.utils import clamp, randint
 
-from evomo.operators.selection import non_dominate_rank
-from evomo.utils import unique_rows_sorted
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    constrained_dominates,
+    rank_with_constraints,
+    take_violation,
+    worst_constraint_index,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer, unique_rows_sorted
 
 
 class Two_Arch2(Algorithm):
@@ -33,8 +39,8 @@ class Two_Arch2(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -56,6 +62,9 @@ class Two_Arch2(Algorithm):
         self.archive = Mutable(torch.rand(self.pop_size, self.dim, device=device) * (ub - lb) + lb)
         self.archive_fit = Mutable(torch.full((self.pop_size, n_objs), torch.inf, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+        register_lazy_buffer(self, "archive_cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -63,8 +72,8 @@ class Two_Arch2(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
-        self.archive_fit = self.evaluate(self.archive)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
+        self.archive_fit, self.archive_cv = parse_evaluate(self.evaluate(self.archive))
 
     def _minkowski_dist(self, A: torch.Tensor, B: torch.Tensor, p: float) -> torch.Tensor:
         # A: [N, M], B: [K, M] -> [N, K]
@@ -72,10 +81,10 @@ class Two_Arch2(Algorithm):
         dist = torch.pow(torch.sum(torch.pow(diff, p), dim=-1) + 1e-6, 1.0 / p)
         return dist
 
-    def _update_ca(self, combined_pop, combined_fit):
+    def _update_ca(self, combined_pop, combined_fit, combined_cv=None):
         N_total = combined_fit.shape[0]
         if N_total <= self.CAsize:
-            return combined_pop, combined_fit
+            return combined_pop, combined_fit, combined_cv
 
         # Normalization
         f_min = torch.min(combined_fit, dim=0).values
@@ -98,23 +107,23 @@ class Two_Arch2(Algorithm):
         for _ in range(num_to_remove):
             # Find worst among active
             temp_F = torch.where(active_mask, F, torch.tensor(float("inf"), device=F.device))
-            worst = torch.argmin(temp_F)
+            worst = torch.argmin(temp_F) if combined_cv is None else worst_constraint_index(F, active_mask, combined_cv)
             active_mask[worst] = False
             # Update F: F_j = F_j + exp(-I(worst, j) / (C_worst * 0.05))
             F = F + torch.exp(-indicator[worst, :] / (C[worst] + 1e-6) / 0.05)
 
-        return combined_pop[active_mask], combined_fit[active_mask]
+        return combined_pop[active_mask], combined_fit[active_mask], take_violation(combined_cv, active_mask)
 
-    def _update_da(self, combined_pop, combined_fit):
+    def _update_da(self, combined_pop, combined_fit, combined_cv=None):
         # 1. Non-dominated filter
-        rank = non_dominate_rank(combined_fit)
+        rank = rank_with_constraints(combined_fit, combined_cv)
         nd_mask = rank == 0
         nd_pop = combined_pop[nd_mask]
         nd_fit = combined_fit[nd_mask]
 
         N_nd = nd_pop.shape[0]
         if N_nd <= self.pop_size:
-            return nd_pop, nd_fit
+            return nd_pop, nd_fit, take_violation(combined_cv, nd_mask)
 
         # 2. Extreme Point Preservation
         min_idx = torch.argmin(nd_fit, dim=0)
@@ -132,7 +141,7 @@ class Two_Arch2(Algorithm):
             keep = selected_indices[perm[: self.pop_size]]
             final_mask = torch.zeros(N_nd, device=nd_pop.device, dtype=torch.bool)
             final_mask[keep] = True
-            return nd_pop[final_mask], nd_fit[final_mask]
+            return nd_pop[final_mask], nd_fit[final_mask], take_violation(take_violation(combined_cv, nd_mask), final_mask)
 
         # 3. Max-Min Greedy Selection
         dist_mat = self._minkowski_dist(nd_fit, nd_fit, self.p)
@@ -151,7 +160,7 @@ class Two_Arch2(Algorithm):
             new_dists = dist_mat[:, best_cand]
             min_dists = torch.min(min_dists, new_dists)
 
-        return nd_pop[is_selected], nd_fit[is_selected]
+        return nd_pop[is_selected], nd_fit[is_selected], take_violation(take_violation(combined_cv, nd_mask), is_selected)
 
     def step(self) -> None:
         """Advance optimization and update population and fitness state in place.
@@ -173,6 +182,9 @@ class Two_Arch2(Algorithm):
         dom_ba = (fit_b <= fit_a).all(dim=-1) & (fit_b < fit_a).any(dim=-1)
 
         # If a dominates b, take a. If b dominates a, take b. Else random.
+        if self.cv is not None:
+            dom_ab = constrained_dominates(fit_a, self.cv[idx_a], fit_b, self.cv[idx_b])
+            dom_ba = constrained_dominates(fit_b, self.cv[idx_b], fit_a, self.cv[idx_a])
         rand_mask = torch.rand(n_half, device=device) < 0.5
         winner_idx = torch.where(dom_ab, idx_a, torch.where(dom_ba, idx_b, torch.where(rand_mask, idx_a, idx_b)))
 
@@ -190,7 +202,7 @@ class Two_Arch2(Algorithm):
 
         offspring = torch.cat([offspring_c, offspring_m], dim=0)
         offspring = clamp(offspring, self.lb, self.ub)
-        off_fit = self.evaluate(offspring)
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
 
         # 3. Update Archives
         combined_pop = torch.cat([self.pop, self.archive, offspring], dim=0)
@@ -200,12 +212,13 @@ class Two_Arch2(Algorithm):
         combined_fit = combined_fit[u_idx]
 
         # Update CA
-        new_ca_pop, new_ca_fit = self._update_ca(combined_pop, combined_fit)
+        combined_cv = take_violation(cat_violation(self.cv, self.archive_cv, off_cv), u_idx)
+        new_ca_pop, new_ca_fit, self.cv = self._update_ca(combined_pop, combined_fit, combined_cv)
         self.pop = new_ca_pop
         self.fit = new_ca_fit
 
         # Update DA
-        new_da_pop, new_da_fit = self._update_da(combined_pop, combined_fit)
+        new_da_pop, new_da_fit, new_da_cv = self._update_da(combined_pop, combined_fit, combined_cv)
 
         # Ensure DA size is exactly pop_size
         n_da = new_da_pop.shape[0]
@@ -215,9 +228,13 @@ class Two_Arch2(Algorithm):
             fill_idx = torch.arange(min(shortfall, self.pop.shape[0]), device=device)
             self.archive = torch.cat([new_da_pop, self.pop[fill_idx]], dim=0)[: self.pop_size]
             self.archive_fit = torch.cat([new_da_fit, self.fit[fill_idx]], dim=0)[: self.pop_size]
+            self.archive_cv = take_violation(
+                cat_violation(new_da_cv, take_violation(self.cv, fill_idx)), slice(None, self.pop_size)
+            )
         else:
             self.archive = new_da_pop[: self.pop_size]
             self.archive_fit = new_da_fit[: self.pop_size]
+            self.archive_cv = take_violation(new_da_cv, slice(None, self.pop_size))
 
 
 if __name__ == "__main__":

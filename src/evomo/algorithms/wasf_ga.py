@@ -6,6 +6,14 @@ from evox.operators.sampling import uniform_sampling
 from evox.operators.selection import crowding_distance, tournament_selection_multifit
 from evox.utils import clamp, lexsort
 
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    constraint_keys,
+    take_violation,
+    total_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer
+
 
 class WASFGA(Algorithm):
     def __init__(self, pop_size: int, n_objs: int, lb: torch.Tensor, ub: torch.Tensor, point: torch.Tensor = None, **kwargs):
@@ -37,8 +45,8 @@ class WASFGA(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Reference-vector sampling can change the requested population size. Read ``self.pop.shape[0]`` for the actual size.
 
@@ -81,6 +89,8 @@ class WASFGA(Algorithm):
         self.front_no = Mutable(torch.full((self.pop_size,), 1, dtype=torch.int32, device=device))
         self.crowd_dis = Mutable(torch.zeros(self.pop_size, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def _calculate_wasf_matrix(self, fit: torch.Tensor) -> torch.Tensor:
         # fit: [2N, M], self.point: [1, M], self.vectors: [V, M]
         f_diff = fit - self.point  # [2N, M]
@@ -97,11 +107,11 @@ class WASFGA(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
         # Initial selection to set front_no and crowd_dis
-        self._environmental_selection(self.pop, self.fit)
+        self._environmental_selection(self.pop, self.fit, self.cv)
 
-    def _environmental_selection(self, combined_pop: torch.Tensor, combined_fit: torch.Tensor):
+    def _environmental_selection(self, combined_pop: torch.Tensor, combined_fit: torch.Tensor, combined_cv=None):
         N2 = combined_pop.shape[0]
         V = self.v_size
         sentinel = torch.iinfo(torch.int32).max
@@ -119,6 +129,9 @@ class WASFGA(Algorithm):
         # JIT-compliant loop (fixed iteration count)
         for _ in range(max_fronts):
             mask = front_no == sentinel
+            if combined_cv is not None:
+                totals = total_violation(combined_cv)
+                mask = mask & (totals == torch.where(mask, totals, torch.inf).amin())
             # Find best individual for each weight vector among available candidates
             # We use a large value for masked individuals to exclude them from argmin
             S_masked = torch.where(mask.unsqueeze(1), S, torch.tensor(float("inf"), device=S.device))
@@ -151,10 +164,11 @@ class WASFGA(Algorithm):
         # 3. Final Selection
         # Primary key: front_no (min), Secondary key: -crowd_dis (max)
         # lexsort: primary key last
-        idx = lexsort(torch.stack([-crowd_dis, front_no.float()]))[: self.pop_size]
+        idx = lexsort(constraint_keys([-crowd_dis, front_no.float()], combined_cv))[: self.pop_size]
 
         self.pop = combined_pop[idx]
         self.fit = combined_fit[idx]
+        self.cv = take_violation(combined_cv, idx)
         self.front_no = front_no[idx]
         self.crowd_dis = crowd_dis[idx]
 
@@ -168,7 +182,7 @@ class WASFGA(Algorithm):
         :returns: ``None``; results are stored in algorithm state.
         """
         mating_pool = tournament_selection_multifit(
-            self.pop_size, fitnesses=[-self.crowd_dis, self.front_no.float()], tournament_size=2
+            self.pop_size, fitnesses=constraint_keys([-self.crowd_dis, self.front_no.float()], self.cv), tournament_size=2
         )
 
         crossovered = simulated_binary(self.pop[mating_pool])
@@ -176,13 +190,13 @@ class WASFGA(Algorithm):
         offspring = clamp(offspring, self.lb, self.ub)
 
         # 2. Evaluation
-        off_fit = self.evaluate(offspring)
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
 
         # 3. Merge and Selection
         combined_pop = torch.cat([self.pop, offspring], dim=0)
         combined_fit = torch.cat([self.fit, off_fit], dim=0)
 
-        self._environmental_selection(combined_pop, combined_fit)
+        self._environmental_selection(combined_pop, combined_fit, cat_violation(self.cv, off_cv))
 
 
 # === FIXED DEMO BLOCK ===

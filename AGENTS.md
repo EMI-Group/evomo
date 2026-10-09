@@ -13,7 +13,7 @@ implementation lives on a separate branch.
 - `src/evomo/problems/`: numerical, constrained, and neuroevolution benchmarks.
 - `src/evomo/workflows/`: integration between algorithms, problems, and monitors.
 - `src/evomo/metrics/`: solution-quality metrics.
-- `unit_test/`: algorithm, operator, and problem tests.
+- `unit_test/`: algorithm, problem, and metric tests.
 - `benchmarks/` and `experiments/`: benchmarking and experimental work.
 - `docs/`: supporting documentation.
 - `pyproject.toml`: dependencies, packaging, and Ruff configuration.
@@ -38,7 +38,7 @@ Run relevant tests from the repository root, for example:
 
 ```sh
 python -m pytest unit_test/problems/test_dtlz.py -q
-python -m pytest unit_test/operators/test_non_dominate.py -q
+python -m pytest unit_test/algorithms/test_moea_constraints.py -q
 python -m pytest unit_test/algorithms/test_moea.py -q
 ```
 

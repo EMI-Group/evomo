@@ -4,7 +4,15 @@ from evox.operators.crossover import simulated_binary
 from evox.operators.mutation import polynomial_mutation
 from evox.operators.sampling import uniform_sampling
 from evox.operators.selection import tournament_selection_multifit
-from evox.utils import clamp
+from evox.utils import clamp, lexsort
+
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    constraint_keys,
+    take_violation,
+    total_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
 class EFRRR(Algorithm):
@@ -35,8 +43,8 @@ class EFRRR(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -65,6 +73,8 @@ class EFRRR(Algorithm):
         # Ranking for selection
         self.rank_no = Mutable(torch.zeros(pop_size, device=device, dtype=torch.int32))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -72,7 +82,7 @@ class EFRRR(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
         self.z = torch.min(self.fit, dim=0)[0].unsqueeze(0)
         self.znad = torch.max(self.fit, dim=0)[0].unsqueeze(0)
 
@@ -89,15 +99,17 @@ class EFRRR(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        mating_pool = tournament_selection_multifit(self.pop_size, [self.rank_no.float()], tournament_size=2)
+        mating_pool = tournament_selection_multifit(
+            self.pop_size, constraint_keys([self.rank_no.float()], self.cv), tournament_size=2
+        )
 
         # Variation
         crossovered = simulated_binary(self.pop[mating_pool], pro_c=1.0, dis_c=20.0)
-        offspring = polynomial_mutation(crossovered, self.lb, self.ub, pro_m=1.0 / self.lb.numel(), dis_m=20.0)
+        offspring = polynomial_mutation(crossovered, self.lb, self.ub, pro_m=1.0, dis_m=20.0)
         offspring = clamp(offspring, self.lb, self.ub)
 
         # 2. Evaluation
-        off_fit = self.evaluate(offspring)
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
 
         # 3. Environmental Selection
         combined_pop = torch.cat([self.pop, offspring], dim=0)
@@ -116,9 +128,15 @@ class EFRRR(Algorithm):
         # Truncation
         # In MATLAB: RgFrontNo(LastFront(1:sum(RgFrontNo<=MaxFNo)-N)) = inf;
         # This is equivalent to sorting by Rg and taking top N.
-        idx = torch.argsort(Rg, stable=True)[: self.pop_size]
+        combined_cv = cat_violation(self.cv, off_cv)
+        idx = (
+            torch.argsort(Rg, stable=True)[: self.pop_size]
+            if combined_cv is None
+            else lexsort([Rg, total_violation(combined_cv)])[: self.pop_size]
+        )
         self.pop = combined_pop[idx]
         self.fit = combined_fit[idx]
+        self.cv = take_violation(combined_cv, idx)
         self.rank_no = Rg[idx]
 
     def _update_normalization(self, fit: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:

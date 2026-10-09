@@ -5,7 +5,13 @@ from evox.operators.mutation import polynomial_mutation
 from evox.operators.selection import crowding_distance, tournament_selection_multifit
 from evox.utils import clamp
 
-from evomo.utils import unique_rows_sorted
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    constraint_keys,
+    take_violation,
+    total_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer, unique_rows_sorted
 
 
 def _calculate_sdr_dominance_matrix(norm_sum: torch.Tensor, theta: torch.Tensor) -> torch.Tensor:
@@ -38,8 +44,8 @@ class NSGAII_SDR(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -62,6 +68,8 @@ class NSGAII_SDR(Algorithm):
         self.front_no = Mutable(torch.full((pop_size,), sentinel, dtype=torch.int32, device=device))
         self.crowd_dis = Mutable(torch.full((pop_size,), -1.0, dtype=torch.float32, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -69,20 +77,24 @@ class NSGAII_SDR(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
         self.zmin = torch.min(self.fit, dim=0)[0]
         self.zmax = torch.max(self.fit, dim=0)[0]
-        self._environmental_selection(self.pop, self.fit)
+        self._environmental_selection(self.pop, self.fit, self.cv)
 
-    def _environmental_selection(self, combined_pop: torch.Tensor, combined_fit: torch.Tensor):
+    def _environmental_selection(self, combined_pop: torch.Tensor, combined_fit: torch.Tensor, combined_cv=None):
         device = combined_fit.device
         N = self.pop_size
 
         # 1. Unique Filtering (Bug #3, #17)
         rounded_fit = torch.round(combined_fit * 1e6) / 1e6
-        _, unique_indices = unique_rows_sorted(rounded_fit)
+        unique_key = (
+            rounded_fit if combined_cv is None else torch.cat([rounded_fit, total_violation(combined_cv)[:, None]], dim=1)
+        )
+        _, unique_indices = unique_rows_sorted(unique_key)
         fit = combined_fit[unique_indices]
         pop = combined_pop[unique_indices]
+        cv = take_violation(combined_cv, unique_indices)
 
         # 2. Z-Update
         self.zmin = torch.min(self.zmin, torch.min(fit, dim=0)[0])
@@ -122,6 +134,9 @@ class NSGAII_SDR(Algorithm):
         # SDR Dominance (Bug #7)
         norm_sum = torch.sum(norm_fit, dim=1)
         sdr_dom = _calculate_sdr_dominance_matrix(norm_sum, theta)
+        if cv is not None:
+            totals = total_violation(cv)
+            sdr_dom = (totals[:, None] < totals[None, :]) | ((totals[:, None] == 0) & (totals[None, :] == 0) & sdr_dom)
 
         # 5. Integrated Peeling (Bug #9, #41)
         num_total = fit.shape[0]
@@ -187,6 +202,7 @@ class NSGAII_SDR(Algorithm):
 
         self.pop = pop[final_indices]
         self.fit = fit[final_indices]
+        self.cv = take_violation(cv, final_indices)
         self.front_no = final_front_no
         self.crowd_dis = final_crowd_dis
 
@@ -199,21 +215,21 @@ class NSGAII_SDR(Algorithm):
         :returns: ``None``; results are stored in algorithm state.
         """
         mating_pool = tournament_selection_multifit(
-            self.pop_size, fitnesses=[-self.crowd_dis, self.front_no.float()], tournament_size=2
+            self.pop_size, fitnesses=constraint_keys([-self.crowd_dis, self.front_no.float()], self.cv), tournament_size=2
         )
 
         # 2. Variation
         crossovered = simulated_binary(self.pop[mating_pool], pro_c=1.0, dis_c=20.0)
-        offspring = polynomial_mutation(crossovered, self.lb, self.ub, pro_m=1.0 / self.lb.numel(), dis_m=20.0)
+        offspring = polynomial_mutation(crossovered, self.lb, self.ub, pro_m=1.0, dis_m=20.0)
         offspring = clamp(offspring, self.lb, self.ub)
 
         # 3. Evaluation
-        off_fit = self.evaluate(offspring)
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
 
         # 4. Environmental Selection
         merge_pop = torch.cat([self.pop, offspring], dim=0)
         merge_fit = torch.cat([self.fit, off_fit], dim=0)
-        self._environmental_selection(merge_pop, merge_fit)
+        self._environmental_selection(merge_pop, merge_fit, cat_violation(self.cv, off_cv))
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@
 | `src/evomo/workflows/` | 算法、问题与监视器的连接 |
 | `src/evomo/metrics/` | 解集质量指标 |
 | `src/evomo/utils/` | 张量、评估结果与状态辅助工具 |
-| `unit_test/` | 算法、算子与问题测试 |
+| `unit_test/` | 算法、问题与指标测试 |
 | `docs/` | 本文档、示例与构建配置 |
 
 先检查已有 Python 环境和 CUDA 配置，再安装可编辑包和开发工具：
@@ -46,7 +46,7 @@ python -m pip install pytest ruff
 
 ```sh
 python -m pytest unit_test/problems/test_dtlz.py -q
-python -m pytest unit_test/operators/test_non_dominate.py -q
+python -m pytest unit_test/algorithms/test_moea_constraints.py -q
 python -m pytest unit_test/algorithms/test_moea.py -q
 ```
 

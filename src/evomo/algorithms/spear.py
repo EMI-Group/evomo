@@ -5,7 +5,14 @@ from evox.operators.mutation import polynomial_mutation
 from evox.operators.sampling import uniform_sampling
 from evox.utils import clamp, lexsort
 
-from evomo.operators.selection import non_dominate_rank
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    constraint_dominance_matrix,
+    rank_with_constraints,
+    take_violation,
+    total_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
 class SPEAR(Algorithm):
@@ -33,8 +40,8 @@ class SPEAR(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Reference-vector sampling can change the requested population size. Read ``self.pop.shape[0]`` for the actual size.
 
@@ -66,6 +73,8 @@ class SPEAR(Algorithm):
         angles_masked = torch.where(mask_diag, torch.tensor(float("inf"), device=device), angles)
         self.theta = Mutable(torch.max(torch.min(angles_masked, dim=1).values))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -73,7 +82,7 @@ class SPEAR(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
 
     def step(self) -> None:
         """Advance optimization and update population and fitness state in place.
@@ -101,14 +110,15 @@ class SPEAR(Algorithm):
         crossovered = simulated_binary(torch.cat([self.pop, self.pop[mating_pool_idx]], dim=0))
         offspring = polynomial_mutation(crossovered, self.lb, self.ub)
         offspring = clamp(offspring, self.lb, self.ub)
-        off_fit = self.evaluate(offspring)
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
 
         # 3. Environmental Selection
         joint_pop = torch.cat([self.pop, offspring], dim=0)
         joint_fit = torch.cat([self.fit, off_fit], dim=0)
 
         # 3.1 Normalization (Rank-1 Based)
-        rank = non_dominate_rank(joint_fit)
+        joint_cv = cat_violation(self.cv, off_cv)
+        rank = rank_with_constraints(joint_fit, joint_cv)
         front1_fit = joint_fit[rank == 0]
 
         # Bug #18: Normalization Trigger
@@ -136,6 +146,7 @@ class SPEAR(Algorithm):
         dom = (f.unsqueeze(1) <= f.unsqueeze(0)).all(-1) & (f.unsqueeze(1) < f.unsqueeze(0)).any(-1)
 
         # Global Strength & Raw Fitness (Bug #23)
+        dom = constraint_dominance_matrix(dom, joint_cv)
         Sg = dom.sum(dim=1)
         Rg = dom.T.float() @ Sg.float()
 
@@ -155,9 +166,13 @@ class SPEAR(Algorithm):
 
         # Peeling Loop (Bug #41: JIT compliant loop)
         while torch.sum(choose) < N:
-            active_indices = torch.where(remaining)[0]
-            active_ei = ei[remaining]
-            active_fv = fv[remaining]
+            eligible = remaining
+            if joint_cv is not None:
+                totals = total_violation(joint_cv)
+                eligible = remaining & (totals == torch.where(remaining, totals, torch.inf).amin())
+            active_indices = torch.where(eligible)[0]
+            active_ei = ei[eligible]
+            active_fv = fv[eligible]
 
             # Find best in each unique niche
             winners = self._get_niche_winners(active_ei, active_fv, active_indices, N)
@@ -191,6 +206,7 @@ class SPEAR(Algorithm):
 
         self.pop = joint_pop[choose]
         self.fit = joint_fit[choose]
+        self.cv = take_violation(joint_cv, choose)
 
     def _get_niche_winners(
         self, active_ei: torch.Tensor, active_fv: torch.Tensor, active_indices: torch.Tensor, N: int

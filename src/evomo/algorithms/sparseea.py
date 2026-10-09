@@ -5,8 +5,13 @@ from evox.operators.mutation import polynomial_mutation
 from evox.operators.selection import crowding_distance, tournament_selection_multifit
 from evox.utils import clamp, lexsort, randint
 
-from evomo.operators.selection import non_dominate_rank
-from evomo.utils import unique_rows_sorted
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    rank_with_constraint_objective,
+    rank_with_constraints,
+    take_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer, unique_rows_sorted
 
 
 class SparseEA(Algorithm):
@@ -34,8 +39,8 @@ class SparseEA(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -62,6 +67,8 @@ class SparseEA(Algorithm):
         self.rank = Mutable(torch.full((pop_size,), sentinel, dtype=torch.int32, device=device))
         self.dis = Mutable(torch.full((pop_size,), -1.0, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -79,10 +86,10 @@ class SparseEA(Algorithm):
 
         # 3. Evaluation: Dec * Mask. Dec is ones for probing.
         probe_dec = torch.ones((self.dim * K, self.dim), device=device)
-        probe_fit = self.evaluate(probe_dec * probes)
+        probe_fit, probe_cv = parse_evaluate(self.evaluate(probe_dec * probes))
 
         # 4. Score Accumulation
-        rank = non_dominate_rank(probe_fit)
+        rank = rank_with_constraint_objective(probe_fit, probe_cv)
         # Vectorized: var_fit[j] += rank[i] for each probe i that used bit j
         # probe_indices maps each row in 'probes' to its original dimension index 0..D-1
         probe_indices = torch.arange(self.dim, device=device).repeat(K)
@@ -91,11 +98,11 @@ class SparseEA(Algorithm):
         # Initialize population masks randomly for the first real generation
         # (Usually SparseEA starts with some initial sparsity)
         self.mask = torch.rand((self.pop_size, self.dim), device=device) < 0.5
-        self.fit = self.evaluate(self.pop * self.mask)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop * self.mask))
 
         # Initial Environmental Selection to set rank/dis
         self.pop, self.fit, self.rank, self.dis, self.mask = self._environmental_selection(
-            self.pop, self.fit, self.mask, self.pop_size
+            self.pop, self.fit, self.mask, self.pop_size, self.cv
         )
 
     def _sparse_tournament_selection(self, var_fit: torch.Tensor, n_select: int) -> torch.Tensor:
@@ -105,14 +112,15 @@ class SparseEA(Algorithm):
         idx2 = randint(0, self.dim, (n_select,), device=var_fit.device)
         return torch.where(var_fit[idx1] < var_fit[idx2], idx1, idx2)
 
-    def _environmental_selection(self, pop, fit, mask, n):
+    def _environmental_selection(self, pop, fit, mask, n, cv=None):
         # 1. Duplicate Removal
         u_pop_mask_fit = torch.cat([fit, pop, mask.float()], dim=1)
         _, unique_indices = unique_rows_sorted(u_pop_mask_fit)
         pop, fit, mask = pop[unique_indices], fit[unique_indices], mask[unique_indices]
+        cv = take_violation(cv, unique_indices)
 
         # 2. Integrated Peeling
-        rank = non_dominate_rank(fit)
+        rank = rank_with_constraints(fit, cv)
         device = fit.device
         selected_indices = torch.zeros(0, dtype=torch.long, device=device)
 
@@ -153,7 +161,8 @@ class SparseEA(Algorithm):
         survivor_mask = mask[selected_indices]
 
         # Recalculate rank/dis for the survivors to use in next mating
-        final_rank = non_dominate_rank(survivor_fit)
+        self.cv = take_violation(cv, selected_indices)
+        final_rank = rank_with_constraints(survivor_fit, self.cv)
         # Crowding distance is calculated per front
         final_dis = torch.zeros(n, device=device)
         for f in range(int(final_rank.max().item()) + 1):
@@ -227,7 +236,7 @@ class SparseEA(Algorithm):
         off_mask[batch_idx, final_idx] = mutation_type  # If Add, set to True; if Remove, set to False
 
         # 4. Evaluation
-        off_fit = self.evaluate(off_pop * off_mask)
+        off_fit, off_cv = parse_evaluate(self.evaluate(off_pop * off_mask))
 
         # 5. Environmental Selection
         merged_pop = torch.cat([self.pop, off_pop], dim=0)
@@ -235,7 +244,7 @@ class SparseEA(Algorithm):
         merged_mask = torch.cat([self.mask, off_mask], dim=0)
 
         self.pop, self.fit, self.rank, self.dis, self.mask = self._environmental_selection(
-            merged_pop, merged_fit, merged_mask, N
+            merged_pop, merged_fit, merged_mask, N, cat_violation(self.cv, off_cv)
         )
 
         self.iter += 1

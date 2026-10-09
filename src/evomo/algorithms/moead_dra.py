@@ -1,8 +1,12 @@
 import torch
 from evox.core import Algorithm, Mutable
+from evox.operators.mutation import polynomial_mutation
 from evox.operators.sampling import uniform_sampling
 from evox.operators.selection import tournament_selection_multifit
 from evox.utils import clamp
+
+from evomo.operators.selection.constraint_handling import constraint_improvement, prefer_by_constraint, total_violation
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
 class MOEAD_DRA(Algorithm):
@@ -37,8 +41,8 @@ class MOEAD_DRA(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Reference-vector sampling can change the requested population size. Read ``self.pop.shape[0]`` for the actual size.
 
@@ -74,6 +78,9 @@ class MOEAD_DRA(Algorithm):
         self.old_obj = Mutable(torch.full((self.pop_size,), 1e10, device=device))
         self.gen_counter = Mutable(torch.tensor(0, dtype=torch.int32, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+        register_lazy_buffer(self, "old_cv", device_like="pop")
+
     def _tchebycheff_scalarization(self, objs: torch.Tensor, weights: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
         # Broadcasting Logic: objs (N, M), weights (N, M), z (M,)
         return torch.max(torch.abs(objs - z) * weights, dim=-1).values
@@ -85,9 +92,22 @@ class MOEAD_DRA(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
         self.z = torch.min(self.fit, dim=0).values
         self.old_obj = self._tchebycheff_scalarization(self.fit, self.w, self.z)
+        self.old_cv = None if self.cv is None else total_violation(self.cv).clone()
+
+    def _update_utility(self):
+        new_obj = self._tchebycheff_scalarization(self.fit, self.w, self.z)
+        delta = (self.old_obj - new_obj) / (self.old_obj + 1e-6)
+        if self.cv is not None:
+            new_cv = total_violation(self.cv)
+            delta = constraint_improvement(delta, new_cv if self.old_cv is None else self.old_cv, new_cv)
+            self.old_cv = new_cv.clone()
+        self.pi = torch.where(delta > 0.001, torch.ones_like(delta), (0.95 + 0.05 * delta / 0.001) * self.pi)
+        if self.cv is not None:
+            self.pi = self.pi.clamp(0, 1)
+        self.old_obj = new_obj
 
     def step(self) -> None:
         """Advance optimization and update population and fitness state in place.
@@ -109,6 +129,7 @@ class MOEAD_DRA(Algorithm):
         # Tournament Selection (Bug #27, #31)
         winners_idx = tournament_selection_multifit(num_to_select, [-self.pi], tournament_size=10)
         subproblem_indices = torch.cat([boundary_indices, winners_idx])
+        incumbent_cv = None if self.cv is None else total_violation(self.cv)
 
         # 2. Variation & Replacement (Sub-gen Loop)
         for _ in range(5):
@@ -132,13 +153,19 @@ class MOEAD_DRA(Algorithm):
 
             # Simple Crossover (CR=1.0 means offspring is fully DE result)
             # Polynomial Mutation (Simplified vectorized version)
-            eta = 20.0
-            r = torch.rand(offspring.shape, device=device)
-            mu = torch.where(r < 0.5, (2.0 * r) ** (1.0 / (eta + 1.0)) - 1.0, 1.0 - (2.0 * (1.0 - r)) ** (1.0 / (eta + 1.0)))
-            offspring = offspring + mu * (self.ub - self.lb) * 0.05  # 0.05 is a mutation strength factor
+            if self.cv is None:
+                eta = 20.0
+                r = torch.rand(offspring.shape, device=device)
+                mu = torch.where(
+                    r < 0.5, (2.0 * r) ** (1.0 / (eta + 1.0)) - 1.0, 1.0 - (2.0 * (1.0 - r)) ** (1.0 / (eta + 1.0))
+                )
+                offspring = offspring + mu * (self.ub - self.lb) * 0.05
+            else:
+                offspring = polynomial_mutation(offspring, self.lb, self.ub)
 
             offspring = clamp(offspring, self.lb, self.ub)
-            off_fit = self.evaluate(offspring)
+            off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
+            offspring_cv = None if off_cv is None else total_violation(off_cv)
 
             # Update Ideal Point
             self.z = torch.min(self.z, torch.min(off_fit, dim=0).values)
@@ -156,6 +183,8 @@ class MOEAD_DRA(Algorithm):
                 g_new = torch.max(torch.abs(off_fit[j] - self.z) * self.w[P_indices], dim=1).values
 
                 better_mask = g_new <= g_old
+                if self.cv is not None:
+                    better_mask = prefer_by_constraint(better_mask, offspring_cv[j], incumbent_cv[P_indices])
                 # To handle the 'nr' limit without JIT breaks:
                 # We find all better indices, shuffle them, and take the first nr.
                 better_indices = P_indices[better_mask]
@@ -175,18 +204,15 @@ class MOEAD_DRA(Algorithm):
                     to_replace = better_indices[perm[:replace_count]]
                     self.pop[to_replace] = offspring[j]
                     self.fit[to_replace] = off_fit[j]
+                    if self.cv is not None:
+                        self.cv[to_replace] = off_cv[j]
+                        incumbent_cv[to_replace] = offspring_cv[j]
 
         # 3. Utility Update (Every 10 Generations)
         self.gen_counter += 1
         if self.gen_counter >= 10:
             self.gen_counter = torch.tensor(0, dtype=torch.int32, device=device)
-            new_obj = self._tchebycheff_scalarization(self.fit, self.w, self.z)
-            # Bug #12: Safe Division
-            delta = (self.old_obj - new_obj) / (self.old_obj + 1e-6)
-
-            # Piecewise Update
-            self.pi = torch.where(delta > 0.001, torch.ones_like(delta), (0.95 + 0.05 * delta / 0.001) * self.pi)
-            self.old_obj = new_obj
+            self._update_utility()
 
 
 # === FIXED DEMO BLOCK ===

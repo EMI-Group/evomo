@@ -4,7 +4,11 @@ from evox.operators.crossover import simulated_binary
 from evox.operators.mutation import polynomial_mutation
 from evox.utils import clamp, lexsort
 
-from evomo.operators.selection import non_dominate_rank
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    rank_with_constraints,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
 class PICEAg(Algorithm):
@@ -32,8 +36,8 @@ class PICEAg(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -60,6 +64,9 @@ class PICEAg(Algorithm):
         self.archive = Mutable(torch.zeros((pop_size, self.dim), device=device))
         self.archive_fit = Mutable(torch.full((pop_size, n_objs), torch.inf, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+        register_lazy_buffer(self, "archive_cv", device_like="pop")
+
     def _get_goal_satisfaction(self, fit: torch.Tensor, goals: torch.Tensor) -> torch.Tensor:
         # Bug #29: Vectorization Override
         return (fit.unsqueeze(1) <= goals.unsqueeze(0)).all(dim=-1)
@@ -78,12 +85,13 @@ class PICEAg(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
         # Initial goals
         self.goal = self._gene_goal(self.fit)
         # Initial Archive
         self.archive = self.pop.clone()
         self.archive_fit = self.fit.clone()
+        self.archive_cv = None if self.cv is None else self.cv.clone()
 
     def step(self) -> None:
         """Advance optimization and update population and fitness state in place.
@@ -102,14 +110,15 @@ class PICEAg(Algorithm):
         offspring = clamp(offspring, self.lb, self.ub)
 
         # 2. Evaluation
-        off_fit = self.evaluate(offspring)
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
 
         # 3. Archive Update (Blueprint 3.B: Brutal Static Truncation)
         combined_arc_pop = torch.cat([self.archive, offspring], dim=0)
         combined_arc_fit = torch.cat([self.archive_fit, off_fit], dim=0)
 
         # Filter for Pareto Rank 1
-        ranks = non_dominate_rank(combined_arc_fit)
+        combined_arc_cv = cat_violation(self.archive_cv, off_cv)
+        ranks = rank_with_constraints(combined_arc_fit, combined_arc_cv)
         rank1_mask = ranks == 0
         rank1_pop = combined_arc_pop[rank1_mask]
         rank1_fit = combined_arc_fit[rank1_mask]
@@ -129,6 +138,8 @@ class PICEAg(Algorithm):
         num_to_keep = torch.minimum(torch.tensor(N, device=device), torch.tensor(rank1_pop.shape[0], device=device))
         self.archive = rank1_pop[idx_arc[:num_to_keep]]
         self.archive_fit = rank1_fit[idx_arc[:num_to_keep]]
+        if combined_arc_cv is not None:
+            self.archive_cv = combined_arc_cv[rank1_mask][idx_arc[:num_to_keep]]
 
         # 4. Environmental Selection (Blueprint 3.C)
         # Refresh goals
@@ -150,11 +161,14 @@ class PICEAg(Algorithm):
         Fg = torch.where(ng == 0, torch.full_like(Fg, 0.5), Fg)
 
         # Selection Strategy - Solutions
-        sol_ranks = non_dominate_rank(combined_fit)
+        combined_cv = cat_violation(self.cv, off_cv)
+        sol_ranks = rank_with_constraints(combined_fit, combined_cv)
         # Bug #25: Lexsort Axis (Primary key LAST)
         sel_idx = lexsort(torch.stack([-Fs, sol_ranks.float()]))
         self.pop = combined_pop[sel_idx[:N]]
         self.fit = combined_fit[sel_idx[:N]]
+        if combined_cv is not None:
+            self.cv = combined_cv[sel_idx[:N]]
 
         # Selection Strategy - Goals
         goal_idx = torch.argsort(Fg, descending=True)

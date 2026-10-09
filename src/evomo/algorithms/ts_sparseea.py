@@ -5,8 +5,15 @@ from evox.operators.mutation import polynomial_mutation
 from evox.operators.selection import tournament_selection_multifit
 from evox.utils import clamp, lexsort, randint
 
-from evomo.operators.selection import crowding_distance, non_dominate_rank
-from evomo.utils import unique_rows_sorted
+from evomo.operators.selection import crowding_distance
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    rank_with_constraint_objective,
+    rank_with_constraints,
+    take_violation,
+    total_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer, unique_rows_sorted
 
 
 class TSSparseEA(Algorithm):
@@ -34,8 +41,8 @@ class TSSparseEA(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -63,6 +70,8 @@ class TSSparseEA(Algorithm):
         self.is_initialized = Mutable(torch.tensor(False, device=device))
         self.subcomponents = Mutable(torch.full((self.nGroup, group_size), sentinel, dtype=torch.int64, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def _match_operator(self, off_mask: torch.Tensor, archive_pop: torch.Tensor) -> torch.Tensor:
         # Vectorized Cosine Similarity (Bug #12, #29 Compliance)
         mask_f = off_mask.float()
@@ -88,9 +97,9 @@ class TSSparseEA(Algorithm):
         warmup_pop = self.lb.repeat(D, 1)
         # For ranking, we use the upper bound for the active variable
         warmup_pop[torch.arange(D), torch.arange(D)] = self.ub[torch.arange(D)]
-        warmup_fit = self.evaluate(warmup_pop)
+        warmup_fit, warmup_cv = parse_evaluate(self.evaluate(warmup_pop))
 
-        ranks = non_dominate_rank(warmup_fit)
+        ranks = rank_with_constraint_objective(warmup_fit, warmup_cv)
         rank_indices = torch.argsort(ranks)
 
         # 2. Grouping (Bug #1 Compliance)
@@ -104,17 +113,18 @@ class TSSparseEA(Algorithm):
         self.subcomponents = padded_indices.view(self.nGroup, group_size)
 
         # Initial Evaluation
-        self.fit = self.evaluate(self.pop * self.mask.float())
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop * self.mask.float()))
 
         # Initial Environmental Selection
         self.pop, self.mask, self.fit, self.rank, self.dis = self._environmental_selection(
-            self.pop, self.mask, self.fit, self.pop_size
+            self.pop, self.mask, self.fit, self.pop_size, self.cv
         )
         self.is_initialized = torch.tensor(True, device=device)
 
-    def _environmental_selection(self, pop, mask, fit, N):
+    def _environmental_selection(self, pop, mask, fit, N, cv=None):
         # Unique Filter (Bug #3)
-        _, uni_idx = unique_rows_sorted(fit)
+        unique_key = fit if cv is None else torch.cat([fit, total_violation(cv)[:, None]], dim=1)
+        _, uni_idx = unique_rows_sorted(unique_key)
         unique_mask = torch.zeros(fit.size(0), dtype=torch.bool, device=fit.device).scatter(0, uni_idx, True)
         # Deduplication must not leave fewer than N candidates. In that case,
         # retain the original candidates so every selected slot has real rank
@@ -122,7 +132,8 @@ class TSSparseEA(Algorithm):
         keep = unique_mask | (unique_mask.sum() < N)
         fit, pop, mask = fit[keep], pop[keep], mask[keep]
 
-        ranks = non_dominate_rank(fit)
+        cv = take_violation(cv, keep)
+        ranks = rank_with_constraints(fit, cv)
 
         # JIT-Compliant Peeling (Bug #9, #28)
         selected_indices = torch.full((N,), -1, dtype=torch.int64, device=pop.device)
@@ -175,6 +186,7 @@ class TSSparseEA(Algorithm):
         sort_idx = lexsort(torch.stack([-final_dis, final_rank.float()]))
         sel_idx = selected_indices[sort_idx]
 
+        self.cv = take_violation(cv, sel_idx)
         return pop[sel_idx], mask[sel_idx], fit[sel_idx], final_rank[sort_idx], final_dis[sort_idx]
 
     def step(self) -> None:
@@ -210,7 +222,7 @@ class TSSparseEA(Algorithm):
         # 3. Dec Variation (SBX + PM)
         parent_pop = self.pop[mating_pool]
         off_pop_dec = simulated_binary(parent_pop, pro_c=1.0, dis_c=20.0)
-        off_pop_dec = polynomial_mutation(off_pop_dec, self.lb, self.ub, pro_m=1.0 / D, dis_m=20.0)
+        off_pop_dec = polynomial_mutation(off_pop_dec, self.lb, self.ub, pro_m=1.0, dis_m=20.0)
         off_pop_dec = clamp(off_pop_dec, self.lb, self.ub)
 
         # 4. Match Operator (The Core Logic - Bug #29)
@@ -219,7 +231,7 @@ class TSSparseEA(Algorithm):
         off_pop = torch.where(torch.rand(N, D, device=device) < 0.5, off_pop_dec, matched_pop)
 
         # 5. Evaluation
-        off_fit = self.evaluate(off_pop * off_mask.float())
+        off_fit, off_cv = parse_evaluate(self.evaluate(off_pop * off_mask.float()))
 
         # 6. Merge & Environmental Selection
         combined_pop = torch.cat([self.pop, off_pop], dim=0)
@@ -227,7 +239,7 @@ class TSSparseEA(Algorithm):
         combined_fit = torch.cat([self.fit, off_fit], dim=0)
 
         self.pop, self.mask, self.fit, self.rank, self.dis = self._environmental_selection(
-            combined_pop, combined_mask, combined_fit, N
+            combined_pop, combined_mask, combined_fit, N, cat_violation(self.cv, off_cv)
         )
 
 

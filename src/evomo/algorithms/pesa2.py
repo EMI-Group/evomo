@@ -4,7 +4,12 @@ from evox.operators.crossover import simulated_binary
 from evox.operators.mutation import polynomial_mutation
 from evox.utils import clamp, randint
 
-from evomo.operators.selection import non_dominate_rank
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    rank_with_constraints,
+    take_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
 class PESA2(Algorithm):
@@ -35,8 +40,8 @@ class PESA2(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -53,6 +58,8 @@ class PESA2(Algorithm):
         # Initialize State (Mutables)
         self.pop = Mutable(torch.rand(pop_size, D, device=device) * (ub - lb) + lb)  # [N,D]
         self.fit = Mutable(torch.full((pop_size, n_objs), torch.inf, device=device))  # [N,M]
+
+        register_lazy_buffer(self, "cv", device_like="pop")
 
     def _get_grid_info(self, fit: torch.Tensor):
         fmin = torch.min(fit, dim=0)[0]
@@ -87,25 +94,31 @@ class PESA2(Algorithm):
         member_priority = torch.rand(members.shape, device=fit.device).masked_fill(~members, torch.inf)
         return torch.argmin(member_priority, dim=1)
 
-    def _truncate(self, pop: torch.Tensor, fit: torch.Tensor):
+    def _truncate(self, pop: torch.Tensor, fit: torch.Tensor, cv=None, rank=None):
         same_grid, _, _ = self._get_grid_info(fit)
         size = fit.shape[0]
         active = torch.ones(size, dtype=torch.bool, device=fit.device)
         lower_triangle = torch.tril(torch.ones((size, size), dtype=torch.bool, device=fit.device), diagonal=-1)
 
         for _ in range(size - self.pop_size):
-            density = (same_grid & active.unsqueeze(0)).sum(dim=1)
-            has_earlier_active = (same_grid & lower_triangle & active.unsqueeze(0)).any(dim=1)
-            representatives = active & ~has_earlier_active
+            eligible = active
+            if rank is not None:
+                last_rank = torch.where(active, rank, -1).amax()
+                eligible = active & (rank == last_rank)
+            density = (same_grid & eligible.unsqueeze(0)).sum(dim=1)
+            has_earlier_active = (same_grid & lower_triangle & eligible.unsqueeze(0)).any(dim=1)
+            representatives = eligible & ~has_earlier_active
             max_density = torch.max(density[representatives])
             crowded_grids = representatives & (density == max_density)
 
             grid_priority = torch.rand(size, device=fit.device).masked_fill(~crowded_grids, torch.inf)
             selected_grid = torch.argmin(grid_priority)
-            members = active & same_grid[selected_grid]
+            members = eligible & same_grid[selected_grid]
             member_priority = torch.rand(size, device=fit.device).masked_fill(~members, torch.inf)
             active[torch.argmin(member_priority)] = False
 
+        if cv is not None:
+            self.cv = cv[active]
         return pop[active], fit[active]
 
     def init_step(self) -> None:
@@ -115,7 +128,7 @@ class PESA2(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
 
     def step(self) -> None:
         # 1. Select two occupied grids uniformly, prefer the less crowded
@@ -137,20 +150,30 @@ class PESA2(Algorithm):
         offspring = clamp(offspring, self.lb, self.ub)
 
         # 3. Evaluation
-        off_fit = self.evaluate(offspring)
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
 
         # 4. Environmental Selection
         combined_pop = torch.cat([self.pop, offspring], dim=0)
         combined_fit = torch.cat([self.fit, off_fit], dim=0)
 
         # Pareto Filter (Bug #24: Dominance Logic)
-        rank = non_dominate_rank(combined_fit)
-        is_rank1 = rank == 0
+        combined_cv = cat_violation(self.cv, off_cv)
+        rank = rank_with_constraints(combined_fit, combined_cv)
+        if combined_cv is None:
+            is_rank1 = rank == 0
+        else:
+            # A unique minimum CV otherwise collapses the mating population to
+            # one point. Fill constrained fronts before grid truncation.
+            cutoff = rank.kthvalue(self.pop_size).values
+            is_rank1 = rank <= cutoff
         rank1_pop = combined_pop[is_rank1]
         rank1_fit = combined_fit[is_rank1]
 
+        self.cv = take_violation(combined_cv, is_rank1)
         if rank1_pop.shape[0] > self.pop_size:
-            rank1_pop, rank1_fit = self._truncate(rank1_pop, rank1_fit)
+            rank1_pop, rank1_fit = self._truncate(
+                rank1_pop, rank1_fit, self.cv, None if combined_cv is None else rank[is_rank1]
+            )
 
         self.pop = rank1_pop
         self.fit = rank1_fit

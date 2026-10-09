@@ -5,6 +5,8 @@ from evox.operators.sampling import uniform_sampling
 from evox.utils import clamp
 
 from evomo.operators.selection import non_dominate_rank
+from evomo.operators.selection.constraint_handling import prefer_by_constraint, total_violation, update_by_proposals
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
 class MOEAD_PaS(Algorithm):
@@ -47,8 +49,8 @@ class MOEAD_PaS(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Reference-vector sampling can change the requested population size. Read ``self.pop.shape[0]`` for the actual size.
 
@@ -81,6 +83,8 @@ class MOEAD_PaS(Algorithm):
         self.z = Mutable(torch.full((1, n_objs), torch.inf, device=device))
         self.znad = Mutable(torch.full((1, n_objs), -torch.inf, device=device))
         self.gen = Mutable(torch.tensor(0, dtype=torch.int32, device=device))
+
+        register_lazy_buffer(self, "cv", device_like="pop")
 
     def _update_nadir(self, fit: torch.Tensor) -> torch.Tensor:
         rank = non_dominate_rank(fit)
@@ -127,6 +131,7 @@ class MOEAD_PaS(Algorithm):
         valid: torch.Tensor,
         off_pop: torch.Tensor,
         off_fit: torch.Tensor,
+        off_cv=None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         device = self.pop.device
         N = self.pop_size
@@ -140,6 +145,14 @@ class MOEAD_PaS(Algorithm):
         g_old = self._calc_scalar_func(normalized_old, candidate_weights, candidate_p)
         g_new = self._calc_scalar_func(normalized_new, candidate_weights, candidate_p)
         better = valid & (g_new < g_old)
+        if self.cv is not None:
+            better = valid & prefer_by_constraint(
+                g_new < g_old, total_violation(off_cv)[:, None], total_violation(self.cv)[candidates]
+            )
+            new_pop, new_fit, self.cv = update_by_proposals(
+                self.pop, self.fit, self.cv, off_pop, off_fit, off_cv, candidates, better, g_new, self.nr
+            )
+            return new_pop, new_fit
         selected = better & (torch.cumsum(better.to(torch.int32), dim=1) <= self.nr)
 
         # Each target may receive proposals from multiple offspring. The sequential
@@ -191,7 +204,7 @@ class MOEAD_PaS(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
         self.z = torch.min(self.fit, dim=0, keepdim=True).values
         self.znad = self._update_nadir(self.fit)
 
@@ -207,9 +220,9 @@ class MOEAD_PaS(Algorithm):
         off_pop = self.pop + 0.5 * (self.pop[candidates[:, 0]] - self.pop[candidates[:, 1]])
         off_pop = polynomial_mutation(off_pop, self.lb, self.ub)
         off_pop = clamp(off_pop, self.lb, self.ub)
-        off_fit = self.evaluate(off_pop)
+        off_fit, off_cv = parse_evaluate(self.evaluate(off_pop))
 
-        self.pop, self.fit = self._environmental_selection(candidates, valid, off_pop, off_fit)
+        self.pop, self.fit = self._environmental_selection(candidates, valid, off_pop, off_fit, off_cv)
         self.z = torch.min(self.z, torch.min(self.fit, dim=0, keepdim=True).values)
         self.znad = self._update_nadir(self.fit)
         self._adapt_norm()

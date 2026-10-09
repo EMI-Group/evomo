@@ -6,9 +6,27 @@ from evox.operators.mutation import polynomial_mutation
 from evox.operators.selection import tournament_selection_multifit
 from evox.utils import clamp
 
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    constraint_dominance_matrix,
+    take_violation,
+)
+from evomo.operators.selection.distance_truncation import distance_truncation
+from evomo.utils import parse_evaluate, register_lazy_buffer
+
 
 class CMOEA_MS(Algorithm):
-    def __init__(self, pop_size: int, n_objs: int, lb: torch.Tensor, ub: torch.Tensor, type: int = 1, **kwargs):
+    def __init__(
+        self,
+        pop_size: int,
+        n_objs: int,
+        lb: torch.Tensor,
+        ub: torch.Tensor,
+        type: int = 1,
+        max_gen: int = 100,
+        lambda_: float = 0.5,
+        **kwargs,
+    ):
         """Initialize the CMOEA_MS population and optimization state.
 
         :param pop_size: Required. Requested number of candidate solutions. Use a positive integer; algorithm-specific
@@ -26,6 +44,9 @@ class CMOEA_MS(Algorithm):
         :param type: Default: ``1``. Variation selector: ``1`` uses simulated binary crossover and polynomial mutation.
             Any other value uses the current differential-variation branch with fixed scale ``0.5``.
         :type type: int
+        :param max_gen: Positive generation budget used only for the scoring-stage transition.
+            The caller still controls termination. Defaults to ``100``.
+        :param lambda_: Feasible fraction required to enter the objective optimization stage; defaults to ``0.5``.
         :param kwargs: Default: ``{}``. Extra keyword arguments are accepted for constructor compatibility but are not
             read by this implementation. In particular, passing ``device=...`` here does not move tensors; place both
             bounds on the intended device before construction.
@@ -35,8 +56,8 @@ class CMOEA_MS(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -45,6 +66,10 @@ class CMOEA_MS(Algorithm):
         device = lb.device
         self.pop_size = pop_size
         self.n_objs = n_objs
+        if max_gen <= 0 or not 0 <= lambda_ <= 1:
+            raise ValueError("max_gen must be positive and lambda_ must be in [0, 1]")
+        self.stage_switch_gen = 0.1 * max_gen
+        self.stage_fraction = lambda_
         self.lb = lb
         self.ub = ub
         # Rename 'type' to 'op_type' to avoid collision with torch.nn.Module.type
@@ -57,34 +82,42 @@ class CMOEA_MS(Algorithm):
         self.fitness = Mutable(torch.zeros(pop_size, device=device))
         self.iter = Mutable(torch.tensor(0, dtype=torch.int32, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def _cal_sde(self, norm_fit: torch.Tensor) -> torch.Tensor:
-        N_total = norm_fit.shape[0]
-        P_i = norm_fit.unsqueeze(1)
-        P_j = norm_fit.unsqueeze(0)
-        S = torch.max(P_j, P_i)
+        shifted = torch.maximum(norm_fit[:, None], norm_fit[None])
+        distance = torch.linalg.vector_norm(norm_fit[:, None] - shifted, dim=-1)
+        diagonal = torch.eye(len(norm_fit), device=norm_fit.device, dtype=torch.bool)
+        k = max(1, int(len(norm_fit) ** 0.5))
+        return 1 / (distance.masked_fill(diagonal, torch.inf).sort(dim=1).values[:, k - 1] + 2)
 
-        dist = 1.0 - F.cosine_similarity(P_i, S, dim=-1)
+    def _cal_fitness(self, objectives: torch.Tensor, cv=None) -> torch.Tensor:
+        dominate = (objectives[:, None] <= objectives[None]).all(-1) & (objectives[:, None] < objectives[None]).any(-1)
+        dominate = constraint_dominance_matrix(dominate, cv, objective_ties=True)
+        raw = dominate.T.to(objectives.dtype) @ dominate.sum(dim=1).to(objectives.dtype)
+        distance = (1 - F.cosine_similarity(objectives[:, None], objectives[None], dim=-1)).nan_to_num(nan=1)
+        diagonal = torch.eye(len(objectives), device=objectives.device, dtype=torch.bool)
+        k = max(1, int(len(objectives) ** 0.5))
+        density = 1 / (distance.masked_fill(diagonal, torch.inf).sort(dim=1).values[:, k - 1] + 2)
+        return raw + density
 
-        mask = torch.eye(N_total, device=norm_fit.device).bool()
-        dist = torch.where(mask, torch.full_like(dist, float("inf")), dist)
-
-        # k = floor(sqrt(N))
-        k = int(torch.sqrt(torch.tensor(N_total, dtype=torch.float32)))
-        sorted_dist, _ = torch.sort(dist, dim=1)
-        # Use k-1 for 0-based indexing
-        sde = 1.0 / (sorted_dist[:, k - 1] + 2.0)
-        return sde
-
-    def _cal_fitness(self, norm_fit: torch.Tensor) -> torch.Tensor:
-        X = norm_fit.unsqueeze(1)
-        Y = norm_fit.unsqueeze(0)
-        dom_mat = (X <= Y).all(dim=-1) & (X < Y).any(dim=-1)
-
-        S = dom_mat.sum(dim=1)
-        R = dom_mat.t().float() @ S.float()
-        sde = self._cal_sde(norm_fit)
-
-        return R + sde
+    def _constrained_fitness(self, fit, cv, initial=False):
+        """PlatEMO MS fitness; objective-only input is the zero-CV case."""
+        if cv is None or (cv.ndim == 2 and cv.shape[1] == 0):
+            violation = fit.new_zeros(fit.shape[0])
+        else:
+            positive = cv.clamp_min(0).nan_to_num(nan=torch.inf, posinf=torch.inf)
+            maximum = torch.where(torch.isfinite(positive), positive, 0).amax(dim=0)
+            normalized = positive / torch.where(maximum > 0, maximum, torch.ones_like(maximum))
+            violation = normalized.mean(dim=1) if cv.ndim == 2 else normalized
+        minimum, maximum = fit.amin(dim=0), fit.amax(dim=0)
+        normalized_fit = (fit - minimum) / (maximum - minimum).clamp_min(1e-12)
+        surrogate = torch.stack([self._cal_sde(normalized_fit), violation], dim=1)
+        exploratory = self._cal_fitness(surrogate)
+        convergent = self._cal_fitness(fit, violation)
+        stage = ((violation == 0).float().mean() > self.stage_fraction) & (self.iter + 1 >= self.stage_switch_gen)
+        fitness = exploratory if initial else torch.where(stage, convergent, exploratory)
+        return torch.where(torch.isfinite(violation), fitness, torch.inf)
 
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
@@ -93,11 +126,8 @@ class CMOEA_MS(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
-        f_min = self.fit.min(dim=0, keepdim=True)[0]
-        f_max = self.fit.max(dim=0, keepdim=True)[0]
-        norm_fit = (self.fit - f_min) / (f_max - f_min + 1e-6)
-        self.fitness = self._cal_fitness(norm_fit)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
+        self.fitness = self._constrained_fitness(self.fit, self.cv, initial=True)
 
     def step(self) -> None:
         """Advance optimization and update population and fitness state in place.
@@ -115,7 +145,7 @@ class CMOEA_MS(Algorithm):
 
         if self.op_type == 1:
             off_pop = simulated_binary(parents, pro_c=1.0, dis_c=20.0)
-            off_pop = polynomial_mutation(off_pop, self.lb, self.ub, pro_m=1.0 / self.lb.numel(), dis_m=20.0)
+            off_pop = polynomial_mutation(off_pop, self.lb, self.ub, pro_m=1.0, dis_m=20.0)
         else:
             # DE logic: current-to-best style or similar
             # Using parents as a base for variation
@@ -124,62 +154,24 @@ class CMOEA_MS(Algorithm):
             )
 
         off_pop = clamp(off_pop, self.lb, self.ub)
-        off_fit = self.evaluate(off_pop)
+        off_fit, off_cv = parse_evaluate(self.evaluate(off_pop))
 
         Q_pop = torch.cat([self.pop, off_pop], dim=0)
         Q_fit = torch.cat([self.fit, off_fit], dim=0)
 
-        f_min = Q_fit.min(dim=0, keepdim=True)[0]
-        f_max = Q_fit.max(dim=0, keepdim=True)[0]
-        norm_fit = (Q_fit - f_min) / (f_max - f_min + 1e-6)
-
-        fitness_total = self._cal_fitness(norm_fit)
-
-        mask_nd = fitness_total < 1.0
-        num_nd = torch.sum(mask_nd.int())
-
-        # Unified Selection Logic
-        sorted_fit_val, sorted_idx = torch.sort(fitness_total)
-        is_peeling = num_nd > N
-
-        # Peeling Logic
-        P_i = norm_fit.unsqueeze(1)
-        P_j = norm_fit.unsqueeze(0)
-        dist_mat = 1.0 - F.cosine_similarity(P_i, P_j, dim=-1)
-        diag_mask = torch.eye(2 * N, device=device).bool()
-        dist_mat = torch.where(diag_mask, torch.full_like(dist_mat, float("inf")), dist_mat)
-
-        curr_mask = mask_nd.clone()
-        curr_num = num_nd
-
-        # Run loop for max possible removals (N)
-        for _ in range(N):
-            active = (curr_num > N) & is_peeling
-
-            # Distance only between survivors
-            temp_dist = torch.where(
-                curr_mask.unsqueeze(0) & curr_mask.unsqueeze(1), dist_mat, torch.full_like(dist_mat, float("inf"))
-            )
-
-            # Find individual with minimum distance to any other survivor
-            min_dists, _ = torch.min(temp_dist, dim=1)
-            min_dists = torch.where(curr_mask, min_dists, torch.full_like(min_dists, float("inf")))
-            idx_to_remove = torch.argmin(min_dists)
-
-            # Update
-            curr_mask[idx_to_remove] = torch.where(active, torch.tensor(False, device=device), curr_mask[idx_to_remove])
-            curr_num = torch.where(active, curr_num - 1, curr_num)
-
-        # Final Selection
-        # If peeling: take the N survivors from curr_mask
-        # If not peeling: take top N from sorted_idx
-        if_peeling_indices = torch.argsort(curr_mask.int(), descending=True)[:N]
-        if_not_peeling_indices = sorted_idx[:N]
-
-        survivor_idx = torch.where(is_peeling, if_peeling_indices, if_not_peeling_indices)
+        Q_cv = cat_violation(self.cv, off_cv)
+        fitness_total = self._constrained_fitness(Q_fit, Q_cv)
+        nondominated = torch.where(fitness_total < 1)[0]
+        if nondominated.numel() > N:
+            objectives = Q_fit[nondominated]
+            distance = (1 - F.cosine_similarity(objectives[:, None], objectives[None], dim=-1)).nan_to_num(nan=1)
+            survivor_idx = nondominated[distance_truncation(distance, N)]
+        else:
+            survivor_idx = fitness_total.argsort(stable=True)[:N]
 
         self.pop = Q_pop[survivor_idx]
         self.fit = Q_fit[survivor_idx]
+        self.cv = take_violation(Q_cv, survivor_idx)
         self.fitness = fitness_total[survivor_idx]
 
 

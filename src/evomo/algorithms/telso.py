@@ -4,6 +4,14 @@ from evox.operators.sampling import uniform_sampling
 from evox.utils import clamp, lexsort
 
 from evomo.operators.selection import non_dominate_rank
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    constraint_keys,
+    constraint_priority,
+    take_violation,
+    total_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
 class TELSO(Algorithm):
@@ -34,8 +42,8 @@ class TELSO(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -68,6 +76,8 @@ class TELSO(Algorithm):
         self.gamma = Mutable(torch.min(acos_val, dim=1)[0].min())
 
         self.fe = Mutable(torch.tensor(0, dtype=torch.int32, device=device))
+
+        register_lazy_buffer(self, "cv", device_like="pop")
 
     def _cal_fitness(self, fit: torch.Tensor) -> torch.Tensor:
         # Bug #29: Vectorized Shift-based density
@@ -118,11 +128,15 @@ class TELSO(Algorithm):
         identity = torch.eye(D, device=device)
         # Evaluate Identity as masks with all-ones pop
         ones_pop = torch.ones(D, D, device=device)
-        df_fit = self.evaluate(ones_pop * identity)
+        df_fit, df_cv = parse_evaluate(self.evaluate(ones_pop * identity))
         self.fe = self.fe + D
 
         # Pareto Ranks for DF
-        ranks = non_dominate_rank(df_fit)
+        ranks = (
+            non_dominate_rank(df_fit)
+            if df_cv is None
+            else non_dominate_rank(torch.cat([df_fit, total_violation(df_cv)[:, None]], dim=1))
+        )
         df_scores = ranks.float()  # Lower rank is better
 
         # 2. Mask Init
@@ -141,7 +155,7 @@ class TELSO(Algorithm):
         new_mask.scatter_(1, top_indices, mask_bits.float())
 
         self.mask = new_mask
-        self.fit = self.evaluate(self.pop * self.mask)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop * self.mask))
         self.fe = self.fe + self.pop_size
 
     def step(self) -> None:
@@ -174,7 +188,7 @@ class TELSO(Algorithm):
         off_mask = self._mask_learn(self.mask[idx_r1], self.mask[idx_r2], self.mask, ratio)
 
         # Evaluation
-        off_fit = self.evaluate(off_pop * off_mask)
+        off_fit, off_cv = parse_evaluate(self.evaluate(off_pop * off_mask))
         self.fe = self.fe + N
 
         # 2. Environmental Selection (APD-based)
@@ -202,7 +216,8 @@ class TELSO(Algorithm):
         # Final Selection: For each reference vector, find min APD
         # Vectorized selection of best individual per reference vector
         # Sort by association index (primary) and APD (secondary)
-        sort_idx = lexsort(torch.stack([apd, assoc_idx.float()]))
+        merged_cv = cat_violation(self.cv, off_cv)
+        sort_idx = lexsort([*constraint_keys([apd], merged_cv), assoc_idx.float()])
         sorted_assoc = assoc_idx[sort_idx]
 
         # Find first occurrence of each association index in sorted list
@@ -217,12 +232,16 @@ class TELSO(Algorithm):
             # This is a fallback for JIT compliance - use a mask to find remaining
             mask_rem = torch.ones(2 * N, dtype=torch.bool, device=device)
             mask_rem[final_idx] = False
-            rem_idx = torch.where(mask_rem)[0][: self.pop_size - final_idx.shape[0]]
+            rem_idx = torch.where(mask_rem)[0]
+            if merged_cv is not None:
+                rem_idx = rem_idx[constraint_priority(apd[rem_idx], merged_cv[rem_idx]).argsort(stable=True)]
+            rem_idx = rem_idx[: self.pop_size - final_idx.shape[0]]
             final_idx = torch.cat([final_idx, rem_idx])
 
         self.pop = merged_pop[final_idx]
         self.mask = merged_mask[final_idx]
         self.fit = merged_fit[final_idx]
+        self.cv = take_violation(merged_cv, final_idx)
         self.vel = merged_vel[final_idx]
 
 

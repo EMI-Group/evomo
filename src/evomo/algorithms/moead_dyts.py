@@ -5,6 +5,9 @@ from evox.operators.sampling import uniform_sampling
 from evox.operators.selection import tournament_selection_multifit
 from evox.utils import clamp
 
+from evomo.operators.selection.constraint_handling import constraint_improvement, prefer_by_constraint, total_violation
+from evomo.utils import parse_evaluate, register_lazy_buffer
+
 
 class MOEADDYTS(Algorithm):
     def __init__(self, pop_size: int, n_objs: int, lb: torch.Tensor, ub: torch.Tensor, T: int = 20, nr: int = 2, **kwargs):
@@ -38,8 +41,8 @@ class MOEADDYTS(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Reference-vector sampling can change the requested population size. Read ``self.pop.shape[0]`` for the actual size.
 
@@ -76,6 +79,9 @@ class MOEADDYTS(Algorithm):
         self.beta_b = Mutable(torch.ones(5, device=device))
         self.gen_counter = Mutable(torch.tensor(0, dtype=torch.int32, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+        register_lazy_buffer(self, "old_cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -83,11 +89,24 @@ class MOEADDYTS(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
         self.z = torch.min(self.fit, dim=0)[0]
         # Initial Tchebycheff
         diff = torch.abs(self.fit - self.z.unsqueeze(0))
         self.old_obj = torch.max(diff * self.weights, dim=1)[0]
+        self.old_cv = None if self.cv is None else total_violation(self.cv)
+
+    def _update_utility(self):
+        new_obj = torch.max(torch.abs(self.fit - self.z) * self.weights, dim=1)[0]
+        delta = (self.old_obj - new_obj) / (self.old_obj + 1e-6)
+        if self.cv is not None:
+            new_cv = total_violation(self.cv)
+            delta = constraint_improvement(delta, new_cv if self.old_cv is None else self.old_cv, new_cv)
+            self.old_cv = new_cv
+        self.pi = torch.where(delta > 0.001, torch.ones_like(self.pi), (0.95 + 0.05 * delta / 0.001) * self.pi)
+        if self.cv is not None:
+            self.pi = self.pi.clamp(0, 1)
+        self.old_obj = new_obj
 
     def _vectorized_de_op(
         self, op_idx: torch.Tensor, p1: torch.Tensor, p2: torch.Tensor, p3: torch.Tensor, p4: torch.Tensor, p5: torch.Tensor
@@ -159,7 +178,7 @@ class MOEADDYTS(Algorithm):
         offspring = clamp(offspring, self.lb, self.ub)
 
         # 4. Evaluation
-        off_fit = self.evaluate(offspring)
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
 
         # 5. Environmental Update
         self.z = torch.min(self.z, torch.min(off_fit, dim=0)[0])
@@ -177,6 +196,10 @@ class MOEADDYTS(Algorithm):
             g_new = torch.max(torch.abs(off_fit[j] - self.z) * self.weights[neighbors], dim=1)[0]
 
             replace_mask = g_new < g_old
+            if self.cv is not None:
+                replace_mask = prefer_by_constraint(
+                    replace_mask, total_violation(off_cv)[j], total_violation(self.cv)[neighbors]
+                )
 
             # Limit to nr replacements
             if torch.any(replace_mask):
@@ -191,6 +214,8 @@ class MOEADDYTS(Algorithm):
 
                 self.pop[actual_replace] = offspring[j]
                 self.fit[actual_replace] = off_fit[j]
+                if self.cv is not None:
+                    self.cv[actual_replace] = off_cv[j]
 
         # 6. Bandit Feedback
         self.beta_a[op_idx] = torch.clamp(self.beta_a[op_idx] + torch.sum(improved_any.float()), max=100.0)
@@ -199,10 +224,7 @@ class MOEADDYTS(Algorithm):
         # 7. Utility Update
         self.gen_counter += 1
         if self.gen_counter % 10 == 0:
-            new_obj = torch.max(torch.abs(self.fit - self.z) * self.weights, dim=1)[0]
-            delta = (self.old_obj - new_obj) / (self.old_obj + 1e-6)
-            self.pi = torch.where(delta > 0.001, torch.ones_like(self.pi), (0.95 + 0.05 * delta / 0.001) * self.pi)
-            self.old_obj = new_obj
+            self._update_utility()
 
 
 # === FIXED DEMO BLOCK ===

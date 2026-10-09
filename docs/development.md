@@ -10,7 +10,7 @@
 | `src/evomo/workflows/` | Connections between algorithms, problems, and monitors |
 | `src/evomo/metrics/` | Solution quality metrics |
 | `src/evomo/utils/` | Tensor, evaluation output, and state helpers |
-| `unit_test/` | Algorithm, operator, and problem tests |
+| `unit_test/` | Algorithm, problem, and metric tests |
 | `docs/` | Documentation, examples, and build configuration |
 
 Check the existing Python environment and CUDA setup before installing the editable package
@@ -49,7 +49,7 @@ Run relevant tests from the repository root, for example:
 
 ```sh
 python -m pytest unit_test/problems/test_dtlz.py -q
-python -m pytest unit_test/operators/test_non_dominate.py -q
+python -m pytest unit_test/algorithms/test_moea_constraints.py -q
 python -m pytest unit_test/algorithms/test_moea.py -q
 ```
 

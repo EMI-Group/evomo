@@ -4,6 +4,11 @@ from evox.operators.selection import crowding_distance
 from evox.utils import clamp, lexsort, randint
 
 from evomo.operators.selection import non_dominate_rank
+from evomo.operators.selection.constraint_handling import (
+    constrained_crowding_selection,
+    constrained_dominates,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
 def _map_parent_draws(
@@ -78,8 +83,8 @@ class GDE3(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -102,6 +107,8 @@ class GDE3(Algorithm):
         self.pop = Mutable(torch.rand(pop_size, self.dim, device=device) * (ub - lb) + lb)
         self.fit = Mutable(torch.full((pop_size, n_objs), torch.inf, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -109,7 +116,7 @@ class GDE3(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
 
     def step(self) -> None:
         """Advance optimization and update population and fitness state in place.
@@ -139,12 +146,26 @@ class GDE3(Algorithm):
         off_pop = clamp(off_pop, self.lb, self.ub)
 
         # 2. Evaluation
-        off_fit = self.evaluate(off_pop)
+        off_fit, off_cv = parse_evaluate(self.evaluate(off_pop))
 
         # 3. Selection
-        self.pop, self.fit = self._gde3_selection(self.pop, self.fit, off_pop, off_fit)
+        self.pop, self.fit = self._gde3_selection(self.pop, self.fit, off_pop, off_fit, off_cv)
 
-    def _gde3_selection(self, pop, fit, off_pop, off_fit):
+    def _gde3_selection(self, pop, fit, off_pop, off_fit, off_cv=None):
+        if off_cv is not None:
+            off_dom = constrained_dominates(off_fit, off_cv, fit, self.cv)
+            parent_dom = constrained_dominates(fit, self.cv, off_fit, off_cv)
+            add = ~(off_dom | parent_dom)
+            updated_pop = torch.where(off_dom[:, None], off_pop, pop)
+            updated_fit = torch.where(off_dom[:, None], off_fit, fit)
+            cv_shape = (-1,) + (1,) * (self.cv.ndim - 1)
+            updated_cv = torch.where(off_dom.reshape(cv_shape), off_cv, self.cv)
+            combined_pop = torch.cat([updated_pop, off_pop])
+            combined_fit = torch.cat([updated_fit, torch.where(add[:, None], off_fit, torch.inf)])
+            combined_cv = torch.cat([updated_cv, torch.where(add.reshape(cv_shape), off_cv, torch.inf)])
+            indices, _, _ = constrained_crowding_selection(combined_fit, combined_cv, self.pop_size)
+            self.cv = combined_cv[indices]
+            return combined_pop[indices], combined_fit[indices]
         device = pop.device
         N = self.pop_size
 

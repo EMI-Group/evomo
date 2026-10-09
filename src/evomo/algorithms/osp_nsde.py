@@ -4,7 +4,13 @@ from evox.operators.crossover import simulated_binary
 from evox.operators.mutation import polynomial_mutation
 from evox.utils import clamp, lexsort
 
-from evomo.operators.selection import non_dominate_rank
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    rank_with_constraints,
+    take_violation,
+    total_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
 class OSP_NSDE(Algorithm):
@@ -36,8 +42,8 @@ class OSP_NSDE(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -66,6 +72,8 @@ class OSP_NSDE(Algorithm):
         self.p = Mutable(torch.tensor(10, dtype=torch.int32, device=device))  # Forecast horizon
         self.nadir = Mutable(torch.ones(n_objs, device=device) * 1.5)
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -73,7 +81,7 @@ class OSP_NSDE(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
         # Initial trajectory entry
         self.history_pop[:, :, 0] = self.pop
         self.history_fit[:, :, 0] = self.fit
@@ -106,6 +114,12 @@ class OSP_NSDE(Algorithm):
         # Trigger condition: check if we have enough history (e.g., > 5 gens)
         # Using torch.where to handle logic without graph breaks
         do_osp = self.t > 5
+        if self.cv is not None:
+            # Objective-only forecasts should not replace constraint search.
+            # Retain GA exploration, and use forecasting periodically after
+            # reaching feasibility instead of replacing every generation.
+            feasible = total_violation(self.cv) == 0
+            do_osp = do_osp & feasible.any() & (self.t % 10 == 0)
 
         # 2.1 ARX Forecast
         phi_f = self._arx_forecast(self.history_fit[:, :, : self.t + 1], self.p)
@@ -113,6 +127,10 @@ class OSP_NSDE(Algorithm):
         # 2.2 GMM-VI Sampling
         # Find individuals closest to forecasted fitness
         dist_to_phi = torch.cdist(self.fit, phi_f)
+        if self.cv is not None:
+            # Once feasible points exist, train the local model from them.
+            eligible = feasible | ~feasible.any()
+            dist_to_phi = dist_to_phi.masked_fill(~eligible[:, None], torch.inf)
         best_idx = torch.argmin(dist_to_phi, dim=0)
         X_f = self.pop[best_idx]
 
@@ -124,20 +142,26 @@ class OSP_NSDE(Algorithm):
 
         # 2.3 Standard Variation (DE/Poly)
         # Fallback/Hybrid: Use DE if not OSP, or combine
-        off_de = simulated_binary(self.pop, pro_c=1.0, dis_c=20.0)
+        parents = self.pop
+        if N % 2:
+            parents = torch.cat([parents, parents[:1]])
+        off_de = simulated_binary(parents, pro_c=1.0, dis_c=20.0)
+        if N % 2:
+            off_de = off_de[:N]
         off_de = polynomial_mutation(off_de, self.lb, self.ub)
 
         offspring = torch.where(do_osp.unsqueeze(-1), off_osp, off_de)
         offspring = clamp(offspring, self.lb, self.ub)
 
         # 3. Evaluation
-        off_fit = self.evaluate(offspring)
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
 
         # 4. Environmental Selection (Brutal Static Truncation - Bug #30)
         combined_pop = torch.cat([self.pop, offspring], dim=0)
         combined_fit = torch.cat([self.fit, off_fit], dim=0)
 
-        rank = non_dominate_rank(combined_fit)
+        combined_cv = cat_violation(self.cv, off_cv)
+        rank = rank_with_constraints(combined_fit, combined_cv)
 
         # Calculate density for all
         dist_all = torch.cdist(combined_fit, combined_fit)
@@ -151,6 +175,7 @@ class OSP_NSDE(Algorithm):
         selected_idx = idx[:N]
         self.pop = combined_pop[selected_idx]
         self.fit = combined_fit[selected_idx]
+        self.cv = take_violation(combined_cv, selected_idx)
 
     def _arx_forecast(self, history: torch.Tensor, p: int) -> torch.Tensor:
         # history: [N, M, T]

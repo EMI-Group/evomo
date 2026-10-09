@@ -1,10 +1,16 @@
 import torch
 from evox.core import Algorithm, Mutable
 from evox.operators.mutation import polynomial_mutation
-from evox.operators.selection import crowding_distance
 from evox.utils import clamp, lexsort
 
-from evomo.operators.selection import non_dominate_rank
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    prefer_by_constraint,
+    rank_with_constraints,
+    total_violation,
+)
+from evomo.operators.selection.distance_truncation import crowding_distance_by_rank, distance_truncation
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
 class CMOPSO(Algorithm):
@@ -32,8 +38,8 @@ class CMOPSO(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -51,6 +57,8 @@ class CMOPSO(Algorithm):
         self.fit = Mutable(torch.full((pop_size, n_objs), torch.inf, device=device))  # [N,M]
         self.v = Mutable(torch.zeros((pop_size, D), device=device))  # [N,D] Persistent Velocity
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -58,7 +66,7 @@ class CMOPSO(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
 
     def step(self) -> None:
         """Advance optimization and update population and fitness state in place.
@@ -72,10 +80,9 @@ class CMOPSO(Algorithm):
         D = self.lb.numel()
 
         # 1. Leader Selection (Mating)
-        rank = non_dominate_rank(self.fit)
+        rank = rank_with_constraints(self.fit, self.cv)
         # Crowding distance is calculated per front.
-        mask_f1 = rank == 0
-        cd = crowding_distance(self.fit, mask_f1)
+        cd = crowding_distance_by_rank(self.fit, rank)
 
         # Sort to find top 10 leaders (Bug #25)
         indices = lexsort(torch.stack([-cd, rank.float()]))
@@ -84,8 +91,9 @@ class CMOPSO(Algorithm):
         # 2. Tournament & Angle-Based Competition
         # Ensure we have 10 leaders to pick from; if not, pad with 0
         num_leaders = LeaderSetIdx.shape[0]
-        c1_idx = LeaderSetIdx[torch.randint(0, num_leaders, (N,), device=device)]
-        c2_idx = LeaderSetIdx[torch.randint(0, num_leaders, (N,), device=device)]
+        first = torch.randint(0, num_leaders, (N,), device=device)
+        second = (first + torch.randint(1, max(2, num_leaders), (N,), device=device)) % num_leaders
+        c1_idx, c2_idx = LeaderSetIdx[first], LeaderSetIdx[second]
 
         C1_fit = self.fit[c1_idx]
         C2_fit = self.fit[c2_idx]
@@ -99,7 +107,12 @@ class CMOPSO(Algorithm):
         cos2 = (self.fit * C2_fit).sum(-1) / (norm_pop * norm_c2 + 1e-6)
 
         # Winner selection (Bug #41: torch.where)
-        winner_idx = torch.where(cos1 > cos2, c1_idx, c2_idx)
+        # PlatEMO keeps the first leader when the angles are equal.
+        winner_mask = cos1 >= cos2
+        if self.cv is not None:
+            total = total_violation(self.cv)
+            winner_mask = prefer_by_constraint(winner_mask, total[c1_idx], total[c2_idx])
+        winner_idx = torch.where(winner_mask, c1_idx, c2_idx)
 
         # 3. Velocity and Position Update
         r1 = torch.rand((N, D), device=device)
@@ -112,17 +125,18 @@ class CMOPSO(Algorithm):
         off_pop = clamp(off_pop, self.lb, self.ub)
 
         # Polynomial Mutation
-        off_pop = polynomial_mutation(off_pop, self.lb, self.ub, pro_m=1.0 / D, dis_m=20.0)
+        off_pop = polynomial_mutation(off_pop, self.lb, self.ub, pro_m=1.0, dis_m=20.0)
 
         # 4. Evaluation
-        off_fit = self.evaluate(off_pop)
+        off_fit, off_cv = parse_evaluate(self.evaluate(off_pop))
 
         # 5. Environmental Selection
         X = torch.cat([self.pop, off_pop], dim=0)
         F = torch.cat([self.fit, off_fit], dim=0)
         V_all = torch.cat([self.v, off_v], dim=0)
 
-        all_rank = non_dominate_rank(F)
+        CV_all = cat_violation(self.cv, off_cv)
+        all_rank = rank_with_constraints(F, CV_all)
 
         # Vectorized MaxFNo identification (Bug #41)
         # Max possible rank is 2*N
@@ -136,8 +150,8 @@ class CMOPSO(Algorithm):
 
         # Individuals in fronts < MaxFNo
         keep_mask = all_rank < MaxFNo
-        num_kept = keep_mask.sum().to(torch.int32)
-        needed_count = N - num_kept
+        kept_indices = torch.where(keep_mask)[0]
+        needed_count = N - kept_indices.numel()
 
         # Truncation for the last front (Bug #30)
         last_front_mask = all_rank == MaxFNo
@@ -157,9 +171,7 @@ class CMOPSO(Algorithm):
         diag_mask = torch.eye(dist_matrix.shape[0], device=device, dtype=torch.bool)
         dist_matrix = torch.where(diag_mask, torch.tensor(sentinel_inf, device=device), dist_matrix)
 
-        min_dists, _ = torch.min(dist_matrix, dim=1)
-        # Sort by distance descending
-        trunc_indices = torch.argsort(min_dists, descending=True)[:needed_count]
+        trunc_indices = distance_truncation(dist_matrix, needed_count)
 
         # Combine survivors
         survivor_pop = torch.cat([X[keep_mask], X_last[trunc_indices]], dim=0)
@@ -167,6 +179,8 @@ class CMOPSO(Algorithm):
         survivor_v = torch.cat([V_all[keep_mask], V_last[trunc_indices]], dim=0)
 
         # Update State
+        if CV_all is not None:
+            self.cv = torch.cat([CV_all[keep_mask], CV_all[last_front_mask][trunc_indices]])[:N]
         self.pop = survivor_pop[:N]
         self.fit = survivor_fit[:N]
         self.v = survivor_v[:N]

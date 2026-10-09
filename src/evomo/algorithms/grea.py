@@ -5,7 +5,12 @@ from evox.operators.mutation import polynomial_mutation
 from evox.operators.selection import tournament_selection_multifit
 from evox.utils import clamp, lexsort
 
-from evomo.operators.selection import non_dominate_rank
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    rank_with_constraints,
+    take_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
 class GrEA(Algorithm):
@@ -36,8 +41,8 @@ class GrEA(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -55,6 +60,8 @@ class GrEA(Algorithm):
         self.pop = Mutable(torch.rand(pop_size, D, device=device) * (ub - lb) + lb)
         self.fit = Mutable(torch.full((pop_size, n_objs), torch.inf, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -62,7 +69,7 @@ class GrEA(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
 
     def _calc_grid_metrics(self, fit: torch.Tensor):
         f_min = torch.min(fit, dim=0)[0]
@@ -108,7 +115,7 @@ class GrEA(Algorithm):
         device = self.pop.device
         # 1. Mating Selection
         g_loc, gcd, gr, gcpd, _ = self._calc_grid_metrics(self.fit)
-        rank = non_dominate_rank(self.fit)
+        rank = rank_with_constraints(self.fit, self.cv)
 
         # Tournament Selection (Bug #25: Primary key last)
         # Criteria: Pareto Rank (min), Grid Rank (min), GCD (min)
@@ -119,14 +126,15 @@ class GrEA(Algorithm):
         offspring = simulated_binary(parents)
         offspring = polynomial_mutation(offspring, self.lb, self.ub)
         offspring = clamp(offspring, self.lb, self.ub)
-        off_fit = self.evaluate(offspring)
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
 
         # 3. Environmental Selection
         c_pop = torch.cat([self.pop, offspring], dim=0)
         c_fit = torch.cat([self.fit, off_fit], dim=0)
 
         # Non-dominated Sort
-        c_rank = non_dominate_rank(c_fit)
+        c_cv = cat_violation(self.cv, off_cv)
+        c_rank = rank_with_constraints(c_fit, c_cv)
 
         # Front Filling
         survivor_mask = torch.zeros(c_pop.shape[0], dtype=torch.bool, device=device)
@@ -189,6 +197,7 @@ class GrEA(Algorithm):
 
         self.pop = c_pop[survivor_mask]
         self.fit = c_fit[survivor_mask]
+        self.cv = take_violation(c_cv, survivor_mask)
 
 
 if __name__ == "__main__":

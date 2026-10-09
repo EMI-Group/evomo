@@ -5,7 +5,13 @@ from evox.operators.mutation import polynomial_mutation
 from evox.operators.sampling import uniform_sampling
 from evox.utils import clamp, lexsort, randint
 
-from evomo.operators.selection import non_dominate_rank
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    constraint_keys,
+    rank_with_constraints,
+    take_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
 class ThetaDEA(Algorithm):
@@ -33,8 +39,8 @@ class ThetaDEA(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Reference-vector sampling can change the requested population size. Read ``self.pop.shape[0]`` for the actual size.
 
@@ -66,6 +72,8 @@ class ThetaDEA(Algorithm):
         self.z = Mutable(torch.full((n_objs,), torch.inf, device=device))
         self.znad = Mutable(torch.full((n_objs,), -torch.inf, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -73,7 +81,7 @@ class ThetaDEA(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
         self.z = torch.min(self.fit, dim=0)[0]
         self.znad = torch.max(self.fit, dim=0)[0]
 
@@ -175,7 +183,7 @@ class ThetaDEA(Algorithm):
         offspring = clamp(offspring, self.lb, self.ub)
 
         # 2. Evaluation
-        off_fit = self.evaluate(offspring)
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
         merged_pop = torch.cat([self.pop, offspring], dim=0)
         merged_fit = torch.cat([self.fit, off_fit], dim=0)
 
@@ -185,7 +193,8 @@ class ThetaDEA(Algorithm):
         norm_fit = (merged_fit - self.z) / (self.znad - self.z + 1e-6)
 
         # 4. Non-dominated Sort
-        front_no = non_dominate_rank(merged_fit)
+        merged_cv = cat_violation(self.cv, off_cv)
+        front_no = rank_with_constraints(merged_fit, merged_cv)
 
         # 5. Theta-Dominance Ranking
         t_front_no = self._theta_rank(norm_fit)
@@ -194,11 +203,12 @@ class ThetaDEA(Algorithm):
         # Primary key: t_front_no, Secondary key: front_no
         # Bug #25: Primary key (t_front_no) goes last in lexsort
         keys = torch.stack([front_no.float(), t_front_no])
-        idx = lexsort(keys)
+        idx = lexsort(keys) if merged_cv is None else lexsort(constraint_keys([front_no.float(), t_front_no], merged_cv))
 
         selected_idx = idx[: self.pop_size]
         self.pop = merged_pop[selected_idx]
         self.fit = merged_fit[selected_idx]
+        self.cv = take_violation(merged_cv, selected_idx)
 
 
 if __name__ == "__main__":

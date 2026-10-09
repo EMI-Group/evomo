@@ -7,6 +7,9 @@ from evox.operators.mutation import polynomial_mutation
 from evox.operators.selection import tournament_selection
 from evox.utils import clamp
 
+from evomo.operators.selection.constraint_handling import constraint_priority, total_violation
+from evomo.utils import parse_evaluate, register_lazy_buffer
+
 
 def cal_max(pop_obj1, pop_obj2):
     """Calculates the maximum difference between elements of two objective tensors."""
@@ -69,9 +72,10 @@ class IBEA(Algorithm):
         .. note::
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
-            ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. Evaluation accepts objectives
+            or ``(fitness, cv)`` with violations of shape ``(B,)`` or ``(B, C)``. The constrained extension prioritizes
+            total positive violation in mating and removes higher-violation individuals first during truncation.
+            Equal violations retain IBEA's indicator comparison. Selected violations are saved in ``self.cv``.
         """
         super().__init__()
         if device is None:
@@ -100,6 +104,7 @@ class IBEA(Algorithm):
         population = population * (self.ub - self.lb) + self.lb
         self.pop = Mutable(population)
         self.fit = Mutable(torch.full((self.pop_size, self.n_objs), torch.inf, device=device))
+        register_lazy_buffer(self, "cv", device_like="pop")
 
         self.next_generation = Mutable(self.pop.clone())
 
@@ -110,7 +115,7 @@ class IBEA(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
 
     def step(self):
         """Advance optimization and update population and fitness state in place.
@@ -121,13 +126,14 @@ class IBEA(Algorithm):
         """
 
         fit, _, _ = self.cal_fitness(self.fit.clone().detach(), self.kappa)
-        selected = self.selection(n_round=self.pop_size, fitness=-fit)
+        mating_fitness = -fit if self.cv is None else constraint_priority(-fit, self.cv)
+        selected = self.selection(n_round=self.pop_size, fitness=mating_fitness)
         crossovered = self.crossover(self.pop[selected])
         next_generation = self.mutation(crossovered, self.lb, self.ub)
         next_generation = clamp(next_generation, self.lb, self.ub)
         self.next_generation = next_generation
 
-        next_gen_fitness = self.evaluate(self.next_generation)
+        next_gen_fitness, next_gen_cv = parse_evaluate(self.evaluate(self.next_generation))
 
         merged_pop = torch.cat([self.pop, self.next_generation], dim=0)
         merged_obj = torch.cat([self.fit, next_gen_fitness], dim=0)
@@ -135,12 +141,29 @@ class IBEA(Algorithm):
 
         n = merged_pop.size(0)
         next_ind = torch.arange(n, device=merged_pop.device)
+        if self.cv is not None:
+            merged_cv = torch.cat([self.cv, next_gen_cv], dim=0)
+            total_cv = total_violation(merged_cv)
 
         for _ in range(self.pop_size):
-            x = torch.argmin(merged_fitness)
-            merged_fitness += torch.exp(-indicator_matrix[x] / C[x] / self.kappa)
-            merged_fitness[x] = torch.max(merged_fitness)
-            next_ind = next_ind.index_put((x,), torch.tensor(n, device=merged_pop.device))
+            if self.cv is None:
+                x = torch.argmin(merged_fitness)
+            else:
+                alive = next_ind < n
+                worst_cv = torch.where(alive, total_cv, -torch.inf).amax()
+                eligible = alive & (total_cv == worst_cv)
+                x = torch.argmin(torch.where(eligible, merged_fitness, torch.inf))
+            if self.cv is None:
+                merged_fitness += torch.exp(-indicator_matrix[x] / C[x] / self.kappa)
+                merged_fitness[x] = torch.max(merged_fitness)
+                next_ind = next_ind.index_put((x,), torch.tensor(n, device=merged_pop.device))
+            else:
+                index = x.reshape(1)
+                row = indicator_matrix.index_select(0, index).squeeze(0)
+                scale = C.gather(0, index).squeeze(0)
+                merged_fitness = merged_fitness + torch.exp(-row / scale / self.kappa)
+                merged_fitness = merged_fitness.scatter(0, index, merged_fitness.amax().expand(1))
+                next_ind = next_ind.scatter(0, index, n)
 
         next_ind = torch.argsort(next_ind, stable=True)
         next_ind = next_ind[: self.pop_size]
@@ -150,11 +173,18 @@ class IBEA(Algorithm):
 
         self.pop = survivor
         self.fit = survivor_fitness
+        if self.cv is not None:
+            self.cv = merged_cv[next_ind]
 
     def cal_fitness(self, pop_obj, kappa):
         """Calculate the indicator-based fitness, indicator matrix, and scaling factor."""
-        pop_obj_normalized = (pop_obj - pop_obj.min(dim=0).values) / (pop_obj.max(dim=0).values - pop_obj.min(dim=0).values)
+        span = pop_obj.max(dim=0).values - pop_obj.min(dim=0).values
+        if self.cv is not None:
+            span = torch.where(span > 0, span, torch.ones_like(span))
+        pop_obj_normalized = (pop_obj - pop_obj.min(dim=0).values) / span
         indicator_matrix = cal_max(pop_obj_normalized, pop_obj_normalized)
         C = torch.max(torch.abs(indicator_matrix), dim=0)[0]
+        if self.cv is not None:
+            C = torch.where(C > 0, C, torch.ones_like(C))
         fit = torch.sum(-torch.exp(-indicator_matrix / C.unsqueeze(0) / kappa), dim=0) + 1
         return fit, indicator_matrix, C

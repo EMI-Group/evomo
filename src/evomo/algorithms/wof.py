@@ -5,8 +5,13 @@ from evox.operators.mutation import polynomial_mutation
 from evox.operators.selection import crowding_distance, tournament_selection_multifit
 from evox.utils import clamp, lexsort
 
-from evomo.operators.selection import non_dominate_rank
-from evomo.utils import unique_rows_sorted
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    rank_with_constraints,
+    take_violation,
+    total_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer, unique_rows_sorted
 
 
 class WOF(Algorithm):
@@ -38,8 +43,8 @@ class WOF(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -65,6 +70,8 @@ class WOF(Algorithm):
         # Sentinel for rank initialization (Bug #1)
         self.sentinel = torch.iinfo(torch.int32).max
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -72,7 +79,7 @@ class WOF(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
         # Initial Grouping (Method 2: Ordered)
         x_prime = self.pop[0]
         idx = torch.argsort(x_prime)
@@ -91,7 +98,11 @@ class WOF(Algorithm):
     def _wof_select_x_primes(self, pop: torch.Tensor, fit: torch.Tensor, q: int) -> torch.Tensor:
         # Blueprint 4: Logic for Method 3
         # 1. Closest to axes
-        best_idx = torch.argmin(fit, dim=0)
+        anchor_fit = fit
+        if self.cv is not None:
+            totals = total_violation(self.cv)
+            anchor_fit = torch.where((totals == totals.amin())[:, None], fit, torch.inf)
+        best_idx = torch.argmin(anchor_fit, dim=0)
         # 2. Fill remaining with random
         rand_idx = torch.randperm(pop.shape[0], device=pop.device)
 
@@ -139,20 +150,20 @@ class WOF(Algorithm):
         X_weight = torch.where(mask, x_prime + (W_batch - 1.0) * (self.ub - x_prime), self.lb + W_batch * (x_prime - self.lb))
 
         # Evaluate weight-optimized solutions
-        fit_weight = self.evaluate(X_weight)
+        fit_weight, cv_weight = parse_evaluate(self.evaluate(X_weight))
 
         # --- Phase 2: Standard Search (X-Phase) ---
         # Use NSGA-II style mating
-        rank = non_dominate_rank(self.fit)
+        rank = rank_with_constraints(self.fit, self.cv)
         # Crowding distance requires mask (Bug #6)
         cd_mask = torch.ones(N, dtype=torch.bool, device=device)
         dist = crowding_distance(self.fit, cd_mask)
 
         mating_pool = tournament_selection_multifit(N, [-dist, rank.float()], tournament_size=2)
         offspring = simulated_binary(self.pop[mating_pool], pro_c=1.0, dis_c=20.0)
-        offspring = polynomial_mutation(offspring, self.lb, self.ub, pro_m=1.0 / self.dim, dis_m=20.0)
+        offspring = polynomial_mutation(offspring, self.lb, self.ub, pro_m=1.0, dis_m=20.0)
         offspring = clamp(offspring, self.lb, self.ub)
-        fit_off = self.evaluate(offspring)
+        fit_off, cv_off = parse_evaluate(self.evaluate(offspring))
 
         # --- Phase 3: Environmental Selection ---
         combined_pop = torch.cat([self.pop, X_weight, offspring], dim=0)
@@ -164,7 +175,8 @@ class WOF(Algorithm):
 
         # NSGA-II Selection (Blueprint 3.C)
         n_total = u_pop.shape[0]
-        ranks = non_dominate_rank(u_fit)
+        u_cv = take_violation(cat_violation(self.cv, cv_weight, cv_off), u_idx)
+        ranks = rank_with_constraints(u_fit, u_cv)
 
         selected_mask = torch.zeros(n_total, dtype=torch.bool, device=device)
         num_selected = 0
@@ -212,6 +224,7 @@ class WOF(Algorithm):
 
         self.pop = u_pop[selected_mask][:N]
         self.fit = u_fit[selected_mask][:N]
+        self.cv = take_violation(take_violation(u_cv, selected_mask), slice(None, N))
 
 
 if __name__ == "__main__":
