@@ -1,0 +1,5 @@
+/* Keep tensor shapes together while descriptions wrap normally. */
+.evomo-tensor-conventions th:nth-child(2),
+.evomo-tensor-conventions td:nth-child(2) {
+  white-space: nowrap;
+}

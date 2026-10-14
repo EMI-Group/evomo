@@ -1,0 +1,4 @@
+# Keep Python code and GitHub Actions workflows consistent on Windows and Linux.
+*.py text eol=lf
+.github/workflows/*.yml text eol=lf
+.gitattributes text eol=lf

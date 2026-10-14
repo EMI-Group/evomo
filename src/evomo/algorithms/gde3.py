@@ -6,9 +6,87 @@ from evox.utils import clamp, lexsort, randint
 from evomo.operators.selection import non_dominate_rank
 
 
+def _map_parent_draws(
+    index: torch.Tensor,
+    first_draw: torch.Tensor,
+    second_draw: torch.Tensor,
+    third_draw: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Map shrinking-range draws to three distinct population indices.
+
+    Each input draw is uniform on a compact range with respectively one, two,
+    or three indices removed.  The order-preserving remapping is a bijection,
+    so the resulting ordered parent triple is uniform without replacement.
+    """
+    dtype = index.dtype
+
+    r1 = first_draw + (first_draw >= index).to(dtype)
+
+    lower = torch.minimum(index, r1)
+    upper = torch.maximum(index, r1)
+    r2 = second_draw
+    r2 = r2 + (second_draw >= lower).to(dtype)
+    r2 = r2 + (second_draw >= upper - 1).to(dtype)
+
+    lower = torch.minimum(torch.minimum(index, r1), r2)
+    upper = torch.maximum(torch.maximum(index, r1), r2)
+    middle = index + r1 + r2 - lower - upper
+    r3 = third_draw
+    r3 = r3 + (third_draw >= lower).to(dtype)
+    r3 = r3 + (third_draw >= middle - 1).to(dtype)
+    r3 = r3 + (third_draw >= upper - 2).to(dtype)
+    return r1, r2, r3
+
+
+def _sample_parent_indices(pop_size: int, device: torch.device) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Sample DE/rand/1 parents in O(pop_size) memory."""
+    if pop_size < 4:
+        raise ValueError("GDE3 requires pop_size >= 4 to sample three parents distinct from each target.")
+
+    index = torch.arange(pop_size, device=device)
+    first_draw = randint(0, pop_size - 1, (pop_size,), device=device)
+    second_draw = randint(0, pop_size - 2, (pop_size,), device=device)
+    third_draw = randint(0, pop_size - 3, (pop_size,), device=device)
+    return _map_parent_draws(index, first_draw, second_draw, third_draw)
+
+
 class GDE3(Algorithm):
     def __init__(self, pop_size: int, n_objs: int, lb: torch.Tensor, ub: torch.Tensor, F: float = 0.5, CR: float = 0.5):
+        """Initialize GDE3 with differential evolution and nondominated environmental selection.
+
+        :param pop_size: Required. Requested number of candidate solutions. Use a positive integer; algorithm-specific
+            minimums and reference-vector sampling are described below. At least four candidates are required for three
+            distinct DE parents per target.
+        :type pop_size: int
+        :param n_objs: Required. Number of objectives, matching the second dimension of the problem's objective tensor.
+            Objectives are minimized; this library targets two or more objectives.
+        :type n_objs: int
+        :param lb: Required. Lower decision bounds of shape ``(D,)``, where ``D`` is the number of decision variables.
+            Use floating-point bounds with the same shape, dtype and device as ``ub``, and ``lb <= ub`` elementwise.
+        :type lb: torch.Tensor
+        :param ub: Required. Upper decision bounds of shape ``(D,)``. The decision dimension is inferred from the
+            bounds, rather than passed separately. Match ``lb`` in shape, dtype and device.
+        :type ub: torch.Tensor
+        :param F: Default: ``0.5``. Differential-evolution scale multiplying a difference between parent decision
+            vectors. Use a positive value; larger values produce larger differential steps before bound repair.
+        :type F: float
+        :param CR: Default: ``0.5``. Binomial crossover probability in ``[0, 1]`` of taking a decision component from
+            the mutant rather than the target. The implementation also forces a mutant component in each trial.
+        :type CR: float
+
+        .. note::
+
+            Use this algorithm through a workflow that connects the problem's evaluation method. Call
+            ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
+            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
+            constraint_violation)`` tuple.
+
+            Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
+            device.
+        """
         super().__init__()
+        if pop_size < 4:
+            raise ValueError("GDE3 requires pop_size >= 4 to sample three parents distinct from each target.")
         device = lb.device
         self.pop_size = pop_size
         self.n_objs = n_objs
@@ -25,23 +103,28 @@ class GDE3(Algorithm):
         self.fit = Mutable(torch.full((pop_size, n_objs), torch.inf, device=device))
 
     def init_step(self) -> None:
+        """Evaluate the initial population and initialize algorithm state.
+
+        Invoke through ``workflow.init_step()`` before the first optimization step.
+
+        :returns: ``None``; results are stored in algorithm state.
+        """
         self.fit = self.evaluate(self.pop)
 
     def step(self) -> None:
+        """Advance optimization and update population and fitness state in place.
+
+        Invoke through ``workflow.step()`` after initialization. The caller controls termination.
+
+        :returns: ``None``; results are stored in algorithm state.
+        """
         device = self.pop.device
         N = self.pop_size
 
         # 1. Mating (Vectorized DE/rand/1/bin)
-        # Generate r1, r2, r3 such that r1 != r2 != r3 != i
-        r1 = randint(0, N, (N,), device=device)
-        r2 = randint(0, N, (N,), device=device)
-        r3 = randint(0, N, (N,), device=device)
-
-        # Simple shift to avoid identity (Bug #29 compliance - vectorized)
-        idx = torch.arange(N, device=device)
-        r1 = torch.where(r1 == idx, (r1 + 1) % N, r1)
-        r2 = torch.where((r2 == idx) | (r2 == r1), (r2 + 2) % N, r2)
-        r3 = torch.where((r3 == idx) | (r3 == r1) | (r3 == r2), (r3 + 3) % N, r3)
+        # Draw an ordered triple uniformly without replacement, excluding the
+        # target index.  This uses only O(N) temporary storage.
+        r1, r2, r3 = _sample_parent_indices(N, device)
 
         mutant = self.pop[r1] + self.F * (self.pop[r2] - self.pop[r3])
 

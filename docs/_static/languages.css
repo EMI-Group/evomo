@@ -1,0 +1,20 @@
+.evomo-language-switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--sy-c-border);
+  font-size: 0.875rem;
+}
+
+.evomo-language-switch a[aria-current="page"] {
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.2rem;
+}
+
+.evomo-shared-api-note {
+  opacity: 0.75;
+}

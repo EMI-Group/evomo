@@ -780,7 +780,7 @@ class SDC(CMOP):
     IEEE Transactions on Evolutionary Computation, 2024, 28(4): 965-979.
 
     param:
-    THETA_
+    ``THETA_``
     a
     CEC_Problem: index of high-dimension constraint function
     Distance_problem: index of distance function

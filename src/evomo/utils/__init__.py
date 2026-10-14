@@ -4,7 +4,9 @@ __all__ = [
     "at_least_2d",
     "get_pareto_front",
     "load_pareto_front_from_file",
+    "register_lazy_buffer",
 ]
 
 from .common import load_pareto_front_from_file, parse_evaluate
+from .state import register_lazy_buffer
 from .tensor_ops import at_least_2d, get_pareto_front, unique_rows_sorted

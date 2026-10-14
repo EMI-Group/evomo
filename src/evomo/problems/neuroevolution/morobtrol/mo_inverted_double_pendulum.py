@@ -12,6 +12,7 @@ class MoInvertedDoublePendulum(InvertedDoublePendulum):
         “Brax - a differentiable physics engine for large scale rigid body simulation,” 2021.
         [Online]. Available: http://github.com/google/brax
     """
+
     def __init__(self, **kwargs):
         """Initialize the multi-objective inverted_double_pendulum env.
 

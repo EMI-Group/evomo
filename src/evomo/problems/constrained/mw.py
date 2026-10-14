@@ -21,7 +21,6 @@ class MW(CMOP):
     }
 
     def __init__(self, prob_id: int = None, d: int = None, m: int = None, ref_num: int = 1000, **kwargs):
-
         if prob_id not in range(1, 15):
             raise ValueError("Please select a valid prob id.")
 

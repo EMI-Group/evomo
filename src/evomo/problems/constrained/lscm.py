@@ -275,7 +275,6 @@ class LSCM(CMOP):
             self.Dis[j] = {"start": start, "end": end}
 
     def variable_linkage(self, X: torch.Tensor) -> torch.Tensor:
-
         device, dtype = X.device, X.dtype
         PPP = X.clone()
 

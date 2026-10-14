@@ -1,0 +1,22 @@
+{% extends "!page.html" %}
+
+{% block extrahead %}
+  {{ super() }}
+  {% if evomo_paired_translation %}
+    {% for item in evomo_languages %}
+      <link rel="alternate" hreflang="{{ item.lang }}" href="{{ pathto(item.page) }}">
+    {% endfor %}
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+  <nav class="evomo-language-switch" aria-label="Documentation language">
+    {% for item in evomo_languages %}
+      <a href="{{ pathto(item.page) }}" lang="{{ item.lang }}" hreflang="{{ item.lang }}"{% if item.active %} aria-current="page"{% endif %}>{{ item.name }}</a>
+    {% endfor %}
+    {% if evomo_shared_api %}
+      <span class="evomo-shared-api-note">API reference is shared in English.</span>
+    {% endif %}
+  </nav>
+  {{ super() }}
+{% endblock %}

@@ -22,7 +22,6 @@ class LIRCMOP(CMOP):
     """
 
     def __init__(self, d: int = None, m: int = None, n_iq: int = None, ref_num: int = 1000, **kwargs):
-
         self.device = kwargs.pop("device", torch.get_default_device())
         lb = torch.zeros(d, device=self.device)
         ub = torch.ones(d, device=self.device)
@@ -34,7 +33,6 @@ class LIRCMOP(CMOP):
 
 class LIRCMOP1(LIRCMOP):
     def __init__(self, d: int = 30, m: int = 2, n_iq: int = 2, ref_num: int = 1000, **kwargs):
-
         super().__init__(d=d, m=m, n_iq=n_iq, ref_num=ref_num, **kwargs)
 
     def g1(self, X: torch.Tensor) -> torch.Tensor:
@@ -72,7 +70,6 @@ class LIRCMOP1(LIRCMOP):
 
 class LIRCMOP2(LIRCMOP1):
     def __init__(self, d: int = 30, m: int = 2, n_iq: int = 2, ref_num: int = 1000, **kwargs):
-
         super().__init__(d=d, m=m, n_iq=n_iq, ref_num=ref_num, **kwargs)
 
     def f2(self, X: torch.Tensor, g: torch.Tensor) -> torch.Tensor:
@@ -86,7 +83,6 @@ class LIRCMOP2(LIRCMOP1):
 
 class LIRCMOP3(LIRCMOP1):
     def __init__(self, d: int = 30, m: int = 2, n_iq: int = 3, ref_num: int = 1000, **kwargs):
-
         super().__init__(d=d, m=m, n_iq=n_iq, ref_num=ref_num, **kwargs)
 
     def c3(self, X: torch.Tensor) -> torch.Tensor:
@@ -111,7 +107,6 @@ class LIRCMOP3(LIRCMOP1):
 
 class LIRCMOP4(LIRCMOP2):
     def __init__(self, d: int = 30, m: int = 2, n_iq: int = 3, ref_num: int = 1000, **kwargs):
-
         super().__init__(d=d, m=m, n_iq=n_iq, ref_num=ref_num, **kwargs)
 
     def c3(self, X: torch.Tensor) -> torch.Tensor:
@@ -226,7 +221,6 @@ class LIRCMOP6(LIRCMOP5):
 
 class LIRCMOP7(LIRCMOP5):
     def __init__(self, d: int = 30, m: int = 2, n_iq: int = 3, ref_num: int = 1000, **kwargs):
-
         cons_params = torch.tensor(
             [
                 [1.20, 1.20, -0.25 * torch.pi, 2.0, 6.0, 0.1],
@@ -256,7 +250,6 @@ class LIRCMOP7(LIRCMOP5):
 
 class LIRCMOP8(LIRCMOP6):
     def __init__(self, d: int = 30, m: int = 2, n_iq: int = 3, ref_num: int = 1000, **kwargs):
-
         cons_params = torch.tensor(
             [
                 [1.20, 1.20, -0.25 * torch.pi, 2.0, 6.0, 0.1],
@@ -295,7 +288,6 @@ class LIRCMOP9(LIRCMOP5):
         c2_params: Optional[torch.Tensor] = None,
         **kwargs,
     ):
-
         super().__init__(d=d, m=m, n_iq=n_iq, ref_num=ref_num, **kwargs)
 
         if c1_params is None:
@@ -368,7 +360,6 @@ class LIRCMOP10(LIRCMOP9):
         c2_params: Optional[torch.Tensor] = None,
         **kwargs,
     ):
-
         if c1_params is None:
             c1_params = torch.tensor([1.1, 1.2, -0.25 * torch.pi, 2.0, 4.0, 0.1])  # p, q, theta, a, b, r
         if c2_params is None:
@@ -441,7 +432,6 @@ class LIRCMOP12(LIRCMOP9):
         c2_params: Optional[torch.Tensor] = None,
         **kwargs,
     ):
-
         if c1_params is None:
             c1_params = torch.tensor([1.6, 1.6, -0.25 * torch.pi, 1.5, 6.0, 0.1])  # p, q, theta, a, b, r
         if c2_params is None:
@@ -511,7 +501,6 @@ class LIRCMOP13(LIRCMOP):
 
 class LIRCMOP14(LIRCMOP13):
     def __init__(self, d: int = 30, m: int = 2, n_iq: int = 2, ref_num: int = 1000, **kwargs):
-
         cons_params = torch.tensor([[9.00, 4.00], [3.61, 3.24], [3.0625, 2.56]])
 
         super().__init__(d=d, m=m, n_iq=n_iq, ref_num=ref_num, cons_params=cons_params, **kwargs)

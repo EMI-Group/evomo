@@ -12,6 +12,35 @@ from evomo.utils import unique_rows_sorted
 
 class TSNSGAII(Algorithm):
     def __init__(self, pop_size: int, n_objs: int, lb: torch.Tensor, ub: torch.Tensor, max_fe: int = 10000):
+        """Initialize the TSNSGAII population and optimization state.
+
+        :param pop_size: Required. Requested number of candidate solutions. Use a positive integer; algorithm-specific
+            minimums and reference-vector sampling are described below.
+        :type pop_size: int
+        :param n_objs: Required. Number of objectives, matching the second dimension of the problem's objective tensor.
+            Objectives are minimized; this library targets two or more objectives.
+        :type n_objs: int
+        :param lb: Required. Lower decision bounds of shape ``(D,)``, where ``D`` is the number of decision variables.
+            Use floating-point bounds with the same shape, dtype and device as ``ub``, and ``lb <= ub`` elementwise.
+        :type lb: torch.Tensor
+        :param ub: Required. Upper decision bounds of shape ``(D,)``. The decision dimension is inferred from the
+            bounds, rather than passed separately. Match ``lb`` in shape, dtype and device.
+        :type ub: torch.Tensor
+        :param max_fe: Default: ``10000``. Positive evaluation horizon setting the phase boundary at ``max_fe // 2``.
+            The evaluation counter includes the initial population. This parameter controls the phase switch and does
+            not stop subsequent calls to ``step()``.
+        :type max_fe: int
+
+        .. note::
+
+            Use this algorithm through a workflow that connects the problem's evaluation method. Call
+            ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
+            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
+            constraint_violation)`` tuple.
+
+            Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
+            device.
+        """
         super().__init__()
         device = lb.device
         self.pop_size = pop_size
@@ -35,6 +64,12 @@ class TSNSGAII(Algorithm):
         self.fe = Mutable(torch.tensor(0, dtype=torch.int32, device=device))
 
     def init_step(self) -> None:
+        """Evaluate the initial population and initialize algorithm state.
+
+        Invoke through ``workflow.init_step()`` before the first optimization step.
+
+        :returns: ``None``; results are stored in algorithm state.
+        """
         self.fit = self.evaluate(self.pop)
         self.fe = self.fe + self.pop_size
         # Initial Selection to populate keys
@@ -43,6 +78,12 @@ class TSNSGAII(Algorithm):
     def step(self) -> None:
         # 1. Mating
         # Lexsort keys: Primary (front_no) must be last. Secondary (d2) first.
+        """Advance optimization and update population and fitness state in place.
+
+        Invoke through ``workflow.step()`` after initialization. The caller controls termination.
+
+        :returns: ``None``; results are stored in algorithm state.
+        """
         mating_pool = tournament_selection_multifit(self.pop_size, [self.d2, self.front_no.float()], tournament_size=2)
         offspring = simulated_binary(self.pop[mating_pool], pro_c=1.0, dis_c=20.0)
         offspring = polynomial_mutation(offspring, self.lb, self.ub, pro_m=1.0 / self.lb.numel(), dis_m=20.0)

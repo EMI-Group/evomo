@@ -13,6 +13,7 @@ class MoAnt(Ant):
         “Brax - a differentiable physics engine for large scale rigid body simulation,” 2021.
         [Online]. Available: http://github.com/google/brax
     """
+
     def __init__(self, **kwargs):
         """Initialize the multi-objective ant env.
 
@@ -30,7 +31,8 @@ class MoAnt(Ant):
         """Run one timestep of the environment's dynamics.
 
         :param energy_cost: The energy consumed by the ant robot.
-        For more information, please refer to `ant <https://github.com/google/brax/tree/main/brax/envs/ant.py>` env in brax.
+
+        For more information, please refer to `ant <https://github.com/google/brax/tree/main/brax/envs/ant.py>`_ env in brax.
         """
         state = super().step(state, action)
 

@@ -113,9 +113,10 @@ class MAF2(MAF):
                 c[i, m - j - 1] = torch.sqrt(1 / (1 + temp**2))
 
         if m > 5:
-            c = c * (torch.cos(torch.tensor(torch.pi / 8, device=r.device)) - torch.cos(torch.tensor(3 * torch.pi / 8, device=r.device))) + torch.cos(
-                torch.tensor(3 * torch.pi / 8, device=r.device)
-            )
+            c = c * (
+                torch.cos(torch.tensor(torch.pi / 8, device=r.device))
+                - torch.cos(torch.tensor(3 * torch.pi / 8, device=r.device))
+            ) + torch.cos(torch.tensor(3 * torch.pi / 8, device=r.device))
         else:
             c = c[
                 torch.all(
@@ -146,7 +147,9 @@ class MAF3(MAF):
             (1 + g).unsqueeze(1)
             * torch.flip(
                 torch.cumprod(
-                    torch.cat([torch.ones(n, 1, device=X.device, dtype=X.dtype), torch.cos(X[:, : m - 1] * torch.pi / 2)], dim=1),
+                    torch.cat(
+                        [torch.ones(n, 1, device=X.device, dtype=X.dtype), torch.cos(X[:, : m - 1] * torch.pi / 2)], dim=1
+                    ),
                     dim=1,
                 ),
                 [1],
@@ -714,7 +717,7 @@ class MAF13(MAF):
         f0 = torch.sin(X[:, 0] * torch.pi / 2) + 2 * torch.mean(Y[:, 3:d:3] ** 2, dim=1)
         f1 = torch.cos(X[:, 0] * torch.pi / 2) * torch.sin(X[:, 1] * torch.pi / 2) + 2 * torch.mean(Y[:, 4:d:3] ** 2, dim=1)
         f2 = torch.cos(X[:, 0] * torch.pi / 2) * torch.cos(X[:, 1] * torch.pi / 2) + 2 * torch.mean(Y[:, 2:d:3] ** 2, dim=1)
-        f3 = ((f0**2 + f1**10 + f2**10 + 2 * torch.mean(Y[:, 3:d] ** 2, dim=1)).unsqueeze(1).repeat(1, self.m - 3))
+        f3 = (f0**2 + f1**10 + f2**10 + 2 * torch.mean(Y[:, 3:d] ** 2, dim=1)).unsqueeze(1).repeat(1, self.m - 3)
         f = torch.cat([f0.unsqueeze(1), f1.unsqueeze(1), f2.unsqueeze(1), f3], dim=1)
         return f
 
@@ -749,7 +752,9 @@ class MAF14(MAF):
         g = self._evaluate(X)
         f = (
             (1 + g)
-            * torch.flip(torch.cumprod(torch.cat([torch.ones(n, 1, device=X.device, dtype=X.dtype), X[:, : m - 1]], dim=1), dim=1), [1])
+            * torch.flip(
+                torch.cumprod(torch.cat([torch.ones(n, 1, device=X.device, dtype=X.dtype), X[:, : m - 1]], dim=1), dim=1), [1]
+            )
             * torch.cat([torch.ones(n, 1, device=X.device, dtype=X.dtype), 1 - torch.flip(X[:, : m - 1], [1])], dim=1)
         )
         return f
@@ -774,9 +779,9 @@ class MAF14(MAF):
 
     def _modify_X(self, X: torch.Tensor):
         new_X = X.clone()
-        new_X[:, self.m - 1 :] = (1 + torch.arange(self.m, self.d + 1, device=X.device, dtype=X.dtype) / self.d).unsqueeze(0) * X[
-            :, self.m - 1 :
-        ] - (X[:, 0] * 10).unsqueeze(-1)
+        new_X[:, self.m - 1 :] = (1 + torch.arange(self.m, self.d + 1, device=X.device, dtype=X.dtype) / self.d).unsqueeze(
+            0
+        ) * X[:, self.m - 1 :] - (X[:, 0] * 10).unsqueeze(-1)
         return new_X
 
     def _inner_loop(self, i, inner_fun, g: torch.Tensor, nk, X: torch.Tensor):

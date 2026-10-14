@@ -11,6 +11,55 @@ from evomo.utils import unique_rows_sorted
 
 class LSMOF(Algorithm):
     def __init__(self, pop_size: int, n_objs: int, lb: torch.Tensor, ub: torch.Tensor, **kwargs):
+        """Initialize two-phase weight-space optimization and NSGA-II refinement.
+
+        :param pop_size: Required. Requested number of candidate solutions. Use a positive integer; algorithm-specific
+            minimums and reference-vector sampling are described below.
+        :type pop_size: int
+        :param n_objs: Required. Number of objectives, matching the second dimension of the problem's objective tensor.
+            Objectives are minimized; this library targets two or more objectives.
+        :type n_objs: int
+        :param lb: Required. Lower decision bounds of shape ``(D,)``, where ``D`` is the number of decision variables.
+            Use floating-point bounds with the same shape, dtype and device as ``ub``, and ``lb <= ub`` elementwise.
+        :type lb: torch.Tensor
+        :param ub: Required. Upper decision bounds of shape ``(D,)``. The decision dimension is inferred from the
+            bounds, rather than passed separately. Match ``lb`` in shape, dtype and device.
+        :type ub: torch.Tensor
+        :param kwargs: Default: ``{}``. Optional settings: ``wD=5`` (reference solutions), ``SubN=20`` (weight
+            population size), ``wmax=0.1`` (decision reconstruction scale), and ``max_fe=10000`` (evaluation horizon).
+            Other keywords are ignored. The full meanings and limits are listed below.
+        :type kwargs: dict
+
+        .. rubric:: Additional keyword settings
+
+        ``wD`` (int, default ``5``)
+            Reference solution count for building directions from both bounds. Use a positive value no larger than the
+            available distinct population. The reconstruction assumes that exactly this many reference solutions are
+            selected.
+
+        ``SubN`` (int, default ``20``)
+            Positive weight-population size. The first phase evaluates ``2 * wD * SubN`` reconstructed decision vectors
+            per step.
+
+        ``wmax`` (float, default ``0.1``)
+            Positive scale multiplying weighted unit-direction offsets in decision reconstruction. This is a decision-
+            space step scale, not a fraction of the evaluation budget.
+
+        ``max_fe`` (int, default ``10000``)
+            Positive evaluation horizon. The second phase begins when the evaluation counter reaches ``max_fe // 2``;
+            the initial evaluations are included. Termination remains controlled by the caller.
+
+
+        .. note::
+
+            Use this algorithm through a workflow that connects the problem's evaluation method. Call
+            ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
+            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
+            constraint_violation)`` tuple.
+
+            Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
+            device.
+        """
         super().__init__()
         device = lb.device
         self.pop_size = pop_size
@@ -38,6 +87,12 @@ class LSMOF(Algorithm):
         self.dis = Mutable(torch.full((pop_size,), -torch.inf, device=device))
 
     def init_step(self) -> None:
+        """Evaluate the initial population and initialize algorithm state.
+
+        Invoke through ``workflow.init_step()`` before the first optimization step.
+
+        :returns: ``None``; results are stored in algorithm state.
+        """
         self.fit = self.evaluate(self.pop)
         self.fe_counter = self.fe_counter + self.pop_size
         self.archive_fit = self.fit.clone()
@@ -93,6 +148,12 @@ class LSMOF(Algorithm):
         return survivor_pop, survivor_fit, survivor_rank, survivor_dis
 
     def step(self) -> None:
+        """Advance optimization and update population and fitness state in place.
+
+        Invoke through ``workflow.step()`` after initialization. The caller controls termination.
+
+        :returns: ``None``; results are stored in algorithm state.
+        """
         device = self.pop.device
 
         if self.fe_counter < self.switch_fe:
