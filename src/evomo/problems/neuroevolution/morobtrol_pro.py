@@ -90,8 +90,21 @@ def _evaluate_brax_main(
     obs_param: torch.Tensor,
     obs_norm: torch.Tensor,
 ) -> Tuple[torch.Tensor, List[torch.Tensor], torch.Tensor, torch.Tensor]:
-    if not model_state or any(v.size(0) != pop_size for v in model_state):
-        raise ValueError(f"All model state tensors must have leading population dimension {pop_size}")
+    if not model_state:
+        raise ValueError("model_state must not be empty")
+    actual_pop_size = model_state[0].size(0)
+    if any(v.size(0) != actual_pop_size for v in model_state):
+        raise ValueError("All model state tensors must share the leading population dimension")
+    # metaRVEA HPO-compat (port of 65e0bbe relaxation, in turn from e5b9249
+    # evox_ext 26397a5): InnerRVEAa's FIRST evaluation feeds fewer rows than
+    # the constructed pop_size (initial pop N < 2N). Relax strict equality to
+    # divisibility — evaluation simply runs at the actual batch size.
+    if not (pop_size % actual_pop_size == 0 and actual_pop_size > 0):
+        raise ValueError(
+            f"The evaluation batch must divide the pop_size parameter when creating BraxProblem. "
+            f"Expected multiple of: {pop_size}, Actual: {actual_pop_size}"
+        )
+    pop_size = actual_pop_size
     device = model_state[0].device
     reset, step, forward, state_keys = __brax_data__[env_id]
     # Isolate stateful policy buffers and avoid retaining autograd state.
@@ -174,7 +187,7 @@ def _fake_evaluate_brax(
     return (
         torch.empty_like(key),
         [torch.empty_like(v) for v in model_state],
-        obs_norm.new_empty(pop_size, num_episodes, num_obj),
+        obs_norm.new_empty(model_state[0].size(0), num_episodes, num_obj),
         torch.empty_like(obs_param, dtype=torch.float64),
     )
 
@@ -303,10 +316,19 @@ class MoRobtrol(Problem):
             raise ValueError("obs_norm must contain three finite positive values")
         if bool(limits[1] > limits[2]):
             raise ValueError("obs_norm minimum variance must not exceed maximum variance")
-        self.register_buffer("obs_norm", limits.to(torch.get_default_dtype()))
-        self.register_buffer("obs_param", torch.zeros(1 + 2 * self.observation_shape, device=device, dtype=torch.float64))
+        # metaRVEA HPO-compat (D120/D125/D139/D149): these three are stored as
+        # PLAIN attributes (pre-v0.3.1 layout, patch 65e0bbe), NOT nn buffers.
+        # Under evox HPOProblemWrapper, buffers get stacked along the instance
+        # dim, which the upstream register_vmap handler rejects ("vmap over
+        # MoRobtrol state is unsupported"). Keeping them unregistered means the
+        # HPO layer never stacks them; each instance clones the whole problem
+        # so per-instance RNG/obs-stats still evolve independently. Upstream
+        # users that rely on state_dict()/checkpointing of these buffers should
+        # register them explicitly.
+        self.obs_norm = limits.to(torch.get_default_dtype())
+        self.obs_param = torch.zeros(1 + 2 * self.observation_shape, device=device, dtype=torch.float64)
         seed = torch.randint(0, 2**31, ()).item() if seed is None else seed
-        self.register_buffer("key", from_jax_array(jax.random.PRNGKey(seed), device).clone())
+        self.key = from_jax_array(jax.random.PRNGKey(seed), device).clone()
 
         copied_policy = copy.deepcopy(policy).to(device)
         self.state_keys = list(copied_policy.state_dict())
