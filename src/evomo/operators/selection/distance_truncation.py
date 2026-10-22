@@ -2,8 +2,12 @@ import torch
 from evox.utils import lexsort
 
 
-def crowding_distance_by_rank(fit: torch.Tensor, rank: torch.Tensor) -> torch.Tensor:
-    """Crowding distance within every front, using batched fixed-shape sorts."""
+def crowding_distance_by_rank(fit: torch.Tensor, rank: torch.Tensor, *, constant_boundaries: bool = False) -> torch.Tensor:
+    """Crowding distance within every front, using batched fixed-shape sorts.
+
+    ``constant_boundaries`` preserves infinite endpoint distances even for a
+    constant objective, as required by MaOEA-HAP's mating selection.
+    """
     size, objectives = fit.shape
     bins = rank[:, None].long().expand(-1, objectives)
     minima = fit.new_full((size, objectives), torch.inf).scatter_reduce(0, bins, fit, reduce="amin")
@@ -18,7 +22,7 @@ def crowding_distance_by_rank(fit: torch.Tensor, rank: torch.Tensor) -> torch.Te
     left_edge = torch.cat([torch.ones_like(fronts[:1], dtype=torch.bool), fronts[1:] != fronts[:-1]])
     right_edge = torch.cat([fronts[:-1] != fronts[1:], torch.ones_like(fronts[:1], dtype=torch.bool)])
     distance = torch.where(varying, (following - previous) / torch.where(varying, span, 1), 0)
-    distance = torch.where((left_edge | right_edge) & varying, torch.inf, distance)
+    distance = torch.where((left_edge | right_edge) & (varying | constant_boundaries), torch.inf, distance)
     distance = torch.zeros_like(fit).scatter(0, order, distance).sum(dim=1)
     counts = torch.zeros(size, device=fit.device, dtype=torch.long).scatter_add(0, rank.long(), torch.ones_like(rank).long())
     return torch.where(counts[rank.long()] <= 2, torch.inf, distance)

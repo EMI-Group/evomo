@@ -12,7 +12,7 @@ from evomo.operators.selection.constraint_handling import (
     rank_with_constraints,
     take_violation,
 )
-from evomo.utils import parse_evaluate, register_lazy_buffer
+from evomo.utils import pairwise_cosine_similarity, parse_evaluate, register_lazy_buffer
 
 
 class tDEA_CPBI(Algorithm):
@@ -146,7 +146,7 @@ class tDEA_CPBI(Algorithm):
         # PBI-based Clustering
         norm_f = torch.norm(f_norm, dim=1, keepdim=True)
         norm_W = torch.norm(self.W, dim=1, keepdim=True)
-        cosine = (f_norm @ self.W.t()) / (norm_f @ norm_W.t() + 1e-6)
+        cosine = pairwise_cosine_similarity(f_norm, self.W, eps=1e-6, mode="product", clamp=False, norms=(norm_f, norm_W))
         cosine = clamp(cosine, -1.0, 1.0)
 
         d1 = norm_f * cosine

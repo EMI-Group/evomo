@@ -12,7 +12,7 @@ from evomo.operators.selection.constraint_handling import (
     rank_with_constraints,
     take_violation,
 )
-from evomo.utils import parse_evaluate, register_lazy_buffer
+from evomo.utils import minmax_normalize, parse_evaluate, register_lazy_buffer
 
 
 class BiGE(Algorithm):
@@ -63,9 +63,7 @@ class BiGE(Algorithm):
     def _calculate_bi_goal(self, fit: torch.Tensor) -> torch.Tensor:
         N, M = fit.shape
         # 1. Normalization (Bug #12)
-        f_min = fit.min(dim=0, keepdim=True)[0]
-        f_max = fit.max(dim=0, keepdim=True)[0]
-        norm_fit = (fit - f_min) / (f_max - f_min + 1e-6)
+        norm_fit = minmax_normalize(fit, eps=1e-6)
 
         # 2. Proximity (fpr)
         fpr = norm_fit.sum(dim=1)  # [N]

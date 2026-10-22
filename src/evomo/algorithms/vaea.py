@@ -12,7 +12,7 @@ from evomo.operators.selection.constraint_handling import (
     rank_with_constraints,
     take_violation,
 )
-from evomo.utils import parse_evaluate, register_lazy_buffer
+from evomo.utils import pairwise_cosine_similarity, parse_evaluate, register_lazy_buffer
 
 
 class VaEA(Algorithm):
@@ -71,8 +71,7 @@ class VaEA(Algorithm):
 
     def _cosine_distance_matrix(self, x: torch.Tensor) -> torch.Tensor:
         # [Bug #12] Safe Division & [Bug #29] Vectorization
-        norm = torch.norm(x, dim=1, keepdim=True)
-        similarity = (x @ x.t()) / (norm @ norm.t() + 1e-6)
+        similarity = pairwise_cosine_similarity(x, eps=1e-6, mode="product", clamp=False)
         # Clamp to prevent NaNs in acos
         return torch.acos(similarity.clamp(-1 + 1e-7, 1 - 1e-7))
 

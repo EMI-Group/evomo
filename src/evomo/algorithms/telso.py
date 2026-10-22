@@ -11,7 +11,7 @@ from evomo.operators.selection.constraint_handling import (
     take_violation,
     total_violation,
 )
-from evomo.utils import parse_evaluate, register_lazy_buffer
+from evomo.utils import pairwise_cosine_similarity, parse_evaluate, register_lazy_buffer
 
 
 class TELSO(Algorithm):
@@ -204,7 +204,7 @@ class TELSO(Algorithm):
         # APD Calculation
         norm_obj = torch.norm(obj, dim=1, keepdim=True)
         norm_v = torch.norm(self.v, dim=1, keepdim=True)
-        cosine = (obj @ self.v.t()) / (norm_obj @ norm_v.t() + 1e-6)
+        cosine = pairwise_cosine_similarity(obj, self.v, eps=1e-6, mode="product", clamp=False, norms=(norm_obj, norm_v))
         angles = torch.acos(torch.clamp(cosine, -1, 1))
 
         angles_min, assoc_idx = torch.min(angles, dim=1)

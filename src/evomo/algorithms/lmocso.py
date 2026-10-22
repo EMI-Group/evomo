@@ -13,7 +13,7 @@ from evomo.operators.selection.constraint_handling import (
     prefer_by_constraint,
     total_violation,
 )
-from evomo.utils import parse_evaluate, register_lazy_buffer
+from evomo.utils import minmax_normalize, parse_evaluate, register_lazy_buffer, shifted_distance
 
 
 class LMOCSO(Algorithm):
@@ -211,9 +211,8 @@ class LMOCSO(Algorithm):
         n = obj.shape[0]
         f_max, _ = torch.max(obj, dim=0, keepdim=True)
         f_min, _ = torch.min(obj, dim=0, keepdim=True)
-        f = (obj - f_min) / (f_max - f_min + 1e-10)
-        s_obj = torch.maximum(f.unsqueeze(1), f.unsqueeze(0))
-        dis = torch.norm(f.unsqueeze(1) - s_obj, p=2, dim=2)
+        f = minmax_normalize(obj, eps=1e-10, extrema=(f_min, f_max))
+        dis = shifted_distance(f)
         dis = dis + torch.diag(torch.full((n,), float("inf"), device=obj.device))
         fitness, _ = torch.min(dis, dim=1)
 

@@ -12,7 +12,7 @@ from evomo.operators.selection.constraint_handling import (
     take_violation,
     total_violation,
 )
-from evomo.utils import parse_evaluate, register_lazy_buffer, unique_rows_sorted
+from evomo.utils import pairwise_cosine_similarity, parse_evaluate, register_lazy_buffer, unique_rows_sorted
 
 
 class CLIA(Algorithm):
@@ -94,9 +94,7 @@ class CLIA(Algorithm):
 
     def _calculate_sine_distance(self, objs: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
         # Safe normalization (Bug #12)
-        norm_objs = torch.norm(objs, dim=1, keepdim=True) + 1e-6
-        norm_v = torch.norm(v, dim=1, keepdim=True) + 1e-6
-        cosine = (objs @ v.t()) / (norm_objs @ norm_v.t())
+        cosine = pairwise_cosine_similarity(objs, v, eps=1e-6, mode="offset", clamp=False)
         # Clamp for numerical stability
         sine_dist = torch.sqrt(torch.clamp(1 - cosine**2, min=0.0) + 1e-6)
         return sine_dist

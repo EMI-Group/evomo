@@ -14,7 +14,8 @@ from evomo.operators.selection.constraint_handling import (
     take_violation,
     total_violation,
 )
-from evomo.utils import parse_evaluate, register_lazy_buffer, unique_rows_sorted
+from evomo.operators.selection.non_dominate import dominate_relation
+from evomo.utils import pairwise_cosine_similarity, parse_evaluate, register_lazy_buffer, unique_rows_sorted
 
 
 class TSNSGAII(Algorithm):
@@ -127,7 +128,9 @@ class TSNSGAII(Algorithm):
             # Association
             norm_val = torch.norm(norm_fit, dim=1, keepdim=True)
             w_norm = torch.norm(self.w, dim=1, keepdim=True)
-            cosine = (norm_fit @ self.w.T) / (norm_val @ w_norm.T + 1e-6)
+            cosine = pairwise_cosine_similarity(
+                norm_fit, self.w, eps=1e-6, mode="product", clamp=False, norms=(norm_val, w_norm)
+            )
 
             # d1 and d2
             d1_all = norm_val * cosine
@@ -167,14 +170,21 @@ class TSNSGAII(Algorithm):
 
             # Update d2 for mating
             new_norm_val = torch.norm(new_norm, dim=1, keepdim=True)
-            new_cosine = (new_norm @ self.w.T) / (new_norm_val @ torch.norm(self.w, dim=1, keepdim=True).T + 1e-6)
+            new_cosine = pairwise_cosine_similarity(
+                new_norm,
+                self.w,
+                eps=1e-6,
+                mode="product",
+                clamp=False,
+                norms=(new_norm_val, torch.norm(self.w, dim=1, keepdim=True)),
+            )
             new_d2 = torch.min(new_norm_val * torch.sqrt(clamp(1 - new_cosine**2, 0.0, 1.0) + 1e-6), dim=1)[0]
 
             return pop[survivor_idx], new_fit, new_front, new_d2
 
     def _spd_sort(self, fit, spd_score, w_idx):
         # Bug #24: Pareto Dominance
-        pareto_dom = (fit.unsqueeze(1) <= fit.unsqueeze(0)).all(-1) & (fit.unsqueeze(1) < fit.unsqueeze(0)).any(-1)
+        pareto_dom = dominate_relation(fit, fit)
 
         # SPD Dominance: better score on the same weight
         same_w = w_idx.unsqueeze(1) == w_idx.unsqueeze(0)
@@ -191,7 +201,9 @@ class TSNSGAII(Algorithm):
         # Calculate cosine similarity between all individuals and all weights
         norm_val = torch.norm(norm_fit, dim=1, keepdim=True)
         w_norm = torch.norm(w, dim=1, keepdim=True)
-        cosine = (norm_fit @ w.T) / (norm_val @ w_norm.T + 1e-6)  # [2N, N]
+        cosine = pairwise_cosine_similarity(
+            norm_fit, w, eps=1e-6, mode="product", clamp=False, norms=(norm_val, w_norm)
+        )  # [2N, N]
 
         # For each weight, find the individual with max cosine similarity
         eligible_cosine = cosine

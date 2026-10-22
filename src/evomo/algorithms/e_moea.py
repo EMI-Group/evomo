@@ -14,6 +14,7 @@ from evomo.operators.selection.constraint_handling import (
     update_by_proposals,
     update_last_proposals,
 )
+from evomo.operators.selection.non_dominate import dominate_relation
 from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
@@ -219,7 +220,7 @@ def _update_archive(arc_pop, arc_fit, arc_mask, off_pop, off_fit, epsilon, arc_c
     G = torch.floor((total_fit - f_min) / (epsilon + 1e-6))
 
     # Grid Dominance
-    dom = (G.unsqueeze(1) <= G.unsqueeze(0)).all(-1) & (G.unsqueeze(1) < G.unsqueeze(0)).any(-1)
+    dom = dominate_relation(G, G)
     total_cv = cat_violation(take_violation(arc_cv, valid_idx), off_cv)
     dom = constraint_dominance_matrix(dom, total_cv)
     is_dominated = dom.any(dim=0)

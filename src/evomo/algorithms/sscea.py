@@ -11,7 +11,7 @@ from evomo.operators.selection.constraint_handling import (
     total_violation,
     worst_constraint_index,
 )
-from evomo.utils import parse_evaluate, register_lazy_buffer, unique_rows_sorted
+from evomo.utils import pairwise_max_difference, parse_evaluate, register_lazy_buffer, unique_rows_sorted
 
 
 class SSCEA(Algorithm):
@@ -172,7 +172,7 @@ class SSCEA(Algorithm):
 
         # Indicator Matrix I (N x N)
         # I_ij = max(f_i - f_j)
-        indicator = torch.max(f_norm.unsqueeze(1) - f_norm.unsqueeze(0), dim=-1).values
+        indicator = pairwise_max_difference(f_norm, f_norm)
         C = torch.max(torch.abs(indicator))
 
         # Initial Fitness F

@@ -12,6 +12,7 @@ from evomo.operators.selection.constraint_handling import (
     take_violation,
     total_violation,
 )
+from evomo.operators.selection.non_dominate import dominate_relation
 from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
@@ -143,7 +144,7 @@ class SPEAR(Algorithm):
         # 3.3 Strength Pareto Fitness (Dual-Level)
         f = joint_fit
         # Bug #24: Dominance check
-        dom = (f.unsqueeze(1) <= f.unsqueeze(0)).all(-1) & (f.unsqueeze(1) < f.unsqueeze(0)).any(-1)
+        dom = dominate_relation(f, f)
 
         # Global Strength & Raw Fitness (Bug #23)
         dom = constraint_dominance_matrix(dom, joint_cv)

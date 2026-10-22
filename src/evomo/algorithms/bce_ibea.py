@@ -12,7 +12,7 @@ from evomo.operators.selection.constraint_handling import (
     take_violation,
     worst_constraint_index,
 )
-from evomo.utils import parse_evaluate, register_lazy_buffer, unique_rows_sorted
+from evomo.utils import minmax_normalize, pairwise_max_difference, parse_evaluate, register_lazy_buffer, unique_rows_sorted
 
 
 class BCE_IBEA(Algorithm):
@@ -141,13 +141,10 @@ class BCE_IBEA(Algorithm):
 
 def _ibea_selection(pop, fit, K, kappa, cv=None):
     N = pop.shape[0]
-    f_min = torch.min(fit, dim=0)[0]
-    f_max = torch.max(fit, dim=0)[0]
-    norm_objs = (fit - f_min) / (f_max - f_min + 1e-6)
+    norm_objs = minmax_normalize(fit, eps=1e-6)
 
     # Indicator Matrix (Additive epsilon-indicator)
-    diff = norm_objs.unsqueeze(1) - norm_objs.unsqueeze(0)
-    indicator = torch.max(diff, dim=-1)[0]
+    indicator = pairwise_max_difference(norm_objs, norm_objs)
     C = torch.max(torch.abs(indicator))
 
     # Initial Fitness

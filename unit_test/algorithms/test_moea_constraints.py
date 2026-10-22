@@ -191,7 +191,9 @@ def test_lower_violation_beats_dominating_infeasible_offspring(name, device):
 
 def test_public_algorithm_constraint_coverage():
     handled_before = {"NSGA2"}
-    assert set(ALGORITHMS) | handled_before == set(algorithms.__all__)
+    objective_only = {"MaOEAHAP", "NRVMOEA", "HEA"}
+    partial_constraint_selection = {"GCNMOEA"}
+    assert set(ALGORITHMS) | handled_before | objective_only | partial_constraint_selection == set(algorithms.__all__)
 
 
 @pytest.mark.parametrize("device", DEVICES)

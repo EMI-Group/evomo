@@ -12,7 +12,7 @@ from evomo.operators.selection.constraint_handling import (
     total_violation,
     update_by_proposals,
 )
-from evomo.utils import parse_evaluate, register_lazy_buffer
+from evomo.utils import minmax_normalize, parse_evaluate, register_lazy_buffer
 
 
 class BCEMOEAD(Algorithm):
@@ -122,9 +122,7 @@ class BCEMOEAD(Algorithm):
         return clamp(offspring, self.lb, self.ub)
 
     def _niche_deletion(self, pop: torch.Tensor, fit: torch.Tensor, topk: int, cv=None):
-        f_min = torch.min(fit, dim=0).values
-        f_max = torch.max(fit, dim=0).values
-        norm_fit = (fit - f_min) / (f_max - f_min + 1e-6)
+        norm_fit = minmax_normalize(fit, eps=1e-6)
 
         dist_matrix = torch.cdist(norm_fit, norm_fit)
         dist_matrix.fill_diagonal_(torch.inf)

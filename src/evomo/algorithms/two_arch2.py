@@ -11,7 +11,7 @@ from evomo.operators.selection.constraint_handling import (
     take_violation,
     worst_constraint_index,
 )
-from evomo.utils import parse_evaluate, register_lazy_buffer, unique_rows_sorted
+from evomo.utils import minmax_normalize, pairwise_max_difference, parse_evaluate, register_lazy_buffer, unique_rows_sorted
 
 
 class Two_Arch2(Algorithm):
@@ -87,13 +87,11 @@ class Two_Arch2(Algorithm):
             return combined_pop, combined_fit, combined_cv
 
         # Normalization
-        f_min = torch.min(combined_fit, dim=0).values
-        f_max = torch.max(combined_fit, dim=0).values
-        norm_fit = (combined_fit - f_min) / (f_max - f_min + 1e-6)
+        norm_fit = minmax_normalize(combined_fit, eps=1e-6)
 
         # Indicator Matrix I_eps+ (N, N)
         # I(i,j) = max(fit(i) - fit(j))
-        indicator = torch.max(norm_fit.unsqueeze(1) - norm_fit.unsqueeze(0), dim=-1).values
+        indicator = pairwise_max_difference(norm_fit, norm_fit)
 
         # Fitness F
         C = torch.max(torch.abs(indicator), dim=0).values

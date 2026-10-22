@@ -8,13 +8,8 @@ from evox.operators.selection import tournament_selection
 from evox.utils import clamp
 
 from evomo.operators.selection.constraint_handling import constraint_priority, total_violation
+from evomo.utils import pairwise_max_difference as cal_max
 from evomo.utils import parse_evaluate, register_lazy_buffer
-
-
-def cal_max(pop_obj1, pop_obj2):
-    """Calculates the maximum difference between elements of two objective tensors."""
-    diff = pop_obj1.unsqueeze(1) - pop_obj2.unsqueeze(0)
-    return torch.max(diff, dim=2)[0]
 
 
 class IBEA(Algorithm):

@@ -13,6 +13,7 @@ from evomo.operators.selection.constraint_handling import (
     rank_with_constraints,
     take_violation,
 )
+from evomo.operators.selection.non_dominate import dominate_relation
 from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
@@ -88,7 +89,7 @@ class CoMMEA(Algorithm):
         D_mat = torch.cdist(pop, pop, p=2)
 
         # Bug #24: Pareto Dominance
-        dom_obj = (fit.unsqueeze(1) <= fit.unsqueeze(0)).all(-1) & (fit.unsqueeze(1) < fit.unsqueeze(0)).any(-1)
+        dom_obj = dominate_relation(fit, fit)
 
         if local_niche:
             # Section 3A: LocalC Niche Dominance

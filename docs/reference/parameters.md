@@ -15,11 +15,11 @@ constructor validates every input. Check the class's API for its exact signature
 | `pop_size` | Positive `int` | Requested candidate count. Some reference-vector algorithms use the sampled vector count instead; inspect `algorithm.pop.shape[0]`. `GDE3` requires at least 4, and `MOEAD`/`TensorMOEAD` require a sampled size above 10. |
 | `n_objs` | `int`, normally at least 2 | Number of minimized objectives, matching the problem's fitness columns. It is independent of decision dimension. |
 | `lb`, `ub` | Floating tensors, `(D,)` | Per-variable bounds. Match shapes, dtypes, and devices, with `lb <= ub`. `D` is inferred from these tensors. |
-| `device` | `torch.device` or `None`, where explicitly supported | `None` means `torch.get_default_device()` for constructors that expose this argument. Those constructors move bounds to the selected device. Most other algorithms allocate on `lb.device`. |
+| `device` | `torch.device` or `None`, where explicitly supported | Usually `None` means `torch.get_default_device()`. `MaOEAHAP`, `NRVMOEA`, `HEA`, and `GCNMOEA` instead preserve `lb.device` when omitted. Explicit values move bounds to that device. |
 | `**kwargs` | Extra named settings, where accepted | Generally ignored, including an unrecognized `device` keyword. `LSMOF` reads four named settings described below. An accepted keyword does not necessarily enable a feature. |
 
 The constructors with an explicit `device` argument are `HypE`, `IBEA`, `LMOCSO`, `MOEAD`,
-`NSGA2`, `NSGA3`, `RVEA`, `RVEAa`, and `TensorMOEAD`. For other algorithms, put both bounds
+`NSGA2`, `NSGA3`, `RVEA`, `RVEAa`, `TensorMOEAD`, `MaOEAHAP`, `NRVMOEA`, `HEA`, and `GCNMOEA`. For other algorithms, put both bounds
 on the intended device before constructing the algorithm.
 
 After initialization, common state tensors are `pop` with decision dimension `D` and `fit`
@@ -27,9 +27,10 @@ with objective dimension `n_objs`. Algorithms can also keep archives, sparse mas
 reference vectors, or NaN placeholders; inspect their state and filter invalid results when needed.
 `step()` updates state and returns `None`. Initialize with `workflow.init_step()` first.
 
-Only the documented `NSGA2` evaluation path consumes `(fitness, constraint_violation)` in this
-algorithm collection. The other current implementations expect an objective tensor. See the
-[constraint guide](../guide/constraints.md) before connecting a constrained problem.
+Constraint support is algorithm-specific. Check the [constraint guide](../guide/constraints.md)
+and individual algorithm documentation before connecting a problem that returns
+`(fitness, constraint_violation)`. The graph/archive algorithms' support and limitations
+are described in the [algorithm catalogue](../guide/algorithms.md#graph-and-archive-algorithms).
 
 ## Decomposition and differential evolution
 

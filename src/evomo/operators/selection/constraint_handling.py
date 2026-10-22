@@ -116,14 +116,22 @@ def update_by_proposals(pop, fit, cv, off_pop, off_fit, off_cv, targets, better,
     return torch.where(replace[:, None], off_pop[chosen], pop), torch.where(replace[:, None], off_fit[chosen], fit), new_cv
 
 
-def update_last_proposals(pop, fit, off_pop, off_fit, targets, active):
-    """Resolve objective-only batch collisions with the intended last-source rule."""
+def update_last_proposals(pop, fit, off_pop, off_fit, targets, active, *, cv=None, off_cv=None):
+    """Resolve batch collisions with the intended last-source rule.
+
+    If constraint rows are supplied, apply the same winning indices and return
+    them as a third result. The objective-only call retains its two results.
+    """
     source = torch.arange(off_pop.shape[0], device=pop.device)[:, None].expand_as(targets)
     proposals = torch.where(active, source, -1).reshape(-1)
     chosen = source.new_full((pop.shape[0],), -1).scatter_reduce(0, targets.reshape(-1).long(), proposals, reduce="amax")
     replace = chosen >= 0
     chosen = chosen.clamp_min(0)
-    return torch.where(replace[:, None], off_pop[chosen], pop), torch.where(replace[:, None], off_fit[chosen], fit)
+    result = torch.where(replace[:, None], off_pop[chosen], pop), torch.where(replace[:, None], off_fit[chosen], fit)
+    if cv is None:
+        return result
+    mask = replace.reshape((-1,) + (1,) * (cv.ndim - 1))
+    return *result, torch.where(mask, off_cv[chosen], cv)
 
 
 def constraint_priority(fitness, cv):

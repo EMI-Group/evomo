@@ -12,7 +12,7 @@ from evomo.operators.selection.constraint_handling import (
     rank_with_constraints,
     take_violation,
 )
-from evomo.utils import parse_evaluate, register_lazy_buffer, unique_rows_sorted
+from evomo.utils import minmax_normalize, pairwise_cosine_similarity, parse_evaluate, register_lazy_buffer, unique_rows_sorted
 
 
 class NSBiDiCo(Algorithm):
@@ -77,13 +77,10 @@ class NSBiDiCo(Algorithm):
 
     def _calculate_cosine_rank(self, objs: torch.Tensor) -> torch.Tensor:
         # Normalization (Bug #12)
-        f_min = torch.min(objs, dim=0, keepdim=True)[0]
-        f_max = torch.max(objs, dim=0, keepdim=True)[0]
-        norm_obj = (objs - f_min) / (f_max - f_min + 1e-10) + 1e-10
+        norm_obj = minmax_normalize(objs, eps=1e-10) + 1e-10
 
         # Cosine Similarity Matrix (Vectorized)
-        norms = torch.norm(norm_obj, dim=1, keepdim=True)
-        sim_matrix = (norm_obj @ norm_obj.T) / (norms @ norms.T + 1e-6)
+        sim_matrix = pairwise_cosine_similarity(norm_obj, eps=1e-6, mode="product", clamp=False)
         angle_matrix = torch.acos(torch.clamp(sim_matrix, -1.0, 1.0))
 
         # Angle Rank: Rank based on proximity in objective space
@@ -116,11 +113,8 @@ class NSBiDiCo(Algorithm):
         else:
             # Greedy Peeling Vectorized (Bug #9, #41)
             # Calculate density via Mean Cosine Similarity
-            f_min = torch.min(front1_fit, dim=0, keepdim=True)[0]
-            f_max = torch.max(front1_fit, dim=0, keepdim=True)[0]
-            norm_f1 = (front1_fit - f_min) / (f_max - f_min + 1e-10) + 1e-10
-            norms = torch.norm(norm_f1, dim=1, keepdim=True)
-            sim_matrix = (norm_f1 @ norm_f1.T) / (norms @ norms.T + 1e-6)
+            norm_f1 = minmax_normalize(front1_fit, eps=1e-10) + 1e-10
+            sim_matrix = pairwise_cosine_similarity(norm_f1, eps=1e-6, mode="product", clamp=False)
 
             mean_sim = sim_matrix.sum(dim=1)
             _, drop_idx = torch.topk(mean_sim, k=num_f1 - self.pop_size)

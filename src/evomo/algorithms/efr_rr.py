@@ -12,7 +12,7 @@ from evomo.operators.selection.constraint_handling import (
     take_violation,
     total_violation,
 )
-from evomo.utils import parse_evaluate, register_lazy_buffer
+from evomo.utils import pairwise_cosine_similarity, parse_evaluate, register_lazy_buffer
 
 
 class EFRRR(Algorithm):
@@ -178,10 +178,7 @@ class EFRRR(Algorithm):
         sentinel = 1e9  # Use a large float instead of int sentinel
 
         # Cosine Similarity (Distance)
-        norm_f = torch.norm(norm_fit, dim=1, keepdim=True) + 1e-6
-        norm_w_vec = torch.norm(w, dim=1, keepdim=True) + 1e-6
-
-        cos_sim = (norm_fit @ w.T) / (norm_f @ norm_w_vec.T)
+        cos_sim = pairwise_cosine_similarity(norm_fit, w, eps=1e-6, mode="offset", clamp=False)
         dist = 1.0 - cos_sim  # (N_total, N_w)
 
         # Restriction Mask: K closest weights for each solution

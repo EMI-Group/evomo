@@ -12,7 +12,8 @@ from evomo.operators.selection.constraint_handling import (
     take_violation,
 )
 from evomo.operators.selection.distance_truncation import distance_truncation
-from evomo.utils import parse_evaluate, register_lazy_buffer
+from evomo.operators.selection.non_dominate import dominate_relation
+from evomo.utils import parse_evaluate, register_lazy_buffer, shifted_distance
 
 
 class CMOEA_MS(Algorithm):
@@ -85,14 +86,13 @@ class CMOEA_MS(Algorithm):
         register_lazy_buffer(self, "cv", device_like="pop")
 
     def _cal_sde(self, norm_fit: torch.Tensor) -> torch.Tensor:
-        shifted = torch.maximum(norm_fit[:, None], norm_fit[None])
-        distance = torch.linalg.vector_norm(norm_fit[:, None] - shifted, dim=-1)
+        distance = shifted_distance(norm_fit)
         diagonal = torch.eye(len(norm_fit), device=norm_fit.device, dtype=torch.bool)
         k = max(1, int(len(norm_fit) ** 0.5))
         return 1 / (distance.masked_fill(diagonal, torch.inf).sort(dim=1).values[:, k - 1] + 2)
 
     def _cal_fitness(self, objectives: torch.Tensor, cv=None) -> torch.Tensor:
-        dominate = (objectives[:, None] <= objectives[None]).all(-1) & (objectives[:, None] < objectives[None]).any(-1)
+        dominate = dominate_relation(objectives, objectives)
         dominate = constraint_dominance_matrix(dominate, cv, objective_ties=True)
         raw = dominate.T.to(objectives.dtype) @ dominate.sum(dim=1).to(objectives.dtype)
         distance = (1 - F.cosine_similarity(objectives[:, None], objectives[None], dim=-1)).nan_to_num(nan=1)
