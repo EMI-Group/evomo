@@ -4,7 +4,7 @@ import torch
 from evox.core import Algorithm, compile, use_state, vmap
 from evox.workflows import EvalMonitor
 
-from evomo.algorithms import IBEA, LMOCSO, MOEAD, NSGA2, NSGA3, RVEA, HypE, RVEAa, TensorMOEAD
+from evomo.algorithms import IBEA, LMOCSO, MOEAD, NSGA2, NSGA3, RVEA, SIBEA, HypE, RVEAa, TensorMOEAD
 from evomo.problems.numerical import DTLZ2
 from evomo.workflows import UnifiedWorkflow
 
@@ -105,3 +105,14 @@ class TestMOVariants(MOTestBase):
         self.run_algorithm(algo)
         self.run_compiled_algorithm(algo)
         self.run_vmap_algorithm(algo)
+
+    def test_sibea_keeps_population_size(self):
+        # The environmental selection must return pop_size survivors every generation, including
+        # generations in which the first non-dominated front alone exceeds pop_size
+        algo = SIBEA(pop_size=self.pop_size, n_objs=3, lb=torch.zeros(12), ub=torch.ones(12))
+        workflow = UnifiedWorkflow(algo, DTLZ2(m=3))
+        workflow.init_step()
+        for _ in range(10):
+            workflow.step()
+            self.assertEqual(algo.pop.shape[0], self.pop_size)
+            self.assertEqual(algo.fit.shape[0], self.pop_size)
