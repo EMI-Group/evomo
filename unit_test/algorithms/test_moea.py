@@ -1,10 +1,11 @@
+import math
 from unittest import TestCase
 
 import torch
 from evox.core import Algorithm, compile, use_state, vmap
 from evox.workflows import EvalMonitor
 
-from evomo.algorithms import IBEA, LMOCSO, MOEAD, NSGA2, NSGA3, RVEA, HypE, RVEAa, TensorMOEAD
+from evomo.algorithms import IBEA, LMOCSO, MOEAD, NSGA2, NSGA3, RVEA, GrEA, HypE, RVEAa, TensorMOEAD
 from evomo.problems.numerical import DTLZ2
 from evomo.workflows import UnifiedWorkflow
 
@@ -105,3 +106,55 @@ class TestMOVariants(MOTestBase):
         self.run_algorithm(algo)
         self.run_compiled_algorithm(algo)
         self.run_vmap_algorithm(algo)
+
+    def test_grea_default_div(self):
+        # Grid divisions recommended for GrEA depend on the number of objectives
+        for n_objs, div in [(2, 45), (3, 15), (5, 9), (10, 12), (12, 12)]:
+            algo = GrEA(pop_size=self.pop_size, n_objs=n_objs, lb=self.lb, ub=self.ub)
+            self.assertEqual(int(algo.div), div)
+
+    def test_grea_last_selection_matches_reference(self):
+        # Compare with a direct port of the sequential last-front selection of GrEA (PlatEMO's LastSelection)
+        def reference(fit, k, div):
+            n, m = fit.shape
+            fmax, fmin = fit.max(0).values, fit.min(0).values
+            lb = fmin - (fmax - fmin) / 2 / div
+            d = (fmax - fmin) * (1 + 1 / div) / div
+            g = torch.nan_to_num(torch.floor((fit - lb) / d), nan=0.0)
+            gr, gcd = g.sum(1), torch.zeros(n, dtype=fit.dtype)
+            gcpd = torch.sqrt((((fit - (lb + g * d)) / d) ** 2).sum(1))
+            gd = (g[:, None] - g[None]).abs().sum(-1).fill_diagonal_(math.inf)
+            dom = (g[:, None] <= g[None]).all(-1) & (g[:, None] < g[None]).any(-1)
+            remain = torch.ones(n, dtype=torch.bool)
+            while int(remain.sum()) > n - k:
+                cand = torch.where(remain)[0]
+                cand = cand[gr[cand] == gr[cand].min()]
+                cand = cand[gcd[cand] == gcd[cand].min()]
+                q = int(cand[gcpd[cand].argmin()])
+                remain[q] = False
+                gcd = gcd + torch.clamp(m - gd[q], min=0)
+                eq, gq = (gd[q] == 0) & remain, dom[q] & remain
+                ngq = remain & ~gq
+                gr[eq] += m + 2
+                gr[gq] += m
+                pd = torch.zeros(n, dtype=fit.dtype)
+                for p in torch.where((gd[q] < m) & ngq & ~eq)[0].tolist():
+                    if pd[p] < m - gd[q, p]:
+                        pd[p] = m - gd[q, p]
+                        for r in torch.where(dom[p] & remain & ~(gq | eq))[0].tolist():
+                            pd[r] = max(pd[r], pd[p])
+                gr[ngq & ~eq] += pd[ngq & ~eq]
+            return ~remain
+
+        generator = torch.Generator().manual_seed(0)
+        for trial in range(30):
+            n_objs = 2 + trial % 3
+            n = 6 + trial
+            fit = torch.rand(n, n_objs, generator=generator, dtype=torch.float64)
+            if trial % 2 == 0:
+                fit = torch.round(fit * 4) / 4  # shared cells and ties
+            algo = GrEA(pop_size=n, n_objs=n_objs, lb=torch.zeros(2), ub=torch.ones(2), div=5 + trial % 6)
+            k = n // 2
+            chosen = algo._last_selection(fit.to(torch.get_default_device()), k).cpu()
+            self.assertEqual(int(chosen.sum()), k)
+            self.assertTrue(torch.equal(chosen, reference(fit, k, float(algo.div))))
