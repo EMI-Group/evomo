@@ -1,9 +1,10 @@
+import math
+
 import torch
 from evox.core import Algorithm, Mutable
 from evox.operators.crossover import simulated_binary
 from evox.operators.mutation import polynomial_mutation
-from evox.operators.selection import tournament_selection_multifit
-from evox.utils import clamp, nanmax, nanmin
+from evox.utils import clamp
 
 from evomo.operators.selection import non_dominate_rank
 
@@ -78,9 +79,8 @@ class VaEA(Algorithm):
         N = self.pop_size
         M = self.n_objs
 
-        # 1. Mating (Binary Tournament Selection on sum of objectives)
-        scalar_fit = torch.sum(self.fit, dim=1)
-        mating_pool = tournament_selection_multifit(N, [scalar_fit], tournament_size=2)
+        # 1. Mating: VaEA selects the parents uniformly at random
+        mating_pool = torch.randint(0, N, (N,), device=device)
         parents = self.pop[mating_pool]
 
         offspring = simulated_binary(parents, pro_c=1.0, dis_c=20.0)
@@ -94,93 +94,49 @@ class VaEA(Algorithm):
         C_pop = torch.cat([self.pop, offspring], dim=0)
         C_fit = torch.cat([self.fit, off_fit], dim=0)
 
-        # NDSort
+        # Fronts before the last front F_k are kept; F_k is filled by niching
         rank = non_dominate_rank(C_fit)
+        last_rank = torch.sort(rank).values[N - 1]
+        kept = torch.where(rank < last_rank)[0]
+        last = torch.where(rank == last_rank)[0]
+        cand = torch.cat([kept, last])
 
-        # Front Peeling
-        select_mask = torch.zeros(2 * N, dtype=torch.bool, device=device)
-        current_rank = torch.zeros((), dtype=torch.int32, device=device)
-
-        # Identify fronts until we exceed N
-        num_selected = 0
-        while num_selected < N:
-            mask_rank = rank == current_rank
-            count_rank = torch.sum(mask_rank.int())
-            # If adding this front exceeds N, this is our F_k
-            if num_selected + count_rank >= N:
-                break
-            select_mask = select_mask | mask_rank
-            num_selected += count_rank
-            current_rank += 1
-
-        # Normalization
-        z_min = nanmin(C_fit, dim=0)[0]
-        z_max = nanmax(C_fit, dim=0)[0]
-        norm_fit = (C_fit - z_min) / (z_max - z_min + 1e-6)
+        # Normalization over S_t = F_1 u ... u F_k
+        S_fit = C_fit[cand]
+        z_min = torch.min(S_fit, dim=0).values
+        z_max = torch.max(S_fit, dim=0).values
+        norm_fit = (S_fit - z_min) / (z_max - z_min + 1e-6)
         conv = torch.sum(norm_fit, dim=1)
-
-        # Angle Matrix
         angle_mat = self._cosine_distance_matrix(norm_fit)
 
-        # Initial Selection (Extreme solutions and best convergence)
-        select_idx = torch.where(select_mask)[0]
+        choose = torch.zeros(cand.numel(), dtype=torch.bool, device=device)
+        choose[: kept.numel()] = True
+        if kept.numel() == 0:
+            # The solution with the smallest angle to each axis, then the M best converged solutions
+            unit = norm_fit / (torch.norm(norm_fit, dim=1, keepdim=True) + 1e-6)
+            choose[torch.argmax(unit, dim=0)] = True
+            choose[torch.argsort(conv)[: min(M, cand.numel())]] = True
 
-        if select_idx.shape[0] == 0:
-            # Extreme solutions for each objective
-            extremes = torch.argmin(norm_fit, dim=0)
-            # Best convergence solutions
-            _, best_conv_idx = torch.topk(conv, k=M, largest=False)
-            select_idx = torch.unique(torch.cat([extremes, best_conv_idx]))
+        threshold = math.pi / (2 * (N + 1))
+        while int(choose.sum()) < N:
+            select_idx = torch.where(choose)[0]
+            remain_idx = torch.where(~choose)[0]
+            # Maximum-vector-angle-first: add the remaining solution with the largest angle to the selected ones
+            rho = torch.argmax(torch.min(angle_mat[remain_idx][:, select_idx], dim=1).values)
+            choose[remain_idx[rho]] = True
+            # Worse elimination: the remaining solution with the smallest angle to the selected ones replaces
+            # its nearest selected solution if they are within the threshold and it converges better
+            remain_idx = torch.cat([remain_idx[:rho], remain_idx[rho + 1 :]])
+            if remain_idx.numel() > 0:
+                select_idx = torch.where(choose)[0]
+                min_angles, nearest = torch.min(angle_mat[remain_idx][:, select_idx], dim=1)
+                mu = torch.argmin(min_angles)
+                r = select_idx[nearest[mu]]
+                if min_angles[mu] < threshold and conv[r] > conv[remain_idx[mu]]:
+                    choose[r] = False
+                    choose[remain_idx[mu]] = True
 
-        # F_k candidates
-        f_k_mask = rank == current_rank
-        in_select = torch.zeros(2 * N, dtype=torch.bool, device=device)
-        in_select[select_idx] = True
-        remain_mask = f_k_mask & (~in_select)
-
-        # Niching Loop
-        pi = 3.141592653589793
-        threshold = pi / (2 * (N + 1))
-
-        for _ in range(2 * N):
-            if select_idx.shape[0] >= N:
-                break
-
-            remain_idx = torch.where(remain_mask)[0]
-            if remain_idx.shape[0] == 0:
-                not_selected_mask = ~in_select
-                not_selected_idx = torch.where(not_selected_mask)[0]
-                needed = N - select_idx.shape[0]
-                if not_selected_idx.shape[0] > 0:
-                    _, add_idx = torch.topk(conv[not_selected_idx], k=min(needed, not_selected_idx.shape[0]), largest=False)
-                    select_idx = torch.cat([select_idx, not_selected_idx[add_idx]])
-                break
-
-            # Max-Min Angle Selection
-            sub_angles = angle_mat[remain_idx][:, select_idx]
-            min_angles, _ = torch.min(sub_angles, dim=1)
-            best_in_remain = torch.argmax(min_angles)
-            best_candidate = remain_idx[best_in_remain]
-
-            # Worse Elimination
-            angles_to_selected = angle_mat[best_candidate, select_idx]
-            nn_local_idx = torch.argmin(angles_to_selected)
-            nearest_neighbor = select_idx[nn_local_idx]
-
-            if angles_to_selected[nn_local_idx] < threshold:
-                if conv[best_candidate] < conv[nearest_neighbor]:
-                    # Replace nearest neighbor
-                    select_idx[nn_local_idx] = best_candidate
-                    in_select[nearest_neighbor] = False
-                    in_select[best_candidate] = True
-                remain_mask[best_candidate] = False
-            else:
-                # Add candidate
-                select_idx = torch.cat([select_idx, best_candidate.view(-1)])
-                in_select[best_candidate] = True
-                remain_mask[best_candidate] = False
-
-        final_idx = select_idx[:N]
+        final_idx = cand[choose]
         self.pop = C_pop[final_idx]
         self.fit = C_fit[final_idx]
 
