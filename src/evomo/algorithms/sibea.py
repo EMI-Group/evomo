@@ -128,7 +128,8 @@ class SIBEA(Algorithm):
         # Identify fronts to keep
         # We use a safe way to find MaxFNo without Python loops
         max_rank = int(torch.max(front_no))
-        ranks = torch.arange(1, max_rank + 1, device=device) if merged_cv is None else torch.arange(max_rank + 1, device=device)
+        # Ranks are zero-based, so the first front is rank 0
+        ranks = torch.arange(0, max_rank + 1, device=device)
         # Count individuals in each front
         counts = (front_no.unsqueeze(1) == ranks).sum(dim=0)
         cumulative_counts = torch.cumsum(counts, dim=0)

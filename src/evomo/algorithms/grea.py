@@ -1,20 +1,26 @@
+from typing import Optional
+
 import torch
 from evox.core import Algorithm, Mutable, Parameter
 from evox.operators.crossover import simulated_binary
 from evox.operators.mutation import polynomial_mutation
-from evox.operators.selection import tournament_selection_multifit
-from evox.utils import clamp, lexsort
+from evox.utils import clamp
 
 from evomo.operators.selection.constraint_handling import (
     cat_violation,
+    prefer_by_constraint,
     rank_with_constraints,
     take_violation,
+    total_violation,
 )
 from evomo.utils import parse_evaluate, register_lazy_buffer
 
+# Recommended grid divisions, indexed by the number of objectives
+_DEFAULT_DIV = (0, 0, 45, 15, 10, 9, 9, 8, 8, 10, 12)
+
 
 class GrEA(Algorithm):
-    def __init__(self, pop_size: int, n_objs: int, lb: torch.Tensor, ub: torch.Tensor, div: int = 10, **kwargs):
+    def __init__(self, pop_size: int, n_objs: int, lb: torch.Tensor, ub: torch.Tensor, div: Optional[int] = None, **kwargs):
         """Initialize the GrEA population and optimization state.
 
         :param pop_size: Required. Requested number of candidate solutions. Use a positive integer; algorithm-specific
@@ -29,8 +35,10 @@ class GrEA(Algorithm):
         :param ub: Required. Upper decision bounds of shape ``(D,)``. The decision dimension is inferred from the
             bounds, rather than passed separately. Match ``lb`` in shape, dtype and device.
         :type ub: torch.Tensor
-        :param div: Default: ``10``. Positive number of grid divisions per objective. More divisions give finer
-            objective-space cells; grid occupancy or grid distance is used during selection.
+        :param div: Default: ``None``. Positive number of grid divisions per objective. More divisions give finer
+            objective-space cells; grid occupancy or grid distance is used during selection. ``None`` uses the
+            setting recommended for the number of objectives (45, 15, 10, 9, 9, 8, 8, 10, 12 for 2 to 10 objectives,
+            as in PlatEMO).
         :type div: int
         :param kwargs: Default: ``{}``. Extra keyword arguments are accepted for constructor compatibility but are not
             read by this implementation. In particular, passing ``device=...`` here does not move tensors; place both
@@ -53,6 +61,8 @@ class GrEA(Algorithm):
         self.n_objs = n_objs
         self.lb = lb
         self.ub = ub
+        if div is None:
+            div = _DEFAULT_DIV[min(n_objs, 10)]
         self.div = Parameter(torch.tensor(div, dtype=torch.int32, device=device))
         D = lb.numel()
 
@@ -71,39 +81,83 @@ class GrEA(Algorithm):
         """
         self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
 
-    def _calc_grid_metrics(self, fit: torch.Tensor):
-        f_min = torch.min(fit, dim=0)[0]
-        f_max = torch.max(fit, dim=0)[0]
-        d = (f_max - f_min) / self.div.float()
-        lb = f_min - d / 2
+    def _grid(self, fit: torch.Tensor):
+        """Grid location of each solution, with the grid's lower bound and cell width."""
+        div = self.div.to(fit.dtype)
+        f_min = torch.min(fit, dim=0).values
+        f_max = torch.max(fit, dim=0).values
+        lb = f_min - (f_max - f_min) / 2 / div
+        ub = f_max + (f_max - f_min) / 2 / div
+        d = (ub - lb) / div
+        g_loc = torch.floor((fit - lb) / d)
+        # A constant objective has zero cell width; all its solutions share cell 0
+        g_loc = torch.nan_to_num(g_loc, nan=0.0)
+        return g_loc, lb, d
 
-        # GLoc calculation with Bug #12 compliance
-        g_loc = torch.floor((fit - lb) / (d + 1e-6)).to(torch.int32)
+    @staticmethod
+    def _grid_difference(g_loc: torch.Tensor) -> torch.Tensor:
+        """GD(i, j) = sum_k |G_k(i) - G_k(j)|, with an infinite diagonal."""
+        gd = torch.sum(torch.abs(g_loc.unsqueeze(1) - g_loc.unsqueeze(0)), dim=-1)
+        return gd.fill_diagonal_(torch.inf)
 
-        # GCPD calculation
-        gcpd = torch.sqrt(torch.sum(((fit - lb) / (d + 1e-6) - g_loc.float()) ** 2, dim=-1))
+    @staticmethod
+    def _grid_dominance(g_loc: torch.Tensor) -> torch.Tensor:
+        """Returns a matrix where out[i, j] is True if i grid-dominates j."""
+        return (g_loc.unsqueeze(1) <= g_loc.unsqueeze(0)).all(-1) & (g_loc.unsqueeze(1) < g_loc.unsqueeze(0)).any(-1)
 
-        # Pairwise Grid Distance Matrix (GD)
-        # GD(i,j) = sum(abs(g_loc_i - g_loc_j))
-        gd_matrix = torch.sum(torch.abs(g_loc.unsqueeze(1) - g_loc.unsqueeze(0)), dim=-1)
+    def _mating_selection(self) -> torch.Tensor:
+        """Binary tournament on Pareto dominance, then grid dominance, then the smaller GCD."""
+        N = self.pop_size
+        device = self.pop.device
+        g_loc, _, _ = self._grid(self.fit)
+        gcd = torch.clamp(self.n_objs - self._grid_difference(g_loc), min=0).sum(dim=1)
+        p1 = torch.randint(0, N, (N,), device=device)
+        p2 = torch.randint(0, N, (N,), device=device)
+        f1, f2 = self.fit[p1], self.fit[p2]
+        g1, g2 = g_loc[p1], g_loc[p2]
+        dominate = (f1 < f2).any(dim=1).int() - (f1 > f2).any(dim=1).int()
+        g_dominate = (g1 < g2).any(dim=1).int() - (g1 > g2).any(dim=1).int()
+        tie = (dominate == 0) & (g_dominate == 0)
+        first = (dominate == 1) | (g_dominate == 1) | (tie & (gcd[p1] <= gcd[p2]))
+        if self.cv is not None:
+            total = total_violation(self.cv)
+            first = prefer_by_constraint(first, total[p1], total[p2])
+        return torch.where(first, p1, p2)
 
-        # Grid Crowding Distance (GCD)
-        # GCD_i = sum(max(M - GD(i,j), 0))
-        gcd = torch.sum(torch.clamp(self.n_objs - gd_matrix, min=0), dim=-1)
+    def _last_selection(self, fit: torch.Tensor, k: int) -> torch.Tensor:
+        """Choose ``k`` solutions of the last front one by one, by GR, then GCD, then GCPD (Yang et al., 2013)."""
+        n, m = fit.shape
+        g_loc, lb, d = self._grid(fit)
+        gr = g_loc.sum(dim=1)
+        gcd = torch.zeros(n, dtype=fit.dtype, device=fit.device)
+        gcpd = torch.sqrt(torch.sum(((fit - (lb + g_loc * d)) / d) ** 2, dim=1))
+        gcpd = torch.nan_to_num(gcpd, nan=0.0)
+        gd = self._grid_difference(g_loc)
+        dominates = self._grid_dominance(g_loc)
+        zeros = torch.zeros_like(gcd)
 
-        # Grid Ranking (GR)
-        # GR_i = count(j grid-dominates i) + count(GD(i,j) < M)
-        # Grid Dominance: (g_loc_j <= g_loc_i).all() & (g_loc_j < g_loc_i).any()
-        g_dom = (g_loc.unsqueeze(0) <= g_loc.unsqueeze(1)).all(-1) & (g_loc.unsqueeze(0) < g_loc.unsqueeze(1)).any(-1)
-        gr_dom = g_dom.sum(dim=0).to(torch.int32)
-        gr_dist = (gd_matrix < self.n_objs).sum(dim=-1).to(torch.int32) - 1  # exclude self
-        gr = gr_dom + gr_dist
+        remain = torch.ones(n, dtype=torch.bool, device=fit.device)
+        for _ in range(k):
+            # Best remaining solution: smallest GR, ties broken by GCD, then by GCPD
+            best = remain & (gr == torch.where(remain, gr, torch.inf).min())
+            best = best & (gcd == torch.where(best, gcd, torch.inf).min())
+            q = torch.argmin(torch.where(best, gcpd, torch.inf))
+            remain[q] = False
 
-        return g_loc, gcd, gr, gcpd, gd_matrix
+            gcd = gcd + torch.clamp(m - gd[q], min=0)
 
-    def _grid_dominance(self, g_loc: torch.Tensor) -> torch.Tensor:
-        # Returns matrix where out[i, j] is True if i grid-dominates j
-        return (g_loc.unsqueeze(0) <= g_loc.unsqueeze(1)).all(-1) & (g_loc.unsqueeze(0) < g_loc.unsqueeze(1)).any(-1)
+            # GR adjustment: same cell +(M + 2), grid-dominated by q +M, and a distance-based penalty PD for
+            # the neighbours of q and the solutions they grid-dominate
+            eq = (gd[q] == 0) & remain
+            gq = dominates[q] & remain
+            ngq = remain & ~gq
+            near = (gd[q] < m) & ngq & ~eq
+            direct = torch.where(near, m - gd[q], zeros)
+            # Grid dominance is transitive, so PD(r) is the largest direct penalty of a neighbour dominating r
+            inherited = torch.where(dominates & near.unsqueeze(1), direct.unsqueeze(1), 0).amax(dim=0)
+            pd = torch.maximum(direct, torch.where(remain & ~(gq | eq), inherited, zeros))
+            gr = gr + eq * (m + 2) + gq * m + torch.where(ngq & ~eq, pd, zeros)
+        return ~remain
 
     def step(self) -> None:
         """Advance optimization and update population and fitness state in place.
@@ -112,14 +166,10 @@ class GrEA(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        device = self.pop.device
-        # 1. Mating Selection
-        g_loc, gcd, gr, gcpd, _ = self._calc_grid_metrics(self.fit)
-        rank = rank_with_constraints(self.fit, self.cv)
+        N = self.pop_size
 
-        # Tournament Selection (Bug #25: Primary key last)
-        # Criteria: Pareto Rank (min), Grid Rank (min), GCD (min)
-        mating_idx = tournament_selection_multifit(self.pop_size, [gcd.float(), gr.float(), rank.float()], tournament_size=2)
+        # 1. Mating Selection
+        mating_idx = self._mating_selection()
 
         # 2. Variation
         parents = self.pop[mating_idx]
@@ -128,72 +178,16 @@ class GrEA(Algorithm):
         offspring = clamp(offspring, self.lb, self.ub)
         off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
 
-        # 3. Environmental Selection
+        # 3. Environmental Selection: complete fronts first, then the last front by grid-based selection
         c_pop = torch.cat([self.pop, offspring], dim=0)
         c_fit = torch.cat([self.fit, off_fit], dim=0)
-
-        # Non-dominated Sort
         c_cv = cat_violation(self.cv, off_cv)
         c_rank = rank_with_constraints(c_fit, c_cv)
-
-        # Front Filling
-        survivor_mask = torch.zeros(c_pop.shape[0], dtype=torch.bool, device=device)
-        current_rank = 0
-        num_selected = 0
-
-        # Find the last front to be processed
-        while num_selected < self.pop_size:
-            in_front = c_rank == current_rank
-            count_in_front = in_front.sum()
-            if num_selected + count_in_front <= self.pop_size:
-                survivor_mask = survivor_mask | in_front
-                num_selected += count_in_front
-                current_rank += 1
-            else:
-                # This is the LastFront
-                break
-
-        # Peeling Logic for LastFront (Bug #9, #29, #41)
-        if num_selected < self.pop_size:
-            last_front_indices = torch.where(c_rank == current_rank)[0]
-            lf_fit = c_fit[last_front_indices]
-            lf_g_loc, lf_gcd, lf_gr, lf_gcpd, lf_gd_matrix = self._calc_grid_metrics(lf_fit)
-
-            # Active mask for peeling within the last front
-            active_mask = torch.ones(last_front_indices.shape[0], dtype=torch.bool, device=device)
-            num_remaining = last_front_indices.shape[0]
-            target_size = self.pop_size - num_selected
-
-            # Peeling Loop: Remove individuals until target_size is reached
-            while num_remaining > target_size:
-                # Mask inactive indices with very small values to not be picked as max
-                sort_gr = torch.where(active_mask, lf_gr.float(), -1e9)
-                sort_gcd = torch.where(active_mask, lf_gcd.float(), -1e9)
-                sort_gcpd = torch.where(active_mask, lf_gcpd.float(), -1e9)
-
-                # Primary key (GR) last
-                sort_idx = lexsort(torch.stack([sort_gcpd, sort_gcd, sort_gr]))
-                q = sort_idx[-1]
-
-                # Vectorized Update (Bug #29)
-                active_mask[q] = False
-                num_remaining -= 1
-
-                # Update GCD: GCD_p = GCD_p - max(M - GD(p, q), 0)
-                update_gcd = torch.clamp(self.n_objs - lf_gd_matrix[:, q], min=0)
-                lf_gcd = lf_gcd - update_gcd
-
-                # Update GR:
-                # 1. If q grid-dominates p, GR_p = GR_p - 1
-                # 2. If GD(p, q) < M, GR_p = GR_p - 1
-                q_g_loc = lf_g_loc[q]
-                p_is_dominated = (q_g_loc <= lf_g_loc).all(-1) & (q_g_loc < lf_g_loc).any(-1)
-                p_is_close = lf_gd_matrix[:, q] < self.n_objs
-
-                lf_gr = lf_gr - p_is_dominated.to(torch.int32) - p_is_close.to(torch.int32)
-
-            # Add survivors from LastFront
-            survivor_mask[last_front_indices[active_mask]] = True
+        last_rank = torch.sort(c_rank).values[N - 1]
+        survivor_mask = c_rank < last_rank
+        last = torch.where(c_rank == last_rank)[0]
+        chosen = self._last_selection(c_fit[last], N - int(survivor_mask.sum()))
+        survivor_mask[last[chosen]] = True
 
         self.pop = c_pop[survivor_mask]
         self.fit = c_fit[survivor_mask]
