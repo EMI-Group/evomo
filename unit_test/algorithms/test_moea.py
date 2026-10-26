@@ -147,4 +147,3 @@ class TestMOVariants(MOTestBase):
             workflow.step()
             self.assertEqual(algo.pop.shape[0], self.pop_size)
             self.assertEqual(algo.fit.shape[0], self.pop_size)
-
