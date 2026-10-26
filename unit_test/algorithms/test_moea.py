@@ -4,7 +4,19 @@ import torch
 from evox.core import Algorithm, compile, use_state, vmap
 from evox.workflows import EvalMonitor
 
-from evomo.algorithms import IBEA, LMOCSO, MOEAD, NSGA2, NSGA3, RVEA, SIBEA, HypE, RVEAa, TensorMOEAD
+from evomo.algorithms import (
+    IBEA,
+    LMOCSO,
+    MOEAD,
+    NSGA2,
+    NSGA3,
+    RVEA,
+    SIBEA,
+    HypE,
+    RVEAa,
+    TensorMOEAD,
+    VaEA,
+)
 from evomo.problems.numerical import DTLZ2
 from evomo.workflows import UnifiedWorkflow
 
@@ -105,6 +117,25 @@ class TestMOVariants(MOTestBase):
         self.run_algorithm(algo)
         self.run_compiled_algorithm(algo)
         self.run_vmap_algorithm(algo)
+
+    def test_vaea_worse_elimination(self):
+        # Eight mutually non-dominated solutions. P and Q are about 2 degrees apart and P converges better
+        # (smaller sum of normalized objectives). Maximum-vector-angle-first adds Q, and worse elimination
+        # must then let P, the remaining solution closest in angle to the selected ones, replace Q.
+        E1, R, U, P = [0.0, 1.0], [0.2, 0.85], [0.3, 0.75], [0.49, 0.515]
+        Q, V, S, E2 = [0.51, 0.50], [0.7, 0.32], [0.8, 0.21], [1.0, 0.0]
+        device = torch.get_default_device()
+        algo = VaEA(pop_size=4, n_objs=2, lb=torch.zeros(3), ub=torch.ones(3))
+        algo.pop = torch.rand(4, 3, device=device)
+        algo.fit = torch.tensor([E1, R, U, P], device=device)
+        offspring_fit = torch.tensor([Q, V, S, E2], device=device)
+        algo.evaluate = lambda x: offspring_fit[: x.shape[0]]
+        algo.step()
+        survivors = {tuple(round(v, 3) for v in row) for row in algo.fit.tolist()}
+        self.assertIn(tuple(P), survivors)
+        self.assertNotIn(tuple(Q), survivors)
+        self.assertIn(tuple(E1), survivors)
+        self.assertIn(tuple(E2), survivors)
 
     def test_sibea_keeps_population_size(self):
         # The environmental selection must return pop_size survivors every generation, including
