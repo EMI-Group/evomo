@@ -113,7 +113,7 @@ class VaEA(Algorithm):
         choose[: kept.numel()] = True
         if kept.numel() == 0:
             # The solution with the smallest angle to each axis, then the M best converged solutions
-            unit = norm_fit / (torch.norm(norm_fit, dim=1, keepdim=True) + 1e-6)
+            unit = S_fit / (torch.norm(S_fit, dim=1, keepdim=True) + 1e-6)
             choose[torch.argmax(unit, dim=0)] = True
             choose[torch.argsort(conv)[: min(M, cand.numel())]] = True
 
