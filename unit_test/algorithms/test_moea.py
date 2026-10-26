@@ -4,7 +4,19 @@ import torch
 from evox.core import Algorithm, compile, use_state, vmap
 from evox.workflows import EvalMonitor
 
-from evomo.algorithms import IBEA, LMOCSO, MOEAD, NSGA2, NSGA3, RVEA, SIBEA, HypE, RVEAa, TensorMOEAD, VaEA
+from evomo.algorithms import (
+    IBEA,
+    LMOCSO,
+    MOEAD,
+    NSGA2,
+    NSGA3,
+    RVEA,
+    SIBEA,
+    HypE,
+    RVEAa,
+    TensorMOEAD,
+    VaEA,
+)
 from evomo.problems.numerical import DTLZ2
 from evomo.workflows import UnifiedWorkflow
 
