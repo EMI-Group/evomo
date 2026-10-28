@@ -2,10 +2,10 @@ import torch
 from evox.core import Algorithm, Mutable
 from evox.operators.crossover import simulated_binary
 from evox.operators.mutation import polynomial_mutation
-from evox.operators.selection import crowding_distance, tournament_selection_multifit
+from evox.operators.selection import tournament_selection_multifit
 from evox.utils import clamp
 
-from evomo.operators.selection import nd_environmental_selection
+from evomo.operators.selection import crowding_distance, nd_environmental_selection
 from evomo.operators.selection.constraint_handling import (
     cat_violation,
     constrained_crowding_selection,
@@ -111,7 +111,9 @@ class SparseEA2(Algorithm):
 
         # Initial Environmental Selection
         if self.cv is None:
-            self.pop, self.fit, self.rank, self.dis, _ = nd_environmental_selection(self.pop, self.fit, N)
+            # Select row indices so decisions and masks undergo the same permutation.
+            indices, self.fit, self.rank, self.dis, _ = nd_environmental_selection(torch.arange(N, device=device), self.fit, N)
+            self.pop, self.mask = self.pop[indices], self.mask[indices]
         else:
             indices, self.rank, self.dis = constrained_crowding_selection(self.fit, self.cv, N)
             self.pop, self.fit, self.mask, self.cv = self.pop[indices], self.fit[indices], self.mask[indices], self.cv[indices]
@@ -253,7 +255,7 @@ class SparseEA2(Algorithm):
         self.rank = rank[selected_indices]
         # Re-calculate distance for the new population for next mating
         # Note: This is done per front in selection, we store it here
-        final_dist = torch.zeros(N, device=device)
+        final_dist = self.fit.new_zeros(N)
         for r in range(current_rank):
             m = self.rank == r
             if m.any():
