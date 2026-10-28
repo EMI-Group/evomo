@@ -150,7 +150,7 @@ class WOF(Algorithm):
 
         mating_pool = tournament_selection_multifit(N, [-dist, rank.float()], tournament_size=2)
         offspring = simulated_binary(self.pop[mating_pool], pro_c=1.0, dis_c=20.0)
-        offspring = polynomial_mutation(offspring, self.lb, self.ub, pro_m=1.0 / self.dim, dis_m=20.0)
+        offspring = polynomial_mutation(offspring, self.lb, self.ub, dis_m=20.0)
         offspring = clamp(offspring, self.lb, self.ub)
         fit_off = self.evaluate(offspring)
 

@@ -210,7 +210,7 @@ class TSSparseEA(Algorithm):
         # 3. Dec Variation (SBX + PM)
         parent_pop = self.pop[mating_pool]
         off_pop_dec = simulated_binary(parent_pop, pro_c=1.0, dis_c=20.0)
-        off_pop_dec = polynomial_mutation(off_pop_dec, self.lb, self.ub, pro_m=1.0 / D, dis_m=20.0)
+        off_pop_dec = polynomial_mutation(off_pop_dec, self.lb, self.ub, dis_m=20.0)
         off_pop_dec = clamp(off_pop_dec, self.lb, self.ub)
 
         # 4. Match Operator (The Core Logic - Bug #29)

@@ -160,7 +160,7 @@ class MaOEACSS(Algorithm):
 
         # 2. Variation
         off_pop = simulated_binary(self.pop[final_idx], pro_c=1.0, dis_c=20.0)
-        off_pop = polynomial_mutation(off_pop, self.lb, self.ub, pro_m=1.0 / self.dim, dis_m=20.0)
+        off_pop = polynomial_mutation(off_pop, self.lb, self.ub, dis_m=20.0)
         off_pop = clamp(off_pop, self.lb, self.ub)
         off_fit = self.evaluate(off_pop)
 
