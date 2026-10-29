@@ -125,7 +125,7 @@ class CMOPSO(Algorithm):
         off_pop = clamp(off_pop, self.lb, self.ub)
 
         # Polynomial Mutation
-        off_pop = polynomial_mutation(off_pop, self.lb, self.ub, pro_m=1.0, dis_m=20.0)
+        off_pop = polynomial_mutation(off_pop, self.lb, self.ub, dis_m=20.0)
 
         # 4. Evaluation
         off_fit, off_cv = parse_evaluate(self.evaluate(off_pop))

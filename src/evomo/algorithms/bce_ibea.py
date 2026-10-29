@@ -4,7 +4,7 @@ from evox.operators.crossover import simulated_binary
 from evox.operators.mutation import polynomial_mutation
 from evox.utils import clamp, randint
 
-from evomo.operators.selection import nd_environmental_selection
+from evomo.operators.selection import nd_environmental_selection, non_dominate_rank
 from evomo.operators.selection.constraint_handling import (
     cat_violation,
     constrained_crowding_selection,
@@ -12,7 +12,7 @@ from evomo.operators.selection.constraint_handling import (
     take_violation,
     worst_constraint_index,
 )
-from evomo.utils import minmax_normalize, pairwise_max_difference, parse_evaluate, register_lazy_buffer, unique_rows_sorted
+from evomo.utils import parse_evaluate, register_lazy_buffer, unique_rows_sorted
 
 
 class BCE_IBEA(Algorithm):
@@ -66,7 +66,8 @@ class BCE_IBEA(Algorithm):
 
         self.npc_pop = Mutable(torch.rand(pop_size, D, device=device) * (ub - lb) + lb)
         self.npc_fit = Mutable(torch.full((pop_size, n_objs), torch.inf, device=device))
-
+        # Number of non-dominated PC solutions before truncation (nND), which scales the exploration radius.
+        self.n_nd = Mutable(torch.tensor(pop_size, device=device))
         register_lazy_buffer(self, "cv", device_like="pop")
         register_lazy_buffer(self, "npc_cv", device_like="pop")
 
@@ -79,6 +80,7 @@ class BCE_IBEA(Algorithm):
         """
         self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
         self.npc_fit, self.npc_cv = parse_evaluate(self.evaluate(self.npc_pop))
+        self.n_nd = torch.sum(rank_with_constraints(self.fit, self.cv) == 0)
 
     def step(self) -> None:
         """Advance optimization and update population and fitness state in place.
@@ -90,14 +92,17 @@ class BCE_IBEA(Algorithm):
         device = self.pop.device
         N = self.pop_size
 
-        # 1. PC Selection Logic (Niche Radius calculation)
-        dist_pc = torch.cdist(self.fit, self.fit)
-        sorted_dist, _ = torch.sort(dist_pc, dim=1)
-        r = torch.mean(sorted_dist[:, 2])  # 3rd nearest neighbor
+        # 1. Niche radius: objectives normalized by the PC's range, r0 the mean distance to the 3rd nearest PC
+        # neighbor, scaled by the fraction of non-dominated solutions as r = nND / N * r0.
+        f_min = torch.min(self.fit, dim=0)[0]
+        f_scale = torch.clamp(torch.max(self.fit, dim=0)[0] - f_min, min=torch.finfo(self.fit.dtype).tiny)
+        pc_obj = (self.fit - f_min) / f_scale
+        npc_obj = (self.npc_fit - f_min) / f_scale
+        r = self.n_nd / N * _niche_radius(pc_obj)
 
-        # 2. Exploration Logic (Mating Selection for PC)
-        dist_npc_pc = torch.cdist(self.npc_fit, self.fit)
-        neighbors_count = torch.sum(dist_npc_pc < r, dim=1)  # Count NPC neighbors for each PC
+        # 2. Exploration Logic (Mating Selection for PC): a PC solution is isolated when at most one NPC
+        # solution lies within r of it, so count the NPC neighbors of each PC (rows of the PC x NPC distances).
+        neighbors_count = torch.sum(torch.cdist(pc_obj, npc_obj) <= r, dim=1)
         isolated_mask = neighbors_count <= 1
 
         # Generate NewPC from isolated PC individuals
@@ -119,18 +124,20 @@ class BCE_IBEA(Algorithm):
         merged_pc_fit = torch.cat([self.fit, off_pc_fit, off_npc_fit], dim=0)
         u_pc_pop, u_pc_idx = unique_rows_sorted(merged_pc_pop)
         u_pc_fit = merged_pc_fit[u_pc_idx]
-        self.pop, self.fit, self.cv = _pc_selection(
-            u_pc_pop, u_pc_fit, N, take_violation(cat_violation(self.cv, off_pc_cv, off_npc_cv), u_pc_idx)
-        )
+        u_pc_cv = take_violation(cat_violation(self.cv, off_pc_cv, off_npc_cv), u_pc_idx)
+        pc_indices, self.fit, self.n_nd = _pc_selection(torch.arange(u_pc_fit.shape[0], device=device), u_pc_fit, N, u_pc_cv)
+        self.pop, self.cv = u_pc_pop[pc_indices], take_violation(u_pc_cv, pc_indices)
 
         # 5. Environmental Selection for NPC
         merged_npc_pop = torch.cat([self.npc_pop, off_pc, off_npc], dim=0)
         merged_npc_fit = torch.cat([self.npc_fit, off_pc_fit, off_npc_fit], dim=0)
         u_npc_pop, u_npc_idx = unique_rows_sorted(merged_npc_pop)
         u_npc_fit = merged_npc_fit[u_npc_idx]
-        self.npc_pop, self.npc_fit, self.npc_cv = _ibea_selection(
-            u_npc_pop, u_npc_fit, N, self.kappa, take_violation(cat_violation(self.npc_cv, off_pc_cv, off_npc_cv), u_npc_idx)
+        u_npc_cv = take_violation(cat_violation(self.npc_cv, off_pc_cv, off_npc_cv), u_npc_idx)
+        npc_indices, self.npc_fit = _ibea_selection(
+            torch.arange(u_npc_fit.shape[0], device=device), u_npc_fit, N, self.kappa, u_npc_cv
         )
+        self.npc_pop, self.npc_cv = u_npc_pop[npc_indices], take_violation(u_npc_cv, npc_indices)
 
     def crossover(self, x):
         return simulated_binary(x)
@@ -141,10 +148,13 @@ class BCE_IBEA(Algorithm):
 
 def _ibea_selection(pop, fit, K, kappa, cv=None):
     N = pop.shape[0]
-    norm_objs = minmax_normalize(fit, eps=1e-6)
+    f_min = torch.min(fit, dim=0)[0]
+    f_max = torch.max(fit, dim=0)[0]
+    norm_objs = (fit - f_min) / (f_max - f_min + 1e-6)
 
     # Indicator Matrix (Additive epsilon-indicator)
-    indicator = pairwise_max_difference(norm_objs, norm_objs)
+    diff = norm_objs.unsqueeze(1) - norm_objs.unsqueeze(0)
+    indicator = torch.max(diff, dim=-1)[0]
     C = torch.max(torch.abs(indicator))
 
     # Initial Fitness
@@ -162,40 +172,52 @@ def _ibea_selection(pop, fit, K, kappa, cv=None):
         # Update fitness of remaining
         fitness += torch.exp(-indicator[worst, :] / (C * kappa + 1e-6))
 
-    return pop[mask], fit[mask], take_violation(cv, mask)
+    return pop[mask], fit[mask]
+
+
+def _niche_radius(obj):
+    """Mean distance from each point to its 3rd nearest other point (fewer points: the farthest one)."""
+    dist = torch.cdist(obj, obj)
+    dist.fill_diagonal_(torch.inf)
+    sorted_dist, _ = torch.sort(dist, dim=1)
+    return torch.mean(sorted_dist[:, min(2, obj.shape[0] - 1)])
 
 
 def _pc_selection(pop, fit, K, cv=None):
+    """Select K PC solutions and return them with the number of non-dominated solutions (nND)."""
     # 1. Non-dominated Filtering
-    rank = rank_with_constraints(fit, cv)
+    rank = non_dominate_rank(fit) if cv is None else rank_with_constraints(fit, cv)
     mask_rank1 = rank == 0
+    n_nd = torch.sum(mask_rank1)
 
     # If rank 1 is not enough, take more from subsequent ranks
-    if torch.sum(mask_rank1) <= K:
+    if n_nd <= K:
         # Standard ND selection if rank 1 is small
         if cv is not None:
             indices, _, _ = constrained_crowding_selection(fit, cv, K)
-            return pop[indices], fit[indices], cv[indices]
+            return pop[indices], fit[indices], n_nd
         new_pop, new_fit, _, _, _ = nd_environmental_selection(pop, fit, K)
-        return new_pop, new_fit, None
+        return new_pop, new_fit, n_nd
 
-    # Pruning Rank 1
+    # Pruning Rank 1, on objectives normalized by its range
     p_pop = pop[mask_rank1]
     p_fit = fit[mask_rank1]
     N_p = p_pop.shape[0]
+    f_min = torch.min(p_fit, dim=0)[0]
+    f_scale = torch.clamp(torch.max(p_fit, dim=0)[0] - f_min, min=torch.finfo(p_fit.dtype).tiny)
+    p_obj = (p_fit - f_min) / f_scale
 
-    dist_matrix = torch.cdist(p_fit, p_fit)
-    sorted_dist, _ = torch.sort(dist_matrix, dim=1)
-    r = torch.mean(sorted_dist[:, 2])
-
-    R = torch.clamp(dist_matrix / (r + 1e-6), max=1.0)
-    P = torch.prod(R + 1e-6, dim=1)
+    dist_matrix = torch.cdist(p_obj, p_obj)
+    r = _niche_radius(p_obj)
+    dist_matrix.fill_diagonal_(torch.inf)
+    # Crowding of each solution: the product of min(d / r, 1) over the other remaining solutions, in float64
+    # so that many close neighbors do not underflow it. Repeatedly remove the most crowded solution.
+    R = torch.clamp(dist_matrix / r, max=1.0).double()
 
     active_mask = torch.ones(N_p, dtype=torch.bool, device=pop.device)
     for _ in range(N_p - K):
-        temp_P = torch.where(active_mask, P, torch.finfo(torch.float32).max)
-        worst = torch.argmin(temp_P)
+        P = torch.prod(torch.where(active_mask.unsqueeze(0), R, 1.0), dim=1)
+        worst = torch.argmin(torch.where(active_mask, P, torch.inf))
         active_mask[worst] = False
-        P = P / (R[worst, :] + 1e-6)
 
-    return p_pop[active_mask], p_fit[active_mask], take_violation(take_violation(cv, mask_rank1), active_mask)
+    return p_pop[active_mask], p_fit[active_mask], n_nd

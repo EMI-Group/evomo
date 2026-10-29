@@ -8,14 +8,13 @@ from evox.utils import clamp, lexsort
 
 from evomo.operators.selection.constraint_handling import (
     cat_violation,
+    constraint_dominance_matrix,
     constraint_keys,
-    constraint_priority,
     rank_with_constraints,
     take_violation,
     total_violation,
 )
-from evomo.operators.selection.non_dominate import dominate_relation
-from evomo.utils import pairwise_cosine_similarity, parse_evaluate, register_lazy_buffer, unique_rows_sorted
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
 class TSNSGAII(Algorithm):
@@ -34,9 +33,10 @@ class TSNSGAII(Algorithm):
         :param ub: Required. Upper decision bounds of shape ``(D,)``. The decision dimension is inferred from the
             bounds, rather than passed separately. Match ``lb`` in shape, dtype and device.
         :type ub: torch.Tensor
-        :param max_fe: Default: ``10000``. Positive evaluation horizon setting the phase boundary at ``max_fe // 2``.
-            The evaluation counter includes the initial population. This parameter controls the phase switch and does
-            not stop subsequent calls to ``step()``.
+        :param max_fe: Default: ``10000``. Positive evaluation horizon setting the phase boundary at
+            ``(0.8 + 0.2 * (1 - 3 / n_objs)) * max_fe`` evaluations, as in the reference implementation. The evaluation
+            counter includes the initial population. This parameter controls the phase switch and does not stop
+            subsequent calls to ``step()``.
         :type max_fe: int
 
         .. note::
@@ -70,7 +70,6 @@ class TSNSGAII(Algorithm):
         self.front_no = Mutable(torch.zeros(pop_size, dtype=torch.int32, device=device))
         self.d2 = Mutable(torch.zeros(pop_size, device=device))
         self.fe = Mutable(torch.tensor(0, dtype=torch.int32, device=device))
-
         register_lazy_buffer(self, "cv", device_like="pop")
 
     def init_step(self) -> None:
@@ -98,7 +97,7 @@ class TSNSGAII(Algorithm):
             self.pop_size, constraint_keys([self.d2, self.front_no.float()], self.cv), tournament_size=2
         )
         offspring = simulated_binary(self.pop[mating_pool], pro_c=1.0, dis_c=20.0)
-        offspring = polynomial_mutation(offspring, self.lb, self.ub, pro_m=1.0, dis_m=20.0)
+        offspring = polynomial_mutation(offspring, self.lb, self.ub, dis_m=20.0)
         offspring = clamp(offspring, self.lb, self.ub)
 
         # 2. Evaluation
@@ -114,124 +113,127 @@ class TSNSGAII(Algorithm):
         )
 
     def _environmental_selection(self, pop, fit, cv=None):
+        # Stage 1 (SPD sorting) until (0.8 + 0.2 * (1 - 3 / M)) of the evaluation budget, then stage 2.
+        if self.fe < (0.8 + 0.2 * (1 - 3 / self.n_objs)) * self.max_fe:
+            return self._spd_selection(pop, fit, cv)
+        return self._decomposition_selection(pop, fit, cv)
+
+    def _spd_selection(self, pop, fit, cv=None):
+        """Stage 1: keep the first SPD fronts, then the lowest-d2 solutions of the last one."""
         N = self.pop_size
-        M = self.n_objs
-
-        # Normalization (Bug #12)
-        f_min = torch.min(fit, dim=0)[0]
-        f_max = torch.max(fit, dim=0)[0]
-        norm_fit = (fit - f_min) / (f_max - f_min + 1e-6)
-
-        # Stage Transition Logic
-        if self.fe < (self.max_fe // 2):
-            # Stage 1: SPD-Sort
-            # Association
-            norm_val = torch.norm(norm_fit, dim=1, keepdim=True)
-            w_norm = torch.norm(self.w, dim=1, keepdim=True)
-            cosine = pairwise_cosine_similarity(
-                norm_fit, self.w, eps=1e-6, mode="product", clamp=False, norms=(norm_val, w_norm)
-            )
-
-            # d1 and d2
-            d1_all = norm_val * cosine
-            d2_all = norm_val * torch.sqrt(clamp(1 - cosine**2, 0.0, 1.0) + 1e-6)
-
-            # Find closest weight for each individual
-            closest_w_idx = torch.argmin(d2_all, dim=1)
-            idx_range = torch.arange(pop.shape[0], device=pop.device)
-
-            d1 = d1_all[idx_range, closest_w_idx]
-            d2 = d2_all[idx_range, closest_w_idx]
-            spd_score = d1 + 5 * d2
-
-            front_no = self._spd_sort(fit, spd_score, closest_w_idx)
-
-            # Selection via Lexsort
-            rank_indices = lexsort(constraint_keys([spd_score, front_no.float()], cv))
-            survivor_idx = rank_indices[:N]
-
-            self.cv = take_violation(cv, survivor_idx)
-            return pop[survivor_idx], fit[survivor_idx], front_no[survivor_idx], d2[survivor_idx]
-
-        else:
-            # Stage 2: Level-Sort & Decomposition
-            # Interval-based levels
-            interval = (f_max - f_min) / (2 * M + 1e-6)
-            torch.max((fit - f_min) / (interval + 1e-6), dim=1)[0].floor()
-
-            # Greedy Selection (Vectorized)
-            survivor_idx = self._level_sort_selection(norm_fit, self.w, N, cv)
-
-            # Re-calculate front_no and d2 for the next mating step
-            new_fit = fit[survivor_idx]
-            new_norm = norm_fit[survivor_idx]
-            self.cv = take_violation(cv, survivor_idx)
-            new_front = rank_with_constraints(new_fit, self.cv)
-
-            # Update d2 for mating
-            new_norm_val = torch.norm(new_norm, dim=1, keepdim=True)
-            new_cosine = pairwise_cosine_similarity(
-                new_norm,
-                self.w,
-                eps=1e-6,
-                mode="product",
-                clamp=False,
-                norms=(new_norm_val, torch.norm(self.w, dim=1, keepdim=True)),
-            )
-            new_d2 = torch.min(new_norm_val * torch.sqrt(clamp(1 - new_cosine**2, 0.0, 1.0) + 1e-6), dim=1)[0]
-
-            return pop[survivor_idx], new_fit, new_front, new_d2
-
-    def _spd_sort(self, fit, spd_score, w_idx):
-        # Bug #24: Pareto Dominance
-        pareto_dom = dominate_relation(fit, fit)
-
-        # SPD Dominance: better score on the same weight
-        same_w = w_idx.unsqueeze(1) == w_idx.unsqueeze(0)
-        dist_dom = (spd_score.unsqueeze(1) < spd_score.unsqueeze(0)) & same_w
-
-        total_dom = pareto_dom | dist_dom
-
-        # Peeling logic (Vectorized Rank Assignment)
-        num_dominated = torch.sum(total_dom, dim=0)
-        return num_dominated.int()
-
-    def _level_sort_selection(self, norm_fit, w, n_required, cv=None):
-        # Vectorized Greedy Selection
-        # Calculate cosine similarity between all individuals and all weights
+        norm_fit = _normalize(fit)
+        cosine = _cosine(norm_fit, self.w)
         norm_val = torch.norm(norm_fit, dim=1, keepdim=True)
-        w_norm = torch.norm(w, dim=1, keepdim=True)
-        cosine = pairwise_cosine_similarity(
-            norm_fit, w, eps=1e-6, mode="product", clamp=False, norms=(norm_val, w_norm)
-        )  # [2N, N]
+        d1_all = norm_val * cosine
+        d2_all = norm_val * torch.sqrt(clamp(1 - cosine**2, 0.0, 1.0))
+        d2, rp = torch.min(d2_all, dim=1)
+        d1 = d1_all.gather(1, rp.unsqueeze(1)).squeeze(1)
 
-        # For each weight, find the individual with max cosine similarity
-        eligible_cosine = cosine
-        if cv is not None:
-            totals = total_violation(cv)
-            eligible_cosine = torch.where((totals == totals.amin())[:, None], cosine, -torch.inf)
-        best_match_for_w = torch.argmax(eligible_cosine, dim=0)  # [N]
+        # The extreme non-dominated solution of each objective gets d1 = d2 = 0.
+        nd = torch.where(rank_with_constraints(norm_fit, cv) == 0)[0]
+        extreme = nd[torch.argmax(norm_fit[nd], dim=0)]
+        d1 = d1.index_fill(0, extreme, 0.0)
+        d2 = d2.index_fill(0, extreme, 0.0)
 
-        # Handle potential duplicates if one individual is best for multiple weights
-        # But for TSNSGAII Stage 2, we typically take the best for each weight
-        # If N_weights == N_required, this naturally selects N individuals
-        u_idx, _ = unique_rows_sorted(best_match_for_w.unsqueeze(1))
-        u_idx = u_idx.squeeze(1)
+        front_no = self._spd_sort(norm_fit, d1 + 5 * d2, rp, N, cv)
+        max_front = torch.max(torch.where(front_no < torch.iinfo(front_no.dtype).max, front_no, -1))
+        # Earlier fronts first, then the last front by d2; unsorted solutions sort last.
+        survivor_idx = lexsort([d2, front_no])[:N]
+        self.cv = take_violation(cv, survivor_idx)
+        return pop[survivor_idx], fit[survivor_idx], torch.clamp(front_no[survivor_idx], max=max_front), d2[survivor_idx]
 
-        # If not enough unique individuals, pad with remaining best by cosine
-        # This is a JIT-safe way to ensure we return exactly N
-        mask = torch.zeros(norm_fit.shape[0], dtype=torch.bool, device=norm_fit.device)
-        mask[u_idx] = True
+    def _spd_sort(self, fit, spd_score, rp, n_sort, cv=None):
+        """Assign SPD fronts in the reference's sequential elimination order.
 
-        remaining_indices = torch.where(~mask)[0]
-        # Sort remaining by max similarity to any weight
-        max_sim_to_any = torch.max(cosine, dim=1)[0]
-        rem_order = (
-            torch.argsort(max_sim_to_any[remaining_indices], descending=True)
-            if cv is None
-            else constraint_priority(-max_sim_to_any[remaining_indices], cv[remaining_indices]).argsort(stable=True)
-        )
-        rem_sorted = remaining_indices[rem_order]
+        A solution SPD-dominates another when it Pareto-dominates it, or when neither Pareto-dominates the other,
+        they share a reference vector, and it has the smaller d1 + 5 * d2. This relation is not transitive:
+        candidates eliminated during a front's scan must not eliminate later candidates. Unsorted solutions
+        keep the dtype maximum.
+        """
+        n = fit.shape[0]
+        better_any = (fit.unsqueeze(1) < fit.unsqueeze(0)).any(-1)
+        pareto_dom = (fit.unsqueeze(1) <= fit.unsqueeze(0)).all(-1) & better_any
+        incomparable = ~pareto_dom & ~pareto_dom.T
+        same_rp = rp.unsqueeze(1) == rp.unsqueeze(0)
+        dominates = pareto_dom | (incomparable & same_rp & (spd_score.unsqueeze(1) < spd_score.unsqueeze(0)))
+        dominates = constraint_dominance_matrix(dominates, cv)
 
-        combined = torch.cat([u_idx, rem_sorted], dim=0)
-        return combined[:n_required]
+        unsorted_value = torch.iinfo(torch.int32).max
+        front_no = torch.full((n,), unsorted_value, dtype=torch.int32, device=fit.device)
+        positions = torch.arange(n, device=fit.device)
+        front = 0
+        while int(torch.sum(front_no < unsorted_value)) < min(n_sort, n):
+            front += 1
+            deleted = front_no != unsorted_value
+            for i in range(n):
+                active = ~deleted[i]
+                later = (positions > i) & ~deleted
+                # Stop at the first remaining candidate that defeats i. Comparisons before that point
+                # may delete candidates, but comparisons after it must have no effect.
+                first_defeat = torch.where(later & dominates[:, i], positions, n).amin()
+                deleted = deleted | (active & later & (positions < first_defeat) & dominates[i])
+                deleted[i] = deleted[i] | (active & (first_defeat < n))
+                front_no[i] = torch.where(~deleted[i], front, front_no[i])
+        return front_no
+
+    def _decomposition_selection(self, pop, fit, cv=None):
+        """Stage 2: among the first non-dominated fronts holding at least N solutions, take for each reference
+        vector in turn the remaining solution with the largest cosine to it, after normalizing the remaining ones.
+
+        The reference's level sort does not narrow this set (its early exit compares ``size(..., 1)`` of a row
+        of solutions, which is always 1), so it is not applied. With fewer reference vectors than ``pop_size``,
+        the vectors are reused in order until ``pop_size`` solutions are chosen.
+        """
+        N = self.pop_size
+        rank = rank_with_constraints(fit, cv)
+        sorted_rank, _ = torch.sort(rank)
+        candidate = rank <= sorted_rank[N - 1]
+
+        chosen = []
+        remaining = candidate.clone()
+        n_w = self.w.shape[0]
+        totals = None if cv is None else total_violation(cv)
+        for t in range(N):
+            f_min = _masked_min(fit, remaining)
+            f_max = _masked_max(fit, remaining)
+            norm_fit = (fit - f_min) / torch.clamp(f_max - f_min, min=torch.finfo(fit.dtype).tiny)
+            cosine = _cosine(norm_fit, self.w[t % n_w].unsqueeze(0)).squeeze(1)
+            eligible = remaining
+            if cv is not None:
+                minimum_cv = torch.where(remaining, totals, torch.inf).amin()
+                eligible = remaining & (totals == minimum_cv)
+            best = torch.argmax(torch.where(eligible, cosine, -torch.inf))
+            chosen.append(best)
+            remaining = remaining.clone()
+            remaining[best] = False
+        survivor_idx = torch.stack(chosen)
+
+        new_fit = fit[survivor_idx]
+        self.cv = take_violation(cv, survivor_idx)
+        new_front = rank_with_constraints(new_fit, self.cv)
+        # Density of each solution's region (number of selected solutions closest in cosine to the same vector).
+        region = torch.argmax(_cosine(_normalize(new_fit), self.w), dim=1)
+        density = torch.bincount(region, minlength=n_w)[region].to(new_fit.dtype)
+        return pop[survivor_idx], new_fit, new_front, density
+
+
+def _normalize(fit):
+    f_min = torch.min(fit, dim=0)[0]
+    f_max = torch.max(fit, dim=0)[0]
+    return (fit - f_min) / torch.clamp(f_max - f_min, min=torch.finfo(fit.dtype).tiny)
+
+
+def _masked_min(fit, mask):
+    return torch.min(torch.where(mask.unsqueeze(1), fit, torch.inf), dim=0)[0]
+
+
+def _masked_max(fit, mask):
+    return torch.max(torch.where(mask.unsqueeze(1), fit, -torch.inf), dim=0)[0]
+
+
+def _cosine(norm_fit, w):
+    """Cosine between each normalized solution and each reference vector; a zero vector has cosine 0."""
+    tiny = torch.finfo(norm_fit.dtype).tiny
+    norm_val = torch.clamp(torch.norm(norm_fit, dim=1, keepdim=True), min=tiny)
+    w_norm = torch.clamp(torch.norm(w, dim=1, keepdim=True), min=tiny)
+    return (norm_fit @ w.T) / (norm_val @ w_norm.T)

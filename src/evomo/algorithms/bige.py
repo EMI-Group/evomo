@@ -116,7 +116,7 @@ class BiGE(Algorithm):
 
         # 2. Variation
         offspring = simulated_binary(self.pop[mating_idx], pro_c=1.0, dis_c=20.0)
-        offspring = polynomial_mutation(offspring, self.lb, self.ub, pro_m=1.0, dis_m=20.0)
+        offspring = polynomial_mutation(offspring, self.lb, self.ub, dis_m=20.0)
         offspring = clamp(offspring, self.lb, self.ub)
 
         # 3. Evaluation

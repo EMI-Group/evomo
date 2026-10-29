@@ -145,7 +145,7 @@ class CMOEA_MS(Algorithm):
 
         if self.op_type == 1:
             off_pop = simulated_binary(parents, pro_c=1.0, dis_c=20.0)
-            off_pop = polynomial_mutation(off_pop, self.lb, self.ub, pro_m=1.0, dis_m=20.0)
+            off_pop = polynomial_mutation(off_pop, self.lb, self.ub, dis_m=20.0)
         else:
             # DE logic: current-to-best style or similar
             # Using parents as a base for variation
