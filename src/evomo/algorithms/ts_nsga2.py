@@ -129,10 +129,12 @@ class TSNSGAII(Algorithm):
         return pop[survivor_idx], fit[survivor_idx], torch.clamp(front_no[survivor_idx], max=max_front), d2[survivor_idx]
 
     def _spd_sort(self, fit, spd_score, rp, n_sort):
-        """Peel SPD fronts until at least ``n_sort`` solutions are sorted.
+        """Assign SPD fronts in the reference's sequential elimination order.
 
         A solution SPD-dominates another when it Pareto-dominates it, or when neither Pareto-dominates the other,
-        they share a reference vector, and it has the smaller d1 + 5 * d2. Unsorted solutions keep the dtype maximum.
+        they share a reference vector, and it has the smaller d1 + 5 * d2. This relation is not transitive:
+        candidates eliminated during a front's scan must not eliminate later candidates. Unsorted solutions
+        keep the dtype maximum.
         """
         n = fit.shape[0]
         better_any = (fit.unsqueeze(1) < fit.unsqueeze(0)).any(-1)
@@ -143,15 +145,20 @@ class TSNSGAII(Algorithm):
 
         unsorted_value = torch.iinfo(torch.int32).max
         front_no = torch.full((n,), unsorted_value, dtype=torch.int32, device=fit.device)
+        positions = torch.arange(n, device=fit.device)
         front = 0
         while int(torch.sum(front_no < unsorted_value)) < min(n_sort, n):
             front += 1
-            remaining = front_no == unsorted_value
-            dominated = (dominates & remaining.unsqueeze(1)).any(0)
-            current = remaining & ~dominated
-            if not bool(current.any()):
-                current = remaining
-            front_no = torch.where(current, front, front_no)
+            deleted = front_no != unsorted_value
+            for i in range(n):
+                active = ~deleted[i]
+                later = (positions > i) & ~deleted
+                # Stop at the first remaining candidate that defeats i. Comparisons before that point
+                # may delete candidates, but comparisons after it must have no effect.
+                first_defeat = torch.where(later & dominates[:, i], positions, n).amin()
+                deleted = deleted | (active & later & (positions < first_defeat) & dominates[i])
+                deleted[i] = deleted[i] | (active & (first_defeat < n))
+                front_no[i] = torch.where(~deleted[i], front, front_no[i])
         return front_no
 
     def _decomposition_selection(self, pop, fit):
