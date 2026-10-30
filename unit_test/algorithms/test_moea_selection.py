@@ -7,7 +7,7 @@ from evox.core import Problem
 
 from evomo.algorithms import IBEA, NSGA3, HypE, RVEAa, TensorMOEAD
 from evomo.algorithms.hype import cal_hv
-from evomo.algorithms.nsga3 import _constrained_rank, _normalize
+from evomo.algorithms.nsga3 import _constrained_rank, _niching, _normalize
 from evomo.operators.selection.constraint_handling import total_violation
 from evomo.problems.numerical import DTLZ2
 from evomo.workflows import UnifiedWorkflow
@@ -149,6 +149,37 @@ class InfeasibleTradeoffs(Problem):
 
 
 class TestMOEASelection(TorchTestCase):
+    def test_niching_batched_matches_independent_rows(self):
+        for device, dtype in product(DEVICES, [torch.float32, torch.float64]):
+            with self.torch_case(device=device, dtype=dtype):
+                group = torch.tensor([[0, 0, 1, 1, 2, 2], [0, 1, 2, 0, 1, 2]], device=device)
+                distance = torch.tensor([[0.1, 0.1, 0.3, 0.4, 0.5, 0.6], [0, 0, 0, 0, 0, 0]], device=device, dtype=dtype)
+                rho = torch.tensor([[1, 0, 0], [0, 0, 1]], device=device)
+                complete = torch.tensor(
+                    [[True, False, False, False, False, False], [False, False, True, False, False, False]], device=device
+                )
+                order = torch.arange(6, device=device)
+
+                def select(groups, distances, occupancy, mandatory):
+                    return _niching(
+                        groups,
+                        distances,
+                        occupancy,
+                        3,
+                        valid=~mandatory,
+                        complete=mandatory,
+                        random_order=order,
+                        nearest_order=order.flip(0),
+                        tie_order=order.roll(1),
+                    )
+
+                expected = torch.stack([select(*row) for row in zip(group, distance, rho, complete)])
+                batched = torch.vmap(select)
+                torch.testing.assert_close(batched(group, distance, rho, complete), expected)
+                backend = "aot_eager" if device == "cpu" else "inductor"
+                compiled = torch.compile(batched, backend=backend, fullgraph=True)
+                torch.testing.assert_close(compiled(group, distance, rho, complete), expected)
+
     def test_rank_matches_platemo_rules(self):
         for case, device in product(["mixed", "feasible", "infeasible", "scalar", "empty", "constant"], DEVICES):
             with self.torch_case(case=case, device=device):
