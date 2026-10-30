@@ -58,9 +58,9 @@ python -m pip check
 ## 开发与文档依赖
 
 ```sh
-python -m pip install pytest ruff
+python -m pip install ruff
 python -m pip install -r docs/requirements.txt
 ```
 
-`test` extra 包含部分可选运行依赖，不会安装 pytest 或 Ruff。仅构建文档时，可以在独立环境中
-只安装 `docs/requirements.txt`；API 文档静态解析源码，无需安装优化或物理模拟依赖。
+`test` extra 包含部分可选运行依赖。测试使用 Python 内置的 `unittest`；Ruff 需单独安装。
+仅构建文档时，可以在独立环境中只安装 `docs/requirements.txt`；API 文档静态解析源码，无需安装优化或物理模拟依赖。

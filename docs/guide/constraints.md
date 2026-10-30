@@ -220,8 +220,8 @@ probe evaluations and sampled population sizes can make generation counts unequa
 Run the core algorithm state and selection tests with:
 
 ```sh
-python -m pytest unit_test/algorithms/test_moea_constraints.py -q
-python -m pytest unit_test/algorithms/test_moea_selection.py -q
+python -m unittest unit_test.algorithms.test_moea_constraints -v
+python -m unittest unit_test.algorithms.test_moea_selection -v
 ```
 
 The algorithm tests cover CPU/CUDA, scalar and column violations, empty constraints,

@@ -166,8 +166,8 @@ GD/IGD 只在有限的可行解上计算；没有可行解时报告可行率与�
 算法级约束状态和选择规则测试可运行：
 
 ```sh
-python -m pytest unit_test/algorithms/test_moea_constraints.py -q
-python -m pytest unit_test/algorithms/test_moea_selection.py -q
+python -m unittest unit_test.algorithms.test_moea_constraints -v
+python -m unittest unit_test.algorithms.test_moea_selection -v
 ```
 
 覆盖 CPU/CUDA、一维与二维违反量、空约束、常数目标、同违反量前沿、可行性与低违反量优先、

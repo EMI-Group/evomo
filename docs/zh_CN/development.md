@@ -17,7 +17,7 @@
 
 ```sh
 python -m pip install -e .
-python -m pip install pytest ruff
+python -m pip install ruff
 ```
 
 ## 扩展算法
@@ -45,9 +45,9 @@ python -m pip install pytest ruff
 在仓库根目录运行相关测试，例如：
 
 ```sh
-python -m pytest unit_test/problems/test_dtlz.py -q
-python -m pytest unit_test/algorithms/test_moea_constraints.py -q
-python -m pytest unit_test/algorithms/test_moea.py -q
+python -m unittest unit_test.problems.test_dtlz -v
+python -m unittest unit_test.algorithms.test_moea_constraints -v
+python -m unittest unit_test.algorithms.test_moea -v
 ```
 
 选择与归一化改动应覆盖重复点、常量目标、退化目标范围、非有限值和约束处理。

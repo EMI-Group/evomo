@@ -28,18 +28,18 @@ For an editable installation and basic development tools:
 
 ```sh
 python -m pip install -e .
-python -m pip install pytest ruff
+python -m pip install ruff
 ```
 
 Install optional visualization or neuroevolution dependencies only when needed.
-The `test` extra does not itself install pytest or Ruff.
+Tests use Python's built-in `unittest`; install Ruff separately for linting.
 
 Run relevant tests from the repository root, for example:
 
 ```sh
-python -m pytest unit_test/problems/test_dtlz.py -q
-python -m pytest unit_test/algorithms/test_moea_constraints.py -q
-python -m pytest unit_test/algorithms/test_moea.py -q
+python -m unittest unit_test.problems.test_dtlz -v
+python -m unittest unit_test.algorithms.test_moea_constraints -v
+python -m unittest unit_test.algorithms.test_moea -v
 ```
 
 Check changed Python files with `python -m ruff check <paths>` and
