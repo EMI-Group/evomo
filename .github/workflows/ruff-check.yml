@@ -13,7 +13,7 @@ jobs:
       - name: Check lint
         uses: astral-sh/ruff-action@v4.1.0
         with:
-          version: "0.16.5"
+          version: "0.8.5"
           args: "check"
       - name: Check formatting
         if: ${{ !cancelled() }}

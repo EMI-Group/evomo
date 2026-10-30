@@ -35,9 +35,9 @@ class UnifiedWorkflow(Workflow):
             ], f"Expect optimization direction to be `min` or `max`, got {opt_direction}"
             self.opt_direction = torch.tensor(1 if opt_direction == "min" else -1, device=device)
         elif isinstance(opt_direction, list):
-            assert all(d in ["min", "max"] for d in opt_direction), (
-                f"Expect optimization direction to be `min` or `max`, got {opt_direction}"
-            )
+            assert all(
+                d in ["min", "max"] for d in opt_direction
+            ), f"Expect optimization direction to be `min` or `max`, got {opt_direction}"
             self.opt_direction = torch.tensor([1 if d == "min" else -1 for d in opt_direction], device=device)
 
         if solution_transform is None:
