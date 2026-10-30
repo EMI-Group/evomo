@@ -217,11 +217,10 @@ experimental outcome; report IGD/GD as unavailable, rather than computing them o
 points. Benchmark stochastic quality with several seeds and equal evaluation budgets;
 probe evaluations and sampled population sizes can make generation counts unequal in cost.
 
-Run the core algorithm state, selection and regression tests with:
+Run the core algorithm state and selection tests with:
 
 ```sh
 python -m pytest unit_test/algorithms/test_moea_constraints.py -q
-python -m pytest unit_test/algorithms/test_moea_regressions.py -q
 python -m pytest unit_test/algorithms/test_moea_selection.py -q
 ```
 

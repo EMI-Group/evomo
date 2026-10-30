@@ -163,11 +163,10 @@ MOEADAWA 增加 `max_evaluations` 控制调整时机，包含初始化评价。�
 GD/IGD 只在有限的可行解上计算；没有可行解时报告可行率与违反量，GD/IGD 记为不可用。
 比较随机算法质量时使用多个种子与相同评估预算；变量探测和参考点采样会使相同代数的评估成本不同。
 
-算法级约束状态、选择规则和回归测试可运行：
+算法级约束状态和选择规则测试可运行：
 
 ```sh
 python -m pytest unit_test/algorithms/test_moea_constraints.py -q
-python -m pytest unit_test/algorithms/test_moea_regressions.py -q
 python -m pytest unit_test/algorithms/test_moea_selection.py -q
 ```
 

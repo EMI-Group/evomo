@@ -48,9 +48,8 @@ class CMOEA_MS(Algorithm):
         :param max_gen: Positive generation budget used only for the scoring-stage transition.
             The caller still controls termination. Defaults to ``100``.
         :param lambda_: Feasible fraction required to enter the objective optimization stage; defaults to ``0.5``.
-        :param kwargs: Default: ``{}``. Extra keyword arguments are accepted for constructor compatibility but are not
-            read by this implementation. In particular, passing ``device=...`` here does not move tensors; place both
-            bounds on the intended device before construction.
+        :param kwargs: Optional ``max_fe`` sets the actual evaluation budget and scoring-stage horizon.
+            Place bounds on the intended device; ``device=...`` does not move them.
         :type kwargs: dict
 
         .. note::
@@ -70,6 +69,9 @@ class CMOEA_MS(Algorithm):
         if max_gen <= 0 or not 0 <= lambda_ <= 1:
             raise ValueError("max_gen must be positive and lambda_ must be in [0, 1]")
         self.stage_switch_gen = 0.1 * max_gen
+        self.max_fe = kwargs.get("max_fe", pop_size * max_gen)
+        self.limit_fe = "max_fe" in kwargs
+        self.fe = Mutable(torch.tensor(0, dtype=torch.int64, device=device))
         self.stage_fraction = lambda_
         self.lb = lb
         self.ub = ub
@@ -115,7 +117,7 @@ class CMOEA_MS(Algorithm):
         surrogate = torch.stack([self._cal_sde(normalized_fit), violation], dim=1)
         exploratory = self._cal_fitness(surrogate)
         convergent = self._cal_fitness(fit, violation)
-        stage = ((violation == 0).float().mean() > self.stage_fraction) & (self.iter + 1 >= self.stage_switch_gen)
+        stage = ((violation == 0).float().mean() > self.stage_fraction) & (self.fe >= 0.1 * self.max_fe)
         fitness = exploratory if initial else torch.where(stage, convergent, exploratory)
         return torch.where(torch.isfinite(violation), fitness, torch.inf)
 
@@ -127,6 +129,7 @@ class CMOEA_MS(Algorithm):
         :returns: ``None``; results are stored in algorithm state.
         """
         self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
+        self.fe = self.fe + len(self.pop)
         self.fitness = self._constrained_fitness(self.fit, self.cv, initial=True)
 
     def step(self) -> None:
@@ -137,24 +140,28 @@ class CMOEA_MS(Algorithm):
         :returns: ``None``; results are stored in algorithm state.
         """
         self.iter = self.iter + 1
-        device = self.pop.device
         N = self.pop_size
+        n_off = N if not self.limit_fe else min(N, max(0, self.max_fe - int(self.fe)))
+        if not n_off:
+            return
 
-        mating_idx = tournament_selection_multifit(N, [self.fitness], tournament_size=2)
+        # A final partial budget batch still uses balanced SBX parents.
+        n_parents = N if n_off == N else 2 * ((n_off + 1) // 2)
+        mating_idx = tournament_selection_multifit(n_parents, [self.fitness], tournament_size=2)
         parents = self.pop[mating_idx]
 
         if self.op_type == 1:
             off_pop = simulated_binary(parents, pro_c=1.0, dis_c=20.0)
             off_pop = polynomial_mutation(off_pop, self.lb, self.ub, dis_m=20.0)
+            off_pop = off_pop[:n_off]
         else:
-            # DE logic: current-to-best style or similar
-            # Using parents as a base for variation
-            off_pop = parents + 0.5 * (
-                self.pop[torch.randint(0, N, (N,), device=device)] - self.pop[torch.randint(0, N, (N,), device=device)]
-            )
+            second = tournament_selection_multifit(n_off, [self.fitness], tournament_size=2)
+            off_pop = self.pop[:n_off] + 0.5 * (parents[:n_off] - self.pop[second])
+            off_pop = polynomial_mutation(off_pop, self.lb, self.ub)
 
         off_pop = clamp(off_pop, self.lb, self.ub)
         off_fit, off_cv = parse_evaluate(self.evaluate(off_pop))
+        self.fe = self.fe + len(off_pop)
 
         Q_pop = torch.cat([self.pop, off_pop], dim=0)
         Q_fit = torch.cat([self.fit, off_fit], dim=0)

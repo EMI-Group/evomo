@@ -172,6 +172,10 @@ def test_constant_objectives(name, device):
 def test_infeasible_offspring_cannot_displace_feasible_incumbents(name, device):
     problem = ConstrainedToy("zero")
     algorithm, workflow = make_workflow(name, device, problem)
+    if name == "DMMOEA":
+        # This test changes the evaluator to emulate bad offspring, not a new dynamic environment.
+        algorithm.detect_change = False
+        workflow.algorithm.detect_change = False
     problem.mode = "tied"
     workflow.step()
     valid = torch.isfinite(algorithm.fit).all(1)
@@ -183,6 +187,9 @@ def test_infeasible_offspring_cannot_displace_feasible_incumbents(name, device):
 def test_lower_violation_beats_dominating_infeasible_offspring(name, device):
     problem = ConstrainedToy("positive")
     algorithm, workflow = make_workflow(name, device, problem)
+    if name == "DMMOEA":
+        algorithm.detect_change = False
+        workflow.algorithm.detect_change = False
     problem.mode = "worse"
     workflow.step()
     valid = torch.isfinite(algorithm.fit).all(1)

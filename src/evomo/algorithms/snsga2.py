@@ -2,20 +2,28 @@ import torch
 from evox.core import Algorithm, Mutable
 from evox.operators.crossover import simulated_binary
 from evox.operators.mutation import polynomial_mutation
-from evox.operators.selection import crowding_distance, tournament_selection_multifit
-from evox.utils import clamp
+from evox.operators.selection import tournament_selection_multifit
+from evox.utils import clamp, lexsort
 
 from evomo.operators.selection.constraint_handling import (
     cat_violation,
     rank_with_constraints,
     take_violation,
 )
-from evomo.utils import parse_evaluate, register_lazy_buffer, unique_rows_sorted
+from evomo.operators.selection.distance_truncation import crowding_distance_by_rank
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
 class SNSGA2(Algorithm):
     def __init__(
-        self, pop_size: int, n_objs: int, lb: torch.Tensor, ub: torch.Tensor, sLower: float = 0.1, sUpper: float = 0.9, **kwargs
+        self,
+        pop_size: int,
+        n_objs: int,
+        lb: torch.Tensor,
+        ub: torch.Tensor,
+        sLower: float = 0.75,
+        sUpper: float = 1.0,
+        **kwargs,
     ):
         """Initialize the SNSGA2 population and optimization state.
 
@@ -31,17 +39,16 @@ class SNSGA2(Algorithm):
         :param ub: Required. Upper decision bounds of shape ``(D,)``. The decision dimension is inferred from the
             bounds, rather than passed separately. Match ``lb`` in shape, dtype and device.
         :type ub: torch.Tensor
-        :param sLower: Default: ``0.1``. Lower endpoint of the initial fraction of zero-valued decision components. Use
-            ``0 <= sLower <= sUpper <= 1``. The active count is ``ceil((1 - s) * D)`` as ``s`` varies across the initial
+        :param sLower: Default: ``0.75``. Lower endpoint of the initial fraction of zero-valued decision components. Use
+            ``0 <= sLower <= sUpper <= 1``. The active count is ``round((1 - s) * D)`` as ``s`` varies across the initial
             population.
         :type sLower: float
-        :param sUpper: Default: ``0.9``. Upper endpoint of the initial fraction of zero-valued decision components.
+        :param sUpper: Default: ``1.0``. Upper endpoint of the initial fraction of zero-valued decision components.
             Larger values initialize sparser solutions; this is an initialization setting, not a guaranteed sparsity
             level for subsequent generations.
         :type sUpper: float
-        :param kwargs: Default: ``{}``. Extra keyword arguments are accepted for constructor compatibility but are not
-            read by this implementation. In particular, passing ``device=...`` here does not move tensors; place both
-            bounds on the intended device before construction.
+        :param kwargs: Optional ``max_fe`` bounds actual evaluations, including probes and initialization.
+            Place bounds on the intended device; ``device=...`` does not move them.
         :type kwargs: dict
 
         .. note::
@@ -67,11 +74,29 @@ class SNSGA2(Algorithm):
         # Initialize State (Mutables)
         # Initialization (VSSPS Logic)
         rho = torch.linspace(1 - sLower, 1 - sUpper, pop_size, device=device)
-        W = (rho * self.dim).ceil().to(torch.int32)
-        idx = torch.arange(self.dim, device=device).unsqueeze(0).expand(pop_size, self.dim)
-        shift = torch.arange(pop_size, device=device).unsqueeze(1)
-        rotated_idx = (idx + shift) % self.dim
-        mask = rotated_idx < W.unsqueeze(1)
+        widths = (rho * self.dim).round().clamp_max(int((1 - sLower) * self.dim)).long()
+        mask = torch.zeros(pop_size, self.dim, dtype=torch.bool, device=device)
+        cycles = []
+        current, width = [], 0
+        for i in range(pop_size):
+            value = int(widths[i])
+            if current and width + value > self.dim:
+                cycles.append(current)
+                current, width = [], 0
+            current.append(i)
+            width += value
+        if current:
+            cycles.append(current)
+        for c, cycle in enumerate(cycles):
+            gap = self.dim - sum(int(widths[i]) for i in cycle)
+            gap_size = (gap + len(cycle) - 1) // len(cycle)
+            position = 0
+            for i in cycle:
+                extra = gap_size if gap > 0 else 0
+                gap -= extra
+                end = position + int(widths[i]) + (extra if c < len(cycles) - 1 else 0)
+                mask[i, position : min(end, self.dim)] = True
+                position += int(widths[i]) + extra
 
         initial_pop = (self.lb + torch.rand((pop_size, self.dim), device=device) * (self.ub - self.lb)) * mask
         self.pop = Mutable(initial_pop)
@@ -82,6 +107,8 @@ class SNSGA2(Algorithm):
         self.crowd_dis = Mutable(torch.full((pop_size,), -1.0, dtype=torch.float32, device=device))
 
         register_lazy_buffer(self, "cv", device_like="pop")
+        self.max_fe = kwargs.get("max_fe")
+        self.fe = Mutable(torch.tensor(0, dtype=torch.int64, device=device))
 
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
@@ -91,6 +118,7 @@ class SNSGA2(Algorithm):
         :returns: ``None``; results are stored in algorithm state.
         """
         self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
+        self.fe = self.fe + len(self.pop)
         # Initial Environmental Selection
         self.pop, self.fit, self.front_no, self.crowd_dis = self._environmental_selection(self.pop, self.fit, self.cv)
 
@@ -101,10 +129,17 @@ class SNSGA2(Algorithm):
 
         # Standard SBX on matching
         off = simulated_binary(torch.cat([p1, p2], dim=0), pro_c=1.0, dis_c=20.0)
-        off1, off2 = off[: self.pop_size // 2], off[self.pop_size // 2 :]
+        half = p1.shape[0]
+        off1, off2 = off[:half], off[half:]
 
         # Swap on non-matching with 0.5 probability
-        swap_mask = (torch.rand(p1.shape, device=p1.device) < 0.5) & (~matching)
+        different = ~matching
+        scores = torch.where(different, torch.rand_like(p1), torch.inf).flatten()
+        order = scores.argsort(stable=True)
+        positions = torch.empty_like(order).scatter(0, order, torch.arange(order.numel(), device=p1.device))
+        count = different.sum()
+        swaps = count - torch.round(count * torch.rand((), device=p1.device)).long()
+        swap_mask = different & (positions.reshape_as(p1) < swaps)
         res1 = torch.where(swap_mask, p2, p1)
         res2 = torch.where(swap_mask, p1, p2)
 
@@ -121,11 +156,8 @@ class SNSGA2(Algorithm):
         to_add = diff.clamp(min=0)
         to_rem = (-diff).clamp(min=0)
 
-        add_probs = (pop == 0).float() + 1e-6
-        rem_probs = (pop != 0).float() + 1e-6
-
-        add_noise = torch.rand((N, D), device=pop.device) * add_probs
-        rem_noise = torch.rand((N, D), device=pop.device) * rem_probs
+        add_noise = torch.where(pop == 0, torch.rand((N, D), device=pop.device), -torch.inf)
+        rem_noise = torch.where(pop != 0, torch.rand((N, D), device=pop.device), -torch.inf)
 
         add_rank = torch.argsort(add_noise, dim=1, descending=True)
         rem_rank = torch.argsort(rem_noise, dim=1, descending=True)
@@ -144,49 +176,12 @@ class SNSGA2(Algorithm):
 
         return new_pop
 
-    def _environmental_selection(self, merge_pop: torch.Tensor, merge_fit: torch.Tensor, merge_cv=None):
-        N = self.pop_size
-        X, u_idx = unique_rows_sorted(merge_pop)
-        F = merge_fit[u_idx]
-
-        cv = take_violation(merge_cv, u_idx)
-        rank = rank_with_constraints(F, cv)
-        num_selected = 0
-        selected_indices = torch.full((N,), -1, dtype=torch.long, device=X.device)
-        all_crowd_dis = torch.zeros(F.shape[0], device=X.device)
-
-        for i in range(2 * N):
-            if num_selected >= N:
-                break
-
-            curr_mask = rank == i
-            count = curr_mask.sum()
-
-            if count == 0:
-                continue
-
-            dist = crowding_distance(F, curr_mask)
-            all_crowd_dis = torch.where(curr_mask, dist, all_crowd_dis)
-
-            if num_selected + count <= N:
-                indices = torch.where(curr_mask)[0]
-                selected_indices[num_selected : num_selected + count] = indices
-                num_selected += count
-            else:
-                needed = N - num_selected
-                front_indices = torch.where(curr_mask)[0]
-                front_dist = dist[front_indices]
-                top_indices = front_indices[torch.argsort(front_dist, descending=True)[:needed]]
-                selected_indices[num_selected:N] = top_indices
-                num_selected = N
-
-        self.cv = take_violation(cv, selected_indices)
-        survivor_pop = X[selected_indices]
-        survivor_fit = F[selected_indices]
-        survivor_rank = rank[selected_indices]
-        survivor_dist = all_crowd_dis[selected_indices]
-
-        return survivor_pop, survivor_fit, survivor_rank.to(torch.int32), survivor_dist
+    def _environmental_selection(self, merge_pop, merge_fit, merge_cv=None):
+        rank = rank_with_constraints(merge_fit, merge_cv)
+        distance = crowding_distance_by_rank(merge_fit, rank)
+        indices = lexsort([-distance, rank])[: self.pop_size].sort().values
+        self.cv = take_violation(merge_cv, indices)
+        return merge_pop[indices], merge_fit[indices], rank[indices], distance[indices]
 
     def step(self) -> None:
         """Advance optimization and update population and fitness state in place.
@@ -195,24 +190,32 @@ class SNSGA2(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
+        count = 2 * (self.pop_size // 2)
+        if self.max_fe is not None:
+            count = min(count, max(0, self.max_fe - int(self.fe)))
+        if not count:
+            return
+        parent_count = self.pop_size if self.max_fe is None or count == 2 * (self.pop_size // 2) else 2 * ((count + 1) // 2)
         mating_pool_idx = tournament_selection_multifit(
-            self.pop_size, [-self.crowd_dis, self.front_no.float()], tournament_size=2
+            parent_count, [-self.crowd_dis, self.front_no.float()], tournament_size=2
         )
         parents = self.pop[mating_pool_idx]
 
-        off_pop = self._sparse_sbx(parents[: self.pop_size // 2], parents[self.pop_size // 2 :])
-        if off_pop.shape[0] < self.pop_size:
-            off_pop = torch.cat([off_pop, off_pop[:1]], dim=0)
+        half = parents.shape[0] // 2
+        off_pop = self._sparse_sbx(parents[:half], parents[half : 2 * half])[:count]
 
         off_pop = torch.where(off_pop != 0, polynomial_mutation(off_pop, self.lb, self.ub), off_pop)
 
-        curr_rho = (off_pop != 0).sum(dim=1).float() / self.dim
-        target_rho = clamp(curr_rho + torch.randn_like(curr_rho) * 0.1, 1.0 / self.dim, 1.0)
-        target_W = (target_rho * self.dim).round().clamp(1, self.dim).to(torch.int32)
+        sparsity = (off_pop == 0).to(off_pop.dtype).mean(1, keepdim=True)
+        mutated = polynomial_mutation(sparsity, torch.zeros_like(sparsity[0]), torch.ones_like(sparsity[0]))
+        gate = torch.rand(len(off_pop), 1, device=off_pop.device) < 1 / self.dim
+        target_sparsity = torch.where(gate, mutated, sparsity).clamp(0, 1)
+        target_W = ((1 - target_sparsity.squeeze(1)) * self.dim).round().clamp(0, self.dim).long()
         off_pop = self._sparse_mutate_mask(off_pop, target_W)
 
         off_pop = clamp(off_pop, self.lb, self.ub)
         off_fit, off_cv = parse_evaluate(self.evaluate(off_pop))
+        self.fe = self.fe + len(off_pop)
 
         merge_pop = torch.cat([self.pop, off_pop], dim=0)
         merge_fit = torch.cat([self.fit, off_fit], dim=0)
