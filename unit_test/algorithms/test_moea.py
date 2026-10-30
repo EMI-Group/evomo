@@ -1,5 +1,4 @@
 import math
-from unittest import TestCase
 
 import torch
 from evox.core import Algorithm, compile, use_state, vmap
@@ -21,9 +20,10 @@ from evomo.algorithms import (
 )
 from evomo.problems.numerical import DTLZ2
 from evomo.workflows import UnifiedWorkflow
+from unit_test import TorchTestCase
 
 
-class MOTestBase(TestCase):
+class MOTestBase(TorchTestCase):
     def run_algorithm(self, algo: Algorithm):
         prob = DTLZ2(m=3)
         monitor = EvalMonitor(multi_obj=True, full_sol_history=True)
@@ -61,6 +61,7 @@ class MOTestBase(TestCase):
 
 class TestMOVariants(MOTestBase):
     def setUp(self):
+        super().setUp()
         torch.compiler.reset()
         torch.manual_seed(42)
         torch.set_default_device("cuda" if torch.cuda.is_available() else "cpu")

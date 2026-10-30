@@ -6,7 +6,15 @@ from evox.operators.sampling import uniform_sampling
 from evox.operators.selection import tournament_selection_multifit
 from evox.utils import clamp, lexsort
 
-from evomo.operators.selection import non_dominate_rank
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    constraint_dominance_matrix,
+    constraint_keys,
+    rank_with_constraints,
+    take_violation,
+    total_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
 class TSNSGAII(Algorithm):
@@ -35,8 +43,8 @@ class TSNSGAII(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -62,6 +70,7 @@ class TSNSGAII(Algorithm):
         self.front_no = Mutable(torch.zeros(pop_size, dtype=torch.int32, device=device))
         self.d2 = Mutable(torch.zeros(pop_size, device=device))
         self.fe = Mutable(torch.tensor(0, dtype=torch.int32, device=device))
+        register_lazy_buffer(self, "cv", device_like="pop")
 
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
@@ -70,10 +79,10 @@ class TSNSGAII(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
         self.fe = self.fe + self.pop_size
         # Initial Selection to populate keys
-        self.pop, self.fit, self.front_no, self.d2 = self._environmental_selection(self.pop, self.fit)
+        self.pop, self.fit, self.front_no, self.d2 = self._environmental_selection(self.pop, self.fit, self.cv)
 
     def step(self) -> None:
         # 1. Mating
@@ -84,28 +93,32 @@ class TSNSGAII(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        mating_pool = tournament_selection_multifit(self.pop_size, [self.d2, self.front_no.float()], tournament_size=2)
+        mating_pool = tournament_selection_multifit(
+            self.pop_size, constraint_keys([self.d2, self.front_no.float()], self.cv), tournament_size=2
+        )
         offspring = simulated_binary(self.pop[mating_pool], pro_c=1.0, dis_c=20.0)
         offspring = polynomial_mutation(offspring, self.lb, self.ub, dis_m=20.0)
         offspring = clamp(offspring, self.lb, self.ub)
 
         # 2. Evaluation
-        off_fit = self.evaluate(offspring)
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
         self.fe = self.fe + self.pop_size
 
         # 3. Selection
         merged_pop = torch.cat([self.pop, offspring], dim=0)
         merged_fit = torch.cat([self.fit, off_fit], dim=0)
 
-        self.pop, self.fit, self.front_no, self.d2 = self._environmental_selection(merged_pop, merged_fit)
+        self.pop, self.fit, self.front_no, self.d2 = self._environmental_selection(
+            merged_pop, merged_fit, cat_violation(self.cv, off_cv)
+        )
 
-    def _environmental_selection(self, pop, fit):
+    def _environmental_selection(self, pop, fit, cv=None):
         # Stage 1 (SPD sorting) until (0.8 + 0.2 * (1 - 3 / M)) of the evaluation budget, then stage 2.
         if self.fe < (0.8 + 0.2 * (1 - 3 / self.n_objs)) * self.max_fe:
-            return self._spd_selection(pop, fit)
-        return self._decomposition_selection(pop, fit)
+            return self._spd_selection(pop, fit, cv)
+        return self._decomposition_selection(pop, fit, cv)
 
-    def _spd_selection(self, pop, fit):
+    def _spd_selection(self, pop, fit, cv=None):
         """Stage 1: keep the first SPD fronts, then the lowest-d2 solutions of the last one."""
         N = self.pop_size
         norm_fit = _normalize(fit)
@@ -117,18 +130,19 @@ class TSNSGAII(Algorithm):
         d1 = d1_all.gather(1, rp.unsqueeze(1)).squeeze(1)
 
         # The extreme non-dominated solution of each objective gets d1 = d2 = 0.
-        nd = torch.where(non_dominate_rank(norm_fit) == 0)[0]
+        nd = torch.where(rank_with_constraints(norm_fit, cv) == 0)[0]
         extreme = nd[torch.argmax(norm_fit[nd], dim=0)]
         d1 = d1.index_fill(0, extreme, 0.0)
         d2 = d2.index_fill(0, extreme, 0.0)
 
-        front_no = self._spd_sort(norm_fit, d1 + 5 * d2, rp, N)
+        front_no = self._spd_sort(norm_fit, d1 + 5 * d2, rp, N, cv)
         max_front = torch.max(torch.where(front_no < torch.iinfo(front_no.dtype).max, front_no, -1))
         # Earlier fronts first, then the last front by d2; unsorted solutions sort last.
         survivor_idx = lexsort([d2, front_no])[:N]
+        self.cv = take_violation(cv, survivor_idx)
         return pop[survivor_idx], fit[survivor_idx], torch.clamp(front_no[survivor_idx], max=max_front), d2[survivor_idx]
 
-    def _spd_sort(self, fit, spd_score, rp, n_sort):
+    def _spd_sort(self, fit, spd_score, rp, n_sort, cv=None):
         """Assign SPD fronts in the reference's sequential elimination order.
 
         A solution SPD-dominates another when it Pareto-dominates it, or when neither Pareto-dominates the other,
@@ -142,6 +156,7 @@ class TSNSGAII(Algorithm):
         incomparable = ~pareto_dom & ~pareto_dom.T
         same_rp = rp.unsqueeze(1) == rp.unsqueeze(0)
         dominates = pareto_dom | (incomparable & same_rp & (spd_score.unsqueeze(1) < spd_score.unsqueeze(0)))
+        dominates = constraint_dominance_matrix(dominates, cv)
 
         unsorted_value = torch.iinfo(torch.int32).max
         front_no = torch.full((n,), unsorted_value, dtype=torch.int32, device=fit.device)
@@ -161,7 +176,7 @@ class TSNSGAII(Algorithm):
                 front_no[i] = torch.where(~deleted[i], front, front_no[i])
         return front_no
 
-    def _decomposition_selection(self, pop, fit):
+    def _decomposition_selection(self, pop, fit, cv=None):
         """Stage 2: among the first non-dominated fronts holding at least N solutions, take for each reference
         vector in turn the remaining solution with the largest cosine to it, after normalizing the remaining ones.
 
@@ -170,26 +185,32 @@ class TSNSGAII(Algorithm):
         the vectors are reused in order until ``pop_size`` solutions are chosen.
         """
         N = self.pop_size
-        rank = non_dominate_rank(fit)
+        rank = rank_with_constraints(fit, cv)
         sorted_rank, _ = torch.sort(rank)
         candidate = rank <= sorted_rank[N - 1]
 
         chosen = []
         remaining = candidate.clone()
         n_w = self.w.shape[0]
+        totals = None if cv is None else total_violation(cv)
         for t in range(N):
             f_min = _masked_min(fit, remaining)
             f_max = _masked_max(fit, remaining)
             norm_fit = (fit - f_min) / torch.clamp(f_max - f_min, min=torch.finfo(fit.dtype).tiny)
             cosine = _cosine(norm_fit, self.w[t % n_w].unsqueeze(0)).squeeze(1)
-            best = torch.argmax(torch.where(remaining, cosine, -torch.inf))
+            eligible = remaining
+            if cv is not None:
+                minimum_cv = torch.where(remaining, totals, torch.inf).amin()
+                eligible = remaining & (totals == minimum_cv)
+            best = torch.argmax(torch.where(eligible, cosine, -torch.inf))
             chosen.append(best)
             remaining = remaining.clone()
             remaining[best] = False
         survivor_idx = torch.stack(chosen)
 
         new_fit = fit[survivor_idx]
-        new_front = non_dominate_rank(new_fit)
+        self.cv = take_violation(cv, survivor_idx)
+        new_front = rank_with_constraints(new_fit, self.cv)
         # Density of each solution's region (number of selected solutions closest in cosine to the same vector).
         region = torch.argmax(_cosine(_normalize(new_fit), self.w), dim=1)
         density = torch.bincount(region, minlength=n_w)[region].to(new_fit.dtype)
@@ -216,42 +237,3 @@ def _cosine(norm_fit, w):
     norm_val = torch.clamp(torch.norm(norm_fit, dim=1, keepdim=True), min=tiny)
     w_norm = torch.clamp(torch.norm(w, dim=1, keepdim=True), min=tiny)
     return (norm_fit @ w.T) / (norm_val @ w_norm.T)
-
-
-# === FIXED DEMO BLOCK ===
-if __name__ == "__main__":
-    import time
-
-    import torch
-    from evox.metrics import igd
-    from evox.problems.numerical import DTLZ2
-    from evox.workflows import StdWorkflow
-
-    torch.set_default_device("cuda")
-
-    algo = TSNSGAII(pop_size=100, n_objs=3, lb=-torch.zeros(12), ub=torch.ones(12))
-    prob = DTLZ2(m=3)
-    pf = prob.pf()
-    workflow = StdWorkflow(algo, prob)
-    workflow.init_step()
-    jit_state_step = torch.compile(workflow.step)
-
-    # 1. Trigger JIT compilation (First step)
-    jit_state_step()
-
-    # 2. Pure execution (Remaining 49 steps)
-    torch.cuda.synchronize()
-    exec_start = time.perf_counter()
-
-    for i in range(1, 50):
-        jit_state_step()
-
-        if (i + 1) % 5 == 0:
-            fit = workflow.algorithm.fit
-            # Simple NaN filtering for metric calculation
-            fit = fit[~torch.any(torch.isnan(fit), dim=1)]
-            print(f"Gen {i + 1} IGD: {igd(fit, pf)}")
-
-    torch.cuda.synchronize()
-    exec_time = time.perf_counter() - exec_start
-    print(f"Execution time for Gen 2-50 (49 steps): {exec_time:.4f}s (Avg: {exec_time / 49:.4f}s/gen)")

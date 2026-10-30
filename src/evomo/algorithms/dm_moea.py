@@ -1,11 +1,80 @@
 import torch
 from evox.core import Algorithm, Mutable
-from evox.operators.crossover import simulated_binary
-from evox.operators.selection import crowding_distance, tournament_selection_multifit
-from evox.utils import clamp, lexsort
+from evox.operators.crossover import simulated_binary_half
+from evox.operators.selection import tournament_selection_multifit
+from evox.utils import clamp
 
-from evomo.operators.selection import nd_environmental_selection, non_dominate_rank
-from evomo.utils import unique_rows_sorted
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    take_violation,
+)
+from evomo.utils import register_lazy_buffer
+
+from .sparseea import (
+    _evaluate_sparse,
+    _initialize_sparse,
+    _select_sparse,
+    _sparse_mask_variation,
+    _sparse_offspring_count,
+)
+from .sparseea2 import _grouped_real_mutation
+
+
+def _train_mlp(history, active, hidden=10, epochs=500):
+    """Batched implementation of DM-MOEA's explicitly trained sigmoid network."""
+    time, count, dim = history.shape
+    result = history.new_zeros((count, dim))
+    if time < 2 or not bool(active.any()):
+        return history[-1].clone()
+    data = history[:, :, active].transpose(0, 1)
+    x, target = data[:, :-1], data[:, -1:]
+    features = data.shape[-1]
+    w1 = torch.randn(count, features, hidden, dtype=history.dtype, device=history.device)
+    w2 = torch.randn(count, hidden, features, dtype=history.dtype, device=history.device)
+    b1 = torch.randn(count, 1, hidden, dtype=history.dtype, device=history.device)
+    b2 = torch.randn(count, 1, features, dtype=history.dtype, device=history.device)
+    for _ in range(epochs):
+        latent = torch.sigmoid(x @ w1 + b1)
+        output = torch.sigmoid(latent @ w2 + b2)
+        delta = output - target
+        hidden_delta = (delta @ w2.transpose(1, 2)) * latent * (1 - latent)
+        dw2, dw1 = latent.transpose(1, 2) @ delta, x.transpose(1, 2) @ hidden_delta
+        w2, w1 = w2 - 0.1 * dw2, w1 - 0.1 * dw1
+        b2, b1 = b2 - 0.1 * delta.sum(1, keepdim=True), b1 - 0.1 * hidden_delta.sum(1, keepdim=True)
+    result[:, active] = torch.sigmoid(torch.sigmoid(data[:, -1:] @ w1 + b1) @ w2 + b2).squeeze(1)
+    return result
+
+
+def _predict_svr_mask(history, iterations=200, epsilon=0.1, box=1.0):
+    """RBF epsilon-SVR dual with the equality and box constraints enforced by proximal projection."""
+    data = history.transpose(0, 1)
+    x, y = data[:, :-1], data[:, 1:]
+    n, time, dim = x.shape
+    varying = data.amin(1) != data.amax(1)
+    x = x * varying[:, None]
+    query = data[:, -1:] * varying[:, None]
+    kernel = torch.exp(-0.5 * torch.cdist(x, x).square())
+    query_kernel = torch.exp(-0.5 * torch.cdist(query, x).square())
+    coefficient = torch.zeros_like(y)
+    step = 1 / kernel.sum(2).amax(1).clamp_min(1)
+    for _ in range(iterations):
+        candidate = coefficient - step[:, None, None] * (kernel @ coefficient - y)
+        lower, upper = candidate.amin(1, keepdim=True) - box, candidate.amax(1, keepdim=True) + box
+        for _ in range(16):
+            middle = (lower + upper) / 2
+            centered = candidate - middle
+            projected = centered.sign() * (centered.abs() - step[:, None, None] * epsilon).clamp_min(0)
+            projected = projected.clamp(-box, box)
+            positive = projected.sum(1, keepdim=True) > 0
+            lower, upper = torch.where(positive, middle, lower), torch.where(positive, upper, middle)
+        coefficient = projected
+    residual = y - kernel @ coefficient - epsilon * coefficient.sign()
+    free = (coefficient.abs() > 1e-4) & (coefficient.abs() < box - 1e-4)
+    bias = torch.where(free, residual, 0).sum(1) / free.sum(1).clamp_min(1)
+    bias = torch.where(free.any(1), bias, residual.mean(1))
+    prediction = (query_kernel @ coefficient).squeeze(1) + bias
+    sampled = prediction > torch.rand(n, dim, dtype=data.dtype, device=data.device)
+    return torch.where(varying, sampled, data[:, -1].bool())
 
 
 class DMMOEA(Algorithm):
@@ -24,17 +93,17 @@ class DMMOEA(Algorithm):
         :param ub: Required. Upper decision bounds of shape ``(D,)``. The decision dimension is inferred from the
             bounds, rather than passed separately. Match ``lb`` in shape, dtype and device.
         :type ub: torch.Tensor
-        :param kwargs: Default: ``{}``. Extra keyword arguments are accepted for constructor compatibility but are not
-            read by this implementation. In particular, passing ``device=...`` here does not move tensors; place both
-            bounds on the intended device before construction.
+        :param kwargs: Optional ``max_fe`` bounds actual evaluations, including probes and initialization.
+            Place bounds on the intended device; ``device=...`` does not move them.
+            ``detect_change=False`` disables dynamic-environment detection for static-only use.
         :type kwargs: dict
 
         .. note::
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -46,7 +115,7 @@ class DMMOEA(Algorithm):
         self.lb = lb
         self.ub = ub
         self.dim = lb.numel()
-        self.P = 5  # History size
+        self.P = 4  # Number of preceding environment snapshots
         self.H = 10  # Hidden size for MLP
 
         # Initialize State (Mutables)
@@ -56,210 +125,105 @@ class DMMOEA(Algorithm):
         self.var_fit = Mutable(torch.zeros(self.dim, device=device))
 
         # History Buffers
-        self.dec_history = Mutable(torch.zeros(self.P + 1, pop_size, self.dim, device=device))
-        self.mask_history = Mutable(torch.zeros(self.P + 1, pop_size, self.dim, device=device))
+        self.dec_history = Mutable(torch.zeros(self.P + 1, pop_size, self.dim, dtype=lb.dtype, device=device))
+        self.mask_history = Mutable(torch.zeros(self.P + 1, pop_size, self.dim, dtype=lb.dtype, device=device))
         self.iter_count = Mutable(torch.tensor(0, dtype=torch.int32, device=device))
         self.dis = Mutable(torch.zeros(pop_size, device=device))
         self.rank = Mutable(torch.full((pop_size,), torch.iinfo(torch.int32).max, dtype=torch.int32, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+        self.fe = Mutable(torch.tensor(0, dtype=torch.int64, device=device))
+        self.change_count = Mutable(torch.tensor(0, dtype=torch.int64, device=device))
+        self.history_count = Mutable(torch.tensor(1, dtype=torch.int64, device=device))
+        self.max_fe = kwargs.get("max_fe")
+        self.detect_change = kwargs.get("detect_change", True)
+
     def init_step(self) -> None:
-        """Evaluate the initial population and initialize algorithm state.
+        _initialize_sparse(self)
+        self.dec_history[0] = self.pop
+        self.mask_history[0] = self.mask.to(self.pop.dtype)
 
-        Invoke through ``workflow.init_step()`` before the first optimization step.
+    def _remaining(self):
+        return 2**31 if self.max_fe is None else max(0, self.max_fe - int(self.fe))
 
-        :returns: ``None``; results are stored in algorithm state.
-        """
-        device = self.lb.device
-        # A. Initialization (Variable Fitness Estimation)
-        test_mask = torch.eye(self.dim, device=device).bool()
-        test_dec = torch.full((self.dim, self.dim), 0.5, device=device) * (self.ub - self.lb) + self.lb
+    def _batched_mlp_predict(self, history):
+        return _train_mlp(history, self.mask.any(0), hidden=self.H)
 
-        # Evaluate D solutions where each solution i has only variable i active
-        test_fit = self.evaluate(test_dec * test_mask)
-        ranks = non_dominate_rank(test_fit)
-        self.var_fit = ranks.float()
+    def _batched_krr_predict(self, history):
+        # Kept as a private compatibility name; the model is now epsilon-SVR, not kernel ridge regression.
+        return _predict_svr_mask(history)
 
-        # Initial Population Evaluation
-        self.fit = self.evaluate(self.pop * self.mask)
+    def _environment_changed(self):
+        count = min((self.pop_size + 9) // 10, self._remaining())
+        if not count:
+            return False
+        indices = torch.randperm(len(self.pop), device=self.pop.device)[:count]
+        fit, cv = _evaluate_sparse(self, self.pop[indices] * self.mask[indices])
+        self._last_change_probe = indices, fit, cv
+        changed = not torch.equal(fit, self.fit[indices])
+        if (cv is None) != (self.cv is None):
+            return True
+        return changed or (cv is not None and not torch.equal(cv, self.cv[indices]))
 
-        # Initial Selection to set rank/dis
-        _, _, self.rank, self.dis, _ = nd_environmental_selection(self.pop, self.fit, self.pop_size)
-
-    def _batched_mlp_predict(self, history: torch.Tensor) -> torch.Tensor:
-        # history: (P, N, D) -> (N*D, P)
-        P, N, D = history.shape
-        x = history.permute(1, 2, 0).reshape(-1, P)
-
-        # Simple deterministic weights for JIT-friendly "prediction"
-        W1 = torch.ones(P, self.H, device=history.device) / P
-        W2 = torch.ones(self.H, 1, device=history.device) / self.H
-
-        out = torch.relu(x @ W1) @ W2
-        return out.view(N, D)
-
-    def _batched_krr_predict(self, history: torch.Tensor) -> torch.Tensor:
-        # history: (P, N, D) -> (N*D, P)
-        P, N, D = history.shape
-        X = torch.arange(P, device=history.device).float().view(-1, 1)
-        Y = history.reshape(P, -1)  # (P, N*D)
-
-        # K = exp(-gamma * dist^2)
-        K = torch.exp(-0.1 * torch.cdist(X, X) ** 2)
-        # alpha = (K + lambda I)^-1 Y
-        identity = torch.eye(P, device=history.device)
-        alpha = torch.linalg.solve(K + 1e-4 * identity, Y)
-
-        # Predict next step (P+1)
-        K_test = torch.exp(-0.1 * torch.cdist(torch.tensor([[float(P)]], device=history.device), X) ** 2)
-        pred = (K_test @ alpha).view(N, D)
-        return pred > 0.5
+    def _respond_to_change(self):
+        if self._remaining() < self.pop_size:
+            indices, fit, cv = self._last_change_probe
+            repeat = torch.arange(self.pop_size, device=self.pop.device) % len(indices)
+            self.pop, self.mask, self.fit, self.cv, self.rank, self.dis = _select_sparse(
+                self.pop[indices][repeat], self.mask[indices][repeat], fit[repeat], take_violation(cv, repeat), self.pop_size
+            )
+            self.change_count = self.change_count + 1
+            return
+        # All incumbent caches must describe the new environment before selection.
+        self.fit, self.cv = _evaluate_sparse(self, self.pop * self.mask)
+        self.pop, self.mask, self.fit, self.cv, self.rank, self.dis = _select_sparse(
+            self.pop, self.mask, self.fit, self.cv, self.pop_size
+        )
+        self.change_count = self.change_count + 1
+        count = int(self.history_count)
+        if count == self.P + 1:
+            self.dec_history = torch.cat([self.dec_history[1:], self.pop[None]])
+            self.mask_history = torch.cat([self.mask_history[1:], self.mask.to(self.pop.dtype)[None]])
+        else:
+            self.dec_history[count] = self.pop
+            self.mask_history[count] = self.mask.to(self.pop.dtype)
+            self.history_count = self.history_count + 1
+        count = int(self.history_count)
+        history = self.dec_history[:count]
+        mask = self.mask if int(self.change_count) < self.P else self._batched_krr_predict(self.mask_history[:count])
+        decisions = clamp(_train_mlp(history, mask.any(0), hidden=self.H), self.lb, self.ub)
+        size = min(self.pop_size, self._remaining())
+        if not size:
+            return
+        decisions, mask = decisions[:size], mask[:size]
+        fit, cv = _evaluate_sparse(self, decisions * mask)
+        self.pop, self.mask, self.fit, self.cv, self.rank, self.dis = _select_sparse(
+            torch.cat([self.pop, decisions]),
+            torch.cat([self.mask, mask]),
+            torch.cat([self.fit, fit]),
+            cat_violation(self.cv, cv),
+            self.pop_size,
+        )
 
     def step(self) -> None:
-        """Advance optimization and update population and fitness state in place.
-
-        Invoke through ``workflow.step()`` after initialization. The caller controls termination.
-
-        :returns: ``None``; results are stored in algorithm state.
-        """
-        device = self.lb.device
-        self.iter_count += 1
-
-        # 1. Dynamic Prediction (Triggered every 20 gens as proxy for "Change")
-        # Update history buffers
-        new_dec_hist = torch.cat([self.dec_history[1:], self.pop.unsqueeze(0)], dim=0)
-        new_mask_hist = torch.cat([self.mask_history[1:], self.mask.float().unsqueeze(0)], dim=0)
-        self.dec_history = new_dec_hist
-        self.mask_history = new_mask_hist
-
-        # Apply Dual-Model Prediction if buffer is full
-        is_change = self.iter_count % 20 == 0
-        pred_dec = torch.where(is_change, self._batched_mlp_predict(self.dec_history[: self.P]), self.pop)
-        pred_mask = torch.where(is_change, self._batched_krr_predict(self.mask_history[: self.P]), self.mask)
-
-        # 2. Mating / Variation
-        # Tournament Selection based on Rank and Crowding Distance
-        mating_pool = tournament_selection_multifit(self.pop_size, [-self.dis, self.rank.float()], tournament_size=2)
-
-        # Real-valued variation (SBX)
-        off_dec = simulated_binary(pred_dec[mating_pool], pro_c=1.0, dis_c=20.0)
-        off_dec = clamp(off_dec, self.lb, self.ub)
-
-        # Mask variation
-        p1_idx = mating_pool[: self.pop_size // 2]
-        p2_idx = mating_pool[self.pop_size // 2 :]
-        mask_p1 = pred_mask[p1_idx]
-        mask_p2 = pred_mask[p2_idx]
-
-        # Crossover masks
-        off_mask = torch.where(torch.rand(self.pop_size // 2, self.dim, device=device) < 0.5, mask_p1, mask_p2)
-        off_mask = torch.cat([off_mask, off_mask], dim=0)  # Match pop_size
-
-        # Mutation masks (Bug #20 Compliance)
-        mut_prob = 1.0 / self.dim
-        mut_mask = torch.rand(self.pop_size, self.dim, device=device) < mut_prob
-
-        # Apply mutation: flip bits where mut_mask is true
-        off_mask = torch.where(mut_mask, ~off_mask, off_mask)
-
-        # 3. Evaluation
-        off_fit = self.evaluate(off_dec * off_mask)
-
-        # 4. Environmental Selection (Bug #9 & #21 Compliance)
-        merged_pop = torch.cat([self.pop, off_dec], dim=0)
-        merged_mask = torch.cat([self.mask, off_mask], dim=0)
-        merged_fit = torch.cat([self.fit, off_fit], dim=0)
-
-        # Unique Filtering (Bug #3)
-        u_pop_combined = torch.cat([merged_pop, merged_mask.float()], dim=1)
-        _, u_idx = unique_rows_sorted(u_pop_combined)
-        merged_pop, merged_mask, merged_fit = merged_pop[u_idx], merged_mask[u_idx], merged_fit[u_idx]
-
-        # Non-dominated sorting
-        ranks = non_dominate_rank(merged_fit)
-
-        # Front Peeling Loop (Bug #9)
-        num_selected = 0
-        next_indices = torch.zeros(self.pop_size, dtype=torch.long, device=device)
-        current_front = 0
-
-        total_n = merged_fit.shape[0]
-        remaining_mask = torch.ones(total_n, dtype=torch.bool, device=device)
-
-        # Pre-allocate results
-        final_ranks = torch.zeros(self.pop_size, dtype=torch.int32, device=device)
-        final_dis = torch.zeros(self.pop_size, device=device)
-
-        while num_selected < self.pop_size:
-            mask = (ranks == current_front) & remaining_mask
-            num_in_front = mask.sum()
-
-            # Deadlock Breaker
-            mask = torch.where(num_in_front == 0, remaining_mask, mask)
-            num_in_front = mask.sum()
-
-            # Crowding Distance (Bug #6, #21)
-            dist = crowding_distance(merged_fit, mask)
-
-            # Selection within front
-            if num_selected + num_in_front <= self.pop_size:
-                # Take whole front
-                idx = torch.where(mask)[0]
-                next_indices[num_selected : num_selected + num_in_front] = idx
-                final_ranks[num_selected : num_selected + num_in_front] = current_front
-                final_dis[num_selected : num_selected + num_in_front] = dist[mask]
-                num_selected += num_in_front
-            else:
-                # Partial front selection using lexsort (Bug #25)
-                needed = self.pop_size - num_selected
-                front_indices = torch.where(mask)[0]
-                front_dist = dist[mask]
-                # Primary key (Rank) is last, but here rank is constant, so sort by -dist
-                sort_idx = lexsort(torch.stack([-front_dist]))
-                sel_idx = front_indices[sort_idx[:needed]]
-                next_indices[num_selected:] = sel_idx
-                final_ranks[num_selected:] = current_front
-                final_dis[num_selected:] = front_dist[sort_idx[:needed]]
-                num_selected = self.pop_size
-
-            remaining_mask = remaining_mask & (~mask)
-            current_front += 1
-
-        self.pop = merged_pop[next_indices]
-        self.mask = merged_mask[next_indices]
-        self.fit = merged_fit[next_indices]
-        self.rank = final_ranks
-        self.dis = final_dis
-
-
-if __name__ == "__main__":
-    import time
-
-    from evox.metrics import igd
-    from evox.problems.numerical import DTLZ2
-    from evox.workflows import StdWorkflow
-
-    torch.set_default_device("cuda")
-
-    algo = DMMOEA(pop_size=100, n_objs=3, lb=torch.zeros(12), ub=torch.ones(12))
-    prob = DTLZ2(m=3)
-    pf = prob.pf()
-    workflow = StdWorkflow(algo, prob)
-    workflow.init_step()
-    jit_state_step = torch.compile(workflow.step)
-
-    jit_state_step()
-
-    torch.cuda.synchronize()
-    exec_start = time.perf_counter()
-
-    for i in range(1, 50):
-        jit_state_step()
-
-        if (i + 1) % 5 == 0:
-            fit = workflow.algorithm.fit
-            fit = fit[~torch.any(torch.isnan(fit), dim=1)]
-            print(f"Gen {i + 1} IGD: {igd(fit, pf)}")
-
-    torch.cuda.synchronize()
-    exec_time = time.perf_counter() - exec_start
-    print(f"Execution time for Gen 2-50 (49 steps): {exec_time:.4f}s (Avg: {exec_time / 49:.4f}s/gen)")
+        if self._remaining() == 0:
+            return
+        self.iter_count = self.iter_count + 1
+        if self.detect_change and self._environment_changed():
+            self._respond_to_change()
+        n = _sparse_offspring_count(self)
+        if not n:
+            return
+        mating = tournament_selection_multifit(2 * n, [-self.dis, self.rank.float()], tournament_size=2)
+        masks = self.mask[mating]
+        decisions = simulated_binary_half(self.pop[mating], pro_c=1.0, dis_c=20.0)
+        decisions, groups = _grouped_real_mutation(decisions, self.lb, self.ub)
+        mask = _sparse_mask_variation(masks[:n], masks[n:], self.var_fit, groups)
+        fit, cv = _evaluate_sparse(self, decisions * mask)
+        self.pop, self.mask, self.fit, self.cv, self.rank, self.dis = _select_sparse(
+            torch.cat([self.pop, decisions]),
+            torch.cat([self.mask, mask]),
+            torch.cat([self.fit, fit]),
+            cat_violation(self.cv, cv),
+            self.pop_size,
+        )

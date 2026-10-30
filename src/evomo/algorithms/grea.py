@@ -6,7 +6,14 @@ from evox.operators.crossover import simulated_binary
 from evox.operators.mutation import polynomial_mutation
 from evox.utils import clamp
 
-from evomo.operators.selection import non_dominate_rank
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    prefer_by_constraint,
+    rank_with_constraints,
+    take_violation,
+    total_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 # Recommended grid divisions, indexed by the number of objectives
 _DEFAULT_DIV = (0, 0, 45, 15, 10, 9, 9, 8, 8, 10, 12)
@@ -42,8 +49,8 @@ class GrEA(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -63,6 +70,8 @@ class GrEA(Algorithm):
         self.pop = Mutable(torch.rand(pop_size, D, device=device) * (ub - lb) + lb)
         self.fit = Mutable(torch.full((pop_size, n_objs), torch.inf, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -70,7 +79,7 @@ class GrEA(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
 
     def _grid(self, fit: torch.Tensor):
         """Grid location of each solution, with the grid's lower bound and cell width."""
@@ -110,6 +119,9 @@ class GrEA(Algorithm):
         g_dominate = (g1 < g2).any(dim=1).int() - (g1 > g2).any(dim=1).int()
         tie = (dominate == 0) & (g_dominate == 0)
         first = (dominate == 1) | (g_dominate == 1) | (tie & (gcd[p1] <= gcd[p2]))
+        if self.cv is not None:
+            total = total_violation(self.cv)
+            first = prefer_by_constraint(first, total[p1], total[p2])
         return torch.where(first, p1, p2)
 
     def _last_selection(self, fit: torch.Tensor, k: int) -> torch.Tensor:
@@ -164,12 +176,13 @@ class GrEA(Algorithm):
         offspring = simulated_binary(parents)
         offspring = polynomial_mutation(offspring, self.lb, self.ub)
         offspring = clamp(offspring, self.lb, self.ub)
-        off_fit = self.evaluate(offspring)
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
 
         # 3. Environmental Selection: complete fronts first, then the last front by grid-based selection
         c_pop = torch.cat([self.pop, offspring], dim=0)
         c_fit = torch.cat([self.fit, off_fit], dim=0)
-        c_rank = non_dominate_rank(c_fit)
+        c_cv = cat_violation(self.cv, off_cv)
+        c_rank = rank_with_constraints(c_fit, c_cv)
         last_rank = torch.sort(c_rank).values[N - 1]
         survivor_mask = c_rank < last_rank
         last = torch.where(c_rank == last_rank)[0]
@@ -178,6 +191,7 @@ class GrEA(Algorithm):
 
         self.pop = c_pop[survivor_mask]
         self.fit = c_fit[survivor_mask]
+        self.cv = take_violation(c_cv, survivor_mask)
 
 
 if __name__ == "__main__":

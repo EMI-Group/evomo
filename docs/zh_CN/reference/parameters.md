@@ -12,18 +12,20 @@
 | `pop_size` | 正整数 | 请求的候选解数量。部分参考向量算法会按实际采样数调整，请读取 `algorithm.pop.shape[0]`。`GDE3` 至少需要 4 个候选解；`MOEAD`、`TensorMOEAD` 的实际采样数必须大于 10。 |
 | `n_objs` | 整数，通常至少为 2 | 最小化目标的个数，须匹配问题返回目标张量的列数，与决策维数不同。 |
 | `lb`、`ub` | 浮点张量，`(D,)` | 每个决策变量的下界、上界。形状、dtype、设备须一致，并逐元素满足 `lb <= ub`。`D` 由边界推断。 |
-| `device` | 显式支持时为 `torch.device` 或 `None` | 暴露该参数的构造函数中，`None` 表示 `torch.get_default_device()`，并将边界移动到指定设备。大多数其他算法在 `lb.device` 上分配张量。 |
+| `device` | 显式支持时为 `torch.device` 或 `None` | 通常 `None` 表示 `torch.get_default_device()`；`MaOEAHAP`、`NRVMOEA`、`HEA`、`GCNMOEA` 则保留 `lb.device`。显式传入时将边界移动到指定设备。 |
 | `**kwargs` | 支持时为额外命名设置 | 通常不会读取，包括未识别的 `device` 关键字。`LSMOF` 读取下文所列的四项设置。能接受关键字不表示对应功能生效。 |
 
 显式支持 `device` 的构造函数是 `HypE`、`IBEA`、`LMOCSO`、`MOEAD`、`NSGA2`、`NSGA3`、
-`RVEA`、`RVEAa` 和 `TensorMOEAD`。其他算法需要先将两个边界张量放到目标设备，再构造算法。
+`RVEA`、`RVEAa`、`TensorMOEAD`、`MaOEAHAP`、`NRVMOEA`、`HEA` 和 `GCNMOEA`。
+其他算法需要先将两个边界张量放到目标设备，再构造算法。
 
 初始化后，常见状态 `pop` 的决策维数为 `D`，`fit` 的目标维数为 `n_objs`。
 算法还可能保存档案、稀疏掩码、速度、参考向量或 NaN 占位槽；读取状态时按算法语义筛选有效结果。
 `step()` 原地更新状态并返回 `None`，调用前需要先执行 `workflow.init_step()`。
 
-当前这组算法中，文档说明的 `NSGA2` 评估路径支持 `(fitness, constraint_violation)`。
-其他当前实现要求返回目标张量。接入约束问题前请阅读[约束指南](../guide/constraints.md)。
+约束支持因算法而异。接入返回 `(fitness, constraint_violation)` 的问题前，请阅读
+[约束指南](../guide/constraints.md)和具体算法文档；图与档案算法的支持范围和限制见
+[算法目录](../guide/algorithms.md#图与档案算法)。
 
 ## 分解与差分进化
 

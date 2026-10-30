@@ -10,9 +10,11 @@ __all__ = [
     "DMMOEA",
     "EFRRR",
     "GDE3",
+    "GCNMOEA",
     "GWASFGA",
     "GrEA",
     "HypE",
+    "HEA",
     "IBEA",
     "KnEA",
     "LMOCSO",
@@ -28,6 +30,8 @@ __all__ = [
     "MOEAD_DRA",
     "MOEAD_PaS",
     "MaOEACSS",
+    "MaOEAHAP",
+    "NRVMOEA",
     "NSBiDiCo",
     "NSGA2",
     "NSGA3",
@@ -69,15 +73,18 @@ from .commea import CoMMEA
 from .dm_moea import DMMOEA
 from .e_moea import eMOEA
 from .efr_rr import EFRRR
+from .gcnmoea import GCNMOEA
 from .gde3 import GDE3
 from .grea import GrEA
 from .gwasf_ga import GWASFGA
+from .hea import HEA
 from .hype import HypE
 from .ibea import IBEA
 from .knea import KnEA
 from .lmocso import LMOCSO
 from .lsmof import LSMOF
 from .maoea_css import MaOEACSS
+from .maoea_hap import MaOEAHAP
 from .moead import MOEAD
 from .moead_awa import MOEADAWA
 from .moead_dcwv import MOEAD_DCWV
@@ -88,6 +95,7 @@ from .moead_dyts import MOEADDYTS
 from .moead_frrmab import MOEADFRRMAB
 from .moead_pas import MOEAD_PaS
 from .moead_uraw import MOEAURAW
+from .nrv_moea import NRVMOEA
 from .nsbidico import NSBiDiCo
 from .nsga2 import NSGA2
 from .nsga2_sdr import NSGAII_SDR

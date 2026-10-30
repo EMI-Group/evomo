@@ -5,7 +5,16 @@ from evox.operators.mutation import polynomial_mutation
 from evox.operators.selection import crowding_distance, tournament_selection_multifit
 from evox.utils import clamp, lexsort
 
-from evomo.operators.selection import nd_environmental_selection, non_dominate_rank
+from evomo.operators.selection import nd_environmental_selection
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    constrained_crowding_selection,
+    constraint_keys,
+    rank_with_constraints,
+    take_violation,
+)
+from evomo.operators.selection.non_dominate import dominate_relation
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
 class CoMMEA(Algorithm):
@@ -37,8 +46,8 @@ class CoMMEA(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -63,6 +72,9 @@ class CoMMEA(Algorithm):
         self.fit2 = Mutable(torch.full((pop_size, n_objs), torch.inf, device=device))
         self.spea2_fit2 = Mutable(torch.zeros(pop_size, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+        register_lazy_buffer(self, "cv2", device_like="pop")
+
     def _harmonic_crowding(self, pop: torch.Tensor, k: int = 3) -> torch.Tensor:
         # Section 3C: Harmonic Crowding Distance (Decision Space)
         dist = torch.cdist(pop, pop, p=2)
@@ -77,7 +89,7 @@ class CoMMEA(Algorithm):
         D_mat = torch.cdist(pop, pop, p=2)
 
         # Bug #24: Pareto Dominance
-        dom_obj = (fit.unsqueeze(1) <= fit.unsqueeze(0)).all(-1) & (fit.unsqueeze(1) < fit.unsqueeze(0)).any(-1)
+        dom_obj = dominate_relation(fit, fit)
 
         if local_niche:
             # Section 3A: LocalC Niche Dominance
@@ -108,8 +120,8 @@ class CoMMEA(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
-        self.fit2 = self.evaluate(self.pop2)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
+        self.fit2, self.cv2 = parse_evaluate(self.evaluate(self.pop2))
         self.spea2_fit1 = self._cal_spea2_fitness(self.pop, self.fit, local_niche=False)
         self.spea2_fit2 = self._cal_spea2_fitness(self.pop2, self.fit2, local_niche=True)
 
@@ -121,8 +133,8 @@ class CoMMEA(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        idx1 = tournament_selection_multifit(self.pop_size, [self.spea2_fit1], tournament_size=2)
-        idx2 = tournament_selection_multifit(self.pop_size, [self.spea2_fit2], tournament_size=2)
+        idx1 = tournament_selection_multifit(self.pop_size, constraint_keys([self.spea2_fit1], self.cv), tournament_size=2)
+        idx2 = tournament_selection_multifit(self.pop_size, constraint_keys([self.spea2_fit2], self.cv2), tournament_size=2)
 
         # 2. Variation
         off1 = simulated_binary(self.pop[idx1], pro_c=1.0, dis_c=20.0)
@@ -134,20 +146,26 @@ class CoMMEA(Algorithm):
         off2 = clamp(off2, self.lb, self.ub)
 
         # 3. Evaluation
-        fit_off1 = self.evaluate(off1)
-        fit_off2 = self.evaluate(off2)
+        fit_off1, cv_off1 = parse_evaluate(self.evaluate(off1))
+        fit_off2, cv_off2 = parse_evaluate(self.evaluate(off2))
 
         # 4. Environmental Selection 1 (Global Convergence)
         merged_pop1 = torch.cat([self.pop, off1], dim=0)
         merged_fit1 = torch.cat([self.fit, fit_off1], dim=0)
-        self.pop, self.fit, _, _, _ = nd_environmental_selection(merged_pop1, merged_fit1, self.pop_size)
+        if self.cv is None:
+            self.pop, self.fit, _, _, _ = nd_environmental_selection(merged_pop1, merged_fit1, self.pop_size)
+        else:
+            merged_cv1 = cat_violation(self.cv, cv_off1)
+            indices, _, _ = constrained_crowding_selection(merged_fit1, merged_cv1, self.pop_size)
+            self.pop, self.fit, self.cv = merged_pop1[indices], merged_fit1[indices], merged_cv1[indices]
         self.spea2_fit1 = self._cal_spea2_fitness(self.pop, self.fit, local_niche=False)
 
         # 5. Environmental Selection 2 (Epsilon-Diversity for Pop 2)
         merged_pop2 = torch.cat([self.pop2, off2], dim=0)
         merged_fit2 = torch.cat([self.fit2, fit_off2], dim=0)
 
-        rank = non_dominate_rank(merged_fit2)
+        merged_cv2 = cat_violation(self.cv2, cv_off2)
+        rank = rank_with_constraints(merged_fit2, merged_cv2)
         front1_mask = rank == 0
         front1_fit = merged_fit2[front1_mask]
 
@@ -157,6 +175,21 @@ class CoMMEA(Algorithm):
 
         # Keep Front 1 OR solutions not epsilon-dominated
         keep_mask = front1_mask | (~is_eps_dominated)
+
+        if merged_cv2 is not None:
+            # Keep a full mating population even when epsilon filtering leaves
+            # one point. CV takes priority, epsilon eligibility breaks ties,
+            # and the existing dual-space diversity orders the remaining pool.
+            objective_crowding = crowding_distance(merged_fit2, torch.ones_like(keep_mask))
+            decision_crowding = self._harmonic_crowding(merged_pop2)
+            selected = lexsort(constraint_keys([-(objective_crowding + decision_crowding), (~keep_mask).float()], merged_cv2))[
+                : self.pop_size
+            ]
+            self.pop2 = merged_pop2[selected]
+            self.fit2 = merged_fit2[selected]
+            self.cv2 = merged_cv2[selected]
+            self.spea2_fit2 = self._cal_spea2_fitness(self.pop2, self.fit2, local_niche=True)
+            return
 
         # Pruning if count > N
         survivor_pop = merged_pop2[keep_mask]
@@ -168,47 +201,11 @@ class CoMMEA(Algorithm):
         total_crowd = obj_crowd + dec_crowd
 
         # Bug #25: Lexsort primary key last
-        indices = lexsort(torch.stack([-total_crowd]))
+        survivor_cv = take_violation(merged_cv2, keep_mask)
+        indices = lexsort(constraint_keys([-total_crowd], survivor_cv))
         final_idx = indices[: self.pop_size]
 
         self.pop2 = survivor_pop[final_idx]
         self.fit2 = survivor_fit[final_idx]
+        self.cv2 = take_violation(survivor_cv, final_idx)
         self.spea2_fit2 = self._cal_spea2_fitness(self.pop2, self.fit2, local_niche=True)
-
-
-# === FIXED DEMO BLOCK ===
-if __name__ == "__main__":
-    import time
-
-    from evox.metrics import igd
-    from evox.problems.numerical import DTLZ2
-    from evox.workflows import StdWorkflow
-
-    torch.set_default_device("cuda")
-
-    algo = CoMMEA(pop_size=100, n_objs=3, lb=torch.zeros(12), ub=torch.ones(12))
-    prob = DTLZ2(m=3)
-    pf = prob.pf()
-    workflow = StdWorkflow(algo, prob)
-    workflow.init_step()
-    jit_state_step = torch.compile(workflow.step)
-
-    # 1. Trigger JIT compilation (First step)
-    jit_state_step()
-
-    # 2. Pure execution (Remaining 49 steps)
-    torch.cuda.synchronize()
-    exec_start = time.perf_counter()
-
-    for i in range(1, 50):
-        jit_state_step()
-
-        if (i + 1) % 5 == 0:
-            fit = workflow.algorithm.fit
-            # Simple NaN filtering for metric calculation
-            fit = fit[~torch.any(torch.isnan(fit), dim=1)]
-            print(f"Gen {i + 1} IGD: {igd(fit, pf)}")
-
-    torch.cuda.synchronize()
-    exec_time = time.perf_counter() - exec_start
-    print(f"Execution time for Gen 2-50 (49 steps): {exec_time:.4f}s (Avg: {exec_time / 49:.4f}s/gen)")

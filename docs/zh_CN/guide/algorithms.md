@@ -60,6 +60,29 @@ algorithm = TensorMOEAD(
 
 ## 其他公开算法
 
+### 图与档案算法
+
+新增 `MaOEAHAP`、`NRVMOEA`、`HEA` 和 `GCNMOEA`，参考 PlatEMO 提交
+`d25e65d1ffba58dbf4d7e1b5259786187d12968a`。`max_evaluations=100000` 控制内部
+调度，实际终止由工作流调用者控制；`device=None` 使用边界张量所在的设备。
+
+- `MaOEAHAP` 维护两个档案，每步评估 `2*pop_size` 个子代。
+- `NRVMOEA` 使用垂直投影和 Ward 聚类，保留原版可能返回 N+M 个成员的行为。
+- 两个档案算法均提供 `valid` 掩码。用 `algorithm.fit[algorithm.valid]` 获取有效成员；
+  填充行不参与交配与选择。
+- `HEA` 按 `max_t=.05` 和评估预算调整超支配阈值。HEA 与 GCNMOEA 的实际种群数
+  由参考向量采样决定。
+- `GCNMOEA` 将邻域与 PSO 粒子改为同步更新，属于张量化变体，与原版逐个更新的
+  随机搜索轨迹可能不同。默认 `graph_samples=50`、`particles=30`、
+  `pso_iterations=100` 对应原版的计算常量。`evaluations` 统计全部评估，包括探测与
+  固定形状填充行；`search_evaluations` 对应外层搜索调度。比较预算时应计入探测评估。
+  内部张量循环要求问题评估和监控不在循环内修改外部状态，默认监控器可用。
+  局部精确 HV 的代价随邻域大小呈指数增长。
+
+前三个算法支持实数、目标值评估，遇到约束元组会明确报错。GCNMOEA 保留约束元组，
+邻域替换沿用原版违反量规则；其他筛选和 PSO 目标仍只使用目标值。
+编译之前先调用 `workflow.init_step()`。
+
 为便于检索，下面保留源码中的类名拼写：
 
 | 分组 | 导出名称 |

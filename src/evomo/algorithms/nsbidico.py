@@ -5,8 +5,14 @@ from evox.operators.mutation import polynomial_mutation
 from evox.operators.selection import crowding_distance, tournament_selection_multifit
 from evox.utils import clamp
 
-from evomo.operators.selection import non_dominate_rank
-from evomo.utils import unique_rows_sorted
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    constraint_keys,
+    rank_with_constraint_objective,
+    rank_with_constraints,
+    take_violation,
+)
+from evomo.utils import minmax_normalize, pairwise_cosine_similarity, parse_evaluate, register_lazy_buffer, unique_rows_sorted
 
 
 class NSBiDiCo(Algorithm):
@@ -34,8 +40,8 @@ class NSBiDiCo(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -56,6 +62,9 @@ class NSBiDiCo(Algorithm):
         self.archive_pop = Mutable(torch.rand(pop_size, D, device=device) * (ub - lb) + lb)
         self.archive_fit = Mutable(torch.full((pop_size, n_objs), torch.inf, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+        register_lazy_buffer(self, "archive_cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -63,18 +72,15 @@ class NSBiDiCo(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
-        self.archive_fit = self.evaluate(self.archive_pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
+        self.archive_fit, self.archive_cv = parse_evaluate(self.evaluate(self.archive_pop))
 
     def _calculate_cosine_rank(self, objs: torch.Tensor) -> torch.Tensor:
         # Normalization (Bug #12)
-        f_min = torch.min(objs, dim=0, keepdim=True)[0]
-        f_max = torch.max(objs, dim=0, keepdim=True)[0]
-        norm_obj = (objs - f_min) / (f_max - f_min + 1e-10) + 1e-10
+        norm_obj = minmax_normalize(objs, eps=1e-10) + 1e-10
 
         # Cosine Similarity Matrix (Vectorized)
-        norms = torch.norm(norm_obj, dim=1, keepdim=True)
-        sim_matrix = (norm_obj @ norm_obj.T) / (norms @ norms.T + 1e-6)
+        sim_matrix = pairwise_cosine_similarity(norm_obj, eps=1e-6, mode="product", clamp=False)
         angle_matrix = torch.acos(torch.clamp(sim_matrix, -1.0, 1.0))
 
         # Angle Rank: Rank based on proximity in objective space
@@ -84,7 +90,7 @@ class NSBiDiCo(Algorithm):
         angle_rank = torch.argsort(torch.argsort(sorted_angle, dim=0), dim=0).float().sum(dim=1)
         return angle_rank
 
-    def _update_archive(self, pop, fit, arc_pop, arc_fit, off_pop, off_fit):
+    def _update_archive(self, pop, fit, arc_pop, arc_fit, off_pop, off_fit, cv=None):
         combined_pop = torch.cat([pop, arc_pop, off_pop], dim=0)
         combined_fit = torch.cat([fit, arc_fit, off_fit], dim=0)
 
@@ -92,7 +98,8 @@ class NSBiDiCo(Algorithm):
         u_pop, u_idx = unique_rows_sorted(combined_pop)
         u_fit = combined_fit[u_idx]
 
-        ranks = non_dominate_rank(u_fit)
+        u_cv = take_violation(cv, u_idx)
+        ranks = rank_with_constraint_objective(u_fit, u_cv)
         mask_f1 = ranks == 0
         front1_pop = u_pop[mask_f1]
         front1_fit = u_fit[mask_f1]
@@ -101,21 +108,20 @@ class NSBiDiCo(Algorithm):
 
         if num_f1 <= self.pop_size:
             # Pad with remaining if necessary (though usually archive is just Front 1)
+            self.archive_cv = take_violation(u_cv, mask_f1)
             return front1_pop, front1_fit
         else:
             # Greedy Peeling Vectorized (Bug #9, #41)
             # Calculate density via Mean Cosine Similarity
-            f_min = torch.min(front1_fit, dim=0, keepdim=True)[0]
-            f_max = torch.max(front1_fit, dim=0, keepdim=True)[0]
-            norm_f1 = (front1_fit - f_min) / (f_max - f_min + 1e-10) + 1e-10
-            norms = torch.norm(norm_f1, dim=1, keepdim=True)
-            sim_matrix = (norm_f1 @ norm_f1.T) / (norms @ norms.T + 1e-6)
+            norm_f1 = minmax_normalize(front1_fit, eps=1e-10) + 1e-10
+            sim_matrix = pairwise_cosine_similarity(norm_f1, eps=1e-6, mode="product", clamp=False)
 
             mean_sim = sim_matrix.sum(dim=1)
             _, drop_idx = torch.topk(mean_sim, k=num_f1 - self.pop_size)
 
             keep_mask = torch.ones(num_f1, dtype=torch.bool, device=self.lb.device)
             keep_mask[drop_idx] = False
+            self.archive_cv = take_violation(take_violation(u_cv, mask_f1), keep_mask)
             return front1_pop[keep_mask], front1_fit[keep_mask]
 
     def step(self) -> None:
@@ -134,8 +140,8 @@ class NSBiDiCo(Algorithm):
         arc_ranks = angle_ranks[self.pop_size :]
 
         # Tournament Selection (Bug #27, #31)
-        idx1 = tournament_selection_multifit(self.pop_size, [pop_ranks], tournament_size=2)
-        idx2 = tournament_selection_multifit(self.pop_size, [arc_ranks], tournament_size=2)
+        idx1 = tournament_selection_multifit(self.pop_size, constraint_keys([pop_ranks], self.cv), tournament_size=2)
+        idx2 = tournament_selection_multifit(self.pop_size, constraint_keys([arc_ranks], self.archive_cv), tournament_size=2)
 
         parents = torch.cat([self.pop[idx1], self.archive_pop[idx2]], dim=0)
 
@@ -144,24 +150,35 @@ class NSBiDiCo(Algorithm):
         offspring = polynomial_mutation(offspring, self.lb, self.ub)
         offspring = clamp(offspring, self.lb, self.ub)
 
-        off_fit = self.evaluate(offspring)
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
 
         # 3. Archive Update
         new_arc_pop, new_arc_fit = self._update_archive(
-            self.pop, self.fit, self.archive_pop, self.archive_fit, offspring, off_fit
+            self.pop,
+            self.fit,
+            self.archive_pop,
+            self.archive_fit,
+            offspring,
+            off_fit,
+            cat_violation(self.cv, self.archive_cv, off_cv),
         )
         # Ensure fixed size for Mutable
-        self.archive_pop[: new_arc_pop.shape[0]] = new_arc_pop
-        self.archive_fit[: new_arc_fit.shape[0]] = new_arc_fit
+        if self.cv is None:
+            self.archive_pop[: new_arc_pop.shape[0]] = new_arc_pop
+            self.archive_fit[: new_arc_fit.shape[0]] = new_arc_fit
+        else:
+            self.archive_pop, self.archive_fit = new_arc_pop, new_arc_fit
 
         # 4. Environmental Selection (NSGA-II Style)
         merged_pop = torch.cat([self.pop, offspring], dim=0)
         merged_fit = torch.cat([self.fit, off_fit], dim=0)
 
-        ranks = non_dominate_rank(merged_fit)
+        merged_cv = cat_violation(self.cv, off_cv)
+        ranks = rank_with_constraints(merged_fit, merged_cv)
 
         new_pop = torch.empty_like(self.pop)
         new_fit = torch.empty_like(self.fit)
+        new_cv = None if self.cv is None else torch.empty_like(self.cv)
         count = 0
 
         # JIT-friendly loop for environmental selection
@@ -172,6 +189,8 @@ class NSBiDiCo(Algorithm):
             if count + num_in_front <= self.pop_size:
                 new_pop[count : count + num_in_front] = merged_pop[mask]
                 new_fit[count : count + num_in_front] = merged_fit[mask]
+                if new_cv is not None:
+                    new_cv[count : count + num_in_front] = merged_cv[mask]
                 count += num_in_front
             else:
                 remaining = self.pop_size - count
@@ -186,6 +205,8 @@ class NSBiDiCo(Algorithm):
 
                     new_pop[count : self.pop_size] = merged_pop[sel_idx]
                     new_fit[count : self.pop_size] = merged_fit[sel_idx]
+                    if new_cv is not None:
+                        new_cv[count : self.pop_size] = merged_cv[sel_idx]
                     count += remaining
 
             if count >= self.pop_size:
@@ -193,39 +214,4 @@ class NSBiDiCo(Algorithm):
 
         self.pop = new_pop
         self.fit = new_fit
-
-
-# === FIXED DEMO BLOCK ===
-if __name__ == "__main__":
-    import time
-
-    import torch
-    from evox.metrics import igd
-    from evox.problems.numerical import DTLZ2
-    from evox.workflows import StdWorkflow
-
-    torch.set_default_device("cuda")
-
-    algo = NSBiDiCo(pop_size=100, n_objs=3, lb=-torch.zeros(12), ub=torch.ones(12))
-    prob = DTLZ2(m=3)
-    pf = prob.pf()
-    workflow = StdWorkflow(algo, prob)
-    workflow.init_step()
-    jit_state_step = torch.compile(workflow.step)
-
-    jit_state_step()
-
-    torch.cuda.synchronize()
-    exec_start = time.perf_counter()
-
-    for i in range(1, 50):
-        jit_state_step()
-
-        if (i + 1) % 5 == 0:
-            fit = workflow.algorithm.fit
-            fit = fit[~torch.any(torch.isnan(fit), dim=1)]
-            print(f"Gen {i + 1} IGD: {igd(fit, pf)}")
-
-    torch.cuda.synchronize()
-    exec_time = time.perf_counter() - exec_start
-    print(f"Execution time for Gen 2-50 (49 steps): {exec_time:.4f}s (Avg: {exec_time / 49:.4f}s/gen)")
+        self.cv = new_cv

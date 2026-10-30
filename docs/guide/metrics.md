@@ -54,8 +54,21 @@ print(hv(objectives, reference, num_sample=10000))
 ```
 
 This is a stochastic estimate, not an exact hypervolume calculation. Increasing `num_sample`
-increases runtime and memory costs; comparisons scale with sample count, solution count,
-and objective count. An empty set returns scalar zero. Nonpositive sample counts raise an error.
+increases runtime and memory costs; comparisons scale with sample count, solution count, and objective count.
+All samples are evaluated together using broadcast tensor operations.
+Float16, bfloat16 and integral inputs are promoted
+to at least float32, and float64 inputs retain float64 arithmetic. An empty set returns floating
+scalar zero. Nonfinite objective rows and reference-boundary points contribute no volume;
+a nonfinite reference returns NaN. Invalid input shapes, nonpositive sample counts and
+noninteger sample counts raise errors.
+
+In many objectives, a positive dominated volume can occupy a tiny fraction of the
+sampling box. A finite Monte Carlo run may then return zero because no sample hits
+that region; zero does not prove that the exact HV is zero.
+
+This function reports volume in the supplied objective scales. [PlatEMO's `HV`](https://github.com/BIMK/PlatEMO/blob/master/PlatEMO/Metrics/HV.m) first normalizes
+objectives using its reference front and computes exact volume below four objectives, so its
+reported values require matching normalization before comparison.
 
 For maximization, negate both objectives and the reference point, for example
 `hv(-rewards, -reference_rewards)`. For mixed directions, transform both inputs using the

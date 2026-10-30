@@ -54,6 +54,7 @@ from evomo.algorithms import (
 )
 from evomo.problems.numerical import DTLZ2
 from evomo.workflows import UnifiedWorkflow
+from unit_test import TorchTestCase
 
 GENERATED_ALGORITHMS = (
     AGEMOEA,
@@ -107,7 +108,7 @@ GENERATED_ALGORITHMS = (
 )
 
 
-class TestGeneratedAlgorithms(unittest.TestCase):
+class TestGeneratedAlgorithms(TorchTestCase):
     def test_all_algorithms_run_dtlz2(self):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         lb = torch.zeros(12, device=device)

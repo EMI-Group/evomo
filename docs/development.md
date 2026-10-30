@@ -10,7 +10,7 @@
 | `src/evomo/workflows/` | Connections between algorithms, problems, and monitors |
 | `src/evomo/metrics/` | Solution quality metrics |
 | `src/evomo/utils/` | Tensor, evaluation output, and state helpers |
-| `unit_test/` | Algorithm, operator, and problem tests |
+| `unit_test/` | Algorithm, problem, and metric tests |
 | `docs/` | Documentation, examples, and build configuration |
 
 Check the existing Python environment and CUDA setup before installing the editable package
@@ -18,7 +18,7 @@ and development tools:
 
 ```sh
 python -m pip install -e .
-python -m pip install pytest ruff
+python -m pip install ruff
 ```
 
 ## Extending algorithms
@@ -48,9 +48,9 @@ implementation changes and paper references.
 Run relevant tests from the repository root, for example:
 
 ```sh
-python -m pytest unit_test/problems/test_dtlz.py -q
-python -m pytest unit_test/operators/test_non_dominate.py -q
-python -m pytest unit_test/algorithms/test_moea.py -q
+python -m unittest unit_test.problems.test_dtlz -v
+python -m unittest unit_test.algorithms.test_moea_constraints -v
+python -m unittest unit_test.algorithms.test_moea -v
 ```
 
 Selection and normalization changes should cover duplicate points, constant objectives,

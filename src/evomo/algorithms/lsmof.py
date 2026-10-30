@@ -5,8 +5,12 @@ from evox.operators.mutation import polynomial_mutation
 from evox.operators.selection import crowding_distance, tournament_selection_multifit
 from evox.utils import clamp
 
-from evomo.operators.selection import non_dominate_rank
-from evomo.utils import unique_rows_sorted
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    rank_with_constraints,
+    take_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer, unique_rows_sorted
 
 
 class LSMOF(Algorithm):
@@ -54,8 +58,8 @@ class LSMOF(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -86,6 +90,9 @@ class LSMOF(Algorithm):
         self.rank = Mutable(torch.full((pop_size,), torch.iinfo(torch.int32).max, dtype=torch.int32, device=device))
         self.dis = Mutable(torch.full((pop_size,), -torch.inf, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+        register_lazy_buffer(self, "archive_cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -93,11 +100,15 @@ class LSMOF(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
         self.fe_counter = self.fe_counter + self.pop_size
         self.archive_fit = self.fit.clone()
+        self.archive_cv = None if self.cv is None else self.cv.clone()
         self.archive_pop = self.pop.clone()
-        _, _, self.rank, self.dis = self._environmental_selection(self.pop, self.fit, self.pop_size)
+        if self.cv is None:
+            _, _, self.rank, self.dis = self._environmental_selection(self.pop, self.fit, self.pop_size)
+        else:
+            self.pop, self.fit, self.rank, self.dis = self._environmental_selection(self.pop, self.fit, self.pop_size, self.cv)
 
     def _reconstruct_decisions(
         self, weights: torch.Tensor, directions: torch.Tensor, base: torch.Tensor, wmax: torch.Tensor
@@ -108,11 +119,12 @@ class LSMOF(Algorithm):
         dec = base.unsqueeze(0) + offset
         return dec.reshape(-1, self.D)
 
-    def _environmental_selection(self, pop, fit, N):
+    def _environmental_selection(self, pop, fit, N, cv=None):
         combined_pop, combined_idx = unique_rows_sorted(pop)
         combined_fit = fit[combined_idx]
 
-        rank = non_dominate_rank(combined_fit)
+        combined_cv = take_violation(cv, combined_idx)
+        rank = rank_with_constraints(combined_fit, combined_cv)
         N_total = combined_fit.shape[0]
         mask = torch.zeros(N_total, dtype=torch.bool, device=pop.device)
         distances = torch.full((N_total,), -1.0, device=pop.device)
@@ -141,6 +153,8 @@ class LSMOF(Algorithm):
                     distances[selected_indices] = dist[selected_indices]
                     num_selected = N
 
+        if N == self.pop_size:
+            self.cv = take_violation(combined_cv, mask)
         survivor_pop = combined_pop[mask]
         survivor_fit = combined_fit[mask]
         survivor_rank = rank[mask]
@@ -159,7 +173,7 @@ class LSMOF(Algorithm):
         if self.fe_counter < self.switch_fe:
             # Phase A: Bi-directional Weight Optimization
             # 1. Reference Selection
-            ref_pop, _, _, _ = self._environmental_selection(self.pop, self.fit, self.wD)
+            ref_pop, _, _, _ = self._environmental_selection(self.pop, self.fit, self.wD, self.cv)
 
             # 2. Direction Matrix
             Direct_L = (ref_pop - self.lb) / (torch.norm(ref_pop - self.lb, dim=1, keepdim=True) + 1e-6)
@@ -171,13 +185,15 @@ class LSMOF(Algorithm):
             weights = torch.rand(self.SubN, 2 * self.wD, device=device)
             decisions = self._reconstruct_decisions(weights, Direct, Base, self.wmax)
             decisions = clamp(decisions, self.lb, self.ub)
-            off_fit = self.evaluate(decisions)
+            off_fit, off_cv = parse_evaluate(self.evaluate(decisions))
             self.fe_counter = self.fe_counter + decisions.shape[0]
 
             # Update Archive and Pop
             merged_pop = torch.cat([self.pop, decisions], dim=0)
             merged_fit = torch.cat([self.fit, off_fit], dim=0)
-            self.pop, self.fit, self.rank, self.dis = self._environmental_selection(merged_pop, merged_fit, self.pop_size)
+            self.pop, self.fit, self.rank, self.dis = self._environmental_selection(
+                merged_pop, merged_fit, self.pop_size, cat_violation(self.cv, off_cv)
+            )
 
         else:
             # Phase B: Standard NSGA-II Refinement
@@ -187,12 +203,14 @@ class LSMOF(Algorithm):
             offspring = polynomial_mutation(offspring, self.lb, self.ub)
             offspring = clamp(offspring, self.lb, self.ub)
 
-            off_fit = self.evaluate(offspring)
+            off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
             self.fe_counter = self.fe_counter + self.pop_size
 
             merged_pop = torch.cat([self.pop, offspring], dim=0)
             merged_fit = torch.cat([self.fit, off_fit], dim=0)
-            self.pop, self.fit, self.rank, self.dis = self._environmental_selection(merged_pop, merged_fit, self.pop_size)
+            self.pop, self.fit, self.rank, self.dis = self._environmental_selection(
+                merged_pop, merged_fit, self.pop_size, cat_violation(self.cv, off_cv)
+            )
 
 
 if __name__ == "__main__":

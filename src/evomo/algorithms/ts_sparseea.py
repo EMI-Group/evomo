@@ -1,12 +1,17 @@
 import torch
 from evox.core import Algorithm, Mutable
-from evox.operators.crossover import simulated_binary
+from evox.operators.crossover import simulated_binary_half
 from evox.operators.mutation import polynomial_mutation
 from evox.operators.selection import tournament_selection_multifit
-from evox.utils import clamp, lexsort, randint
+from evox.utils import clamp
 
-from evomo.operators.selection import crowding_distance, non_dominate_rank
-from evomo.utils import unique_rows_sorted
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    rank_with_constraint_objective,
+)
+from evomo.utils import register_lazy_buffer
+
+from .sparseea import _evaluate_sparse, _select_sparse, _sparse_offspring_count
 
 
 class TSSparseEA(Algorithm):
@@ -25,17 +30,17 @@ class TSSparseEA(Algorithm):
         :param ub: Required. Upper decision bounds of shape ``(D,)``. The decision dimension is inferred from the
             bounds, rather than passed separately. Match ``lb`` in shape, dtype and device.
         :type ub: torch.Tensor
-        :param kwargs: Default: ``{}``. Extra keyword arguments are accepted for constructor compatibility but are not
-            read by this implementation. In particular, passing ``device=...`` here does not move tensors; place both
-            bounds on the intended device before construction.
+        :param kwargs: Optional ``max_fe`` bounds actual evaluations, including probes and initialization.
+            Place bounds on the intended device; ``device=...`` does not move them.
+            ``r_eva`` sets the first-stage evaluation fraction (default ``0.1``).
         :type kwargs: dict
 
         .. note::
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -63,119 +68,100 @@ class TSSparseEA(Algorithm):
         self.is_initialized = Mutable(torch.tensor(False, device=device))
         self.subcomponents = Mutable(torch.full((self.nGroup, group_size), sentinel, dtype=torch.int64, device=device))
 
-    def _match_operator(self, off_mask: torch.Tensor, archive_pop: torch.Tensor) -> torch.Tensor:
-        # Vectorized Cosine Similarity (Bug #12, #29 Compliance)
-        mask_f = off_mask.float()
-        dot = mask_f @ archive_pop.t()
+        register_lazy_buffer(self, "cv", device_like="pop")
+        self.max_fe = kwargs.get("max_fe")
+        self.stage1_fraction = kwargs.get("r_eva", 0.1)
+        self.fe = Mutable(torch.tensor(0, dtype=torch.int64, device=device))
+        self.var_fit = Mutable(self.pop.new_zeros(D))
+
+    def _match_operator(self, off_mask: torch.Tensor, off_dec: torch.Tensor) -> torch.Tensor:
+        # Match generated decisions to masks without reusing a decision, as in PlatEMO's Match.
+        scale = (self.ub - self.lb).clamp_min(torch.finfo(off_dec.dtype).tiny)
+        normalized = (off_dec - self.lb) / scale
+        mask_f = off_mask.to(off_dec.dtype)
+        dot = mask_f @ normalized.t()
         norm_m = torch.norm(mask_f, dim=1, keepdim=True)
-        norm_p = torch.norm(archive_pop, dim=1, keepdim=True)
-        sim = dot / (norm_m @ norm_p.t() + 1e-6)
-        best_match_idx = torch.argmax(sim, dim=1)
-        return archive_pop[best_match_idx]
+        norm_p = torch.norm(normalized, dim=1, keepdim=True)
+        sim = dot / (norm_m @ norm_p.t()).clamp_min(torch.finfo(off_dec.dtype).tiny)
+        count = off_mask.shape[0]
+        order = torch.randperm(count, device=off_dec.device)
+        remaining = torch.ones(count, dtype=torch.bool, device=off_dec.device)
+        selected = torch.empty(count, dtype=torch.long, device=off_dec.device)
+        for i in range(count):
+            row = order[i : i + 1]
+            scores = sim.index_select(0, row).squeeze(0)
+            best = torch.argmax(torch.where(remaining, scores, -torch.inf)).reshape(1)
+            selected.scatter_(0, row, best)
+            remaining.scatter_(0, best, False)
+        return off_dec[selected]
 
     def init_step(self) -> None:
-        """Evaluate the initial population and initialize algorithm state.
+        self.mask = torch.rand_like(self.pop) < 0.5
+        self.fit, self.cv = _evaluate_sparse(self, self.pop * self.mask)
+        number = min(self.pop_size, self.n_objs + 1)
+        _, reference_masks, _, _, _, _ = _select_sparse(self.pop, self.mask, self.fit, self.cv, number)
+        references = reference_masks.to(self.pop.dtype)
+        fitness = self.pop.new_zeros(self.dim)
+        for _ in range(5):
+            probe_dec = self.lb + torch.rand(self.dim, self.dim, dtype=self.pop.dtype, device=self.pop.device) * (
+                self.ub - self.lb
+            )
+            probe_mask = torch.eye(self.dim, dtype=torch.bool, device=self.pop.device)
+            probe_fit, probe_cv = _evaluate_sparse(self, probe_dec * probe_mask)
+            fitness = fitness + rank_with_constraint_objective(probe_fit, probe_cv).to(fitness.dtype)
+        self.var_fit = fitness
+        order = fitness.argsort(stable=True)
+        width = self.subcomponents.shape[1]
+        padded = torch.full((self.nGroup * width,), torch.iinfo(torch.int32).max, dtype=torch.long, device=self.pop.device)
+        padded[: self.dim] = order
+        self.subcomponents = padded.reshape(self.nGroup, width)
+        membership = (self.subcomponents[:, :, None] == torch.arange(self.dim, device=self.pop.device)[None, None]).any(1)
+        horizon = 10000 if self.max_fe is None else self.max_fe
+        iterations = max(0, int((self.stage1_fraction * horizon - int(self.fe)) / (self.pop_size * number)))
+        for reference in references:
+            groups = torch.rand(self.pop_size, self.nGroup, device=self.pop.device) < 0.5
+            groups[0] = False
+            groups[0, 0] = True
+            mask = (groups[:, :, None] & membership[None]).any(1)
+            fit, cv = _evaluate_sparse(self, reference[None] * mask)
+            _, groups, fit, cv, rank, distance = _select_sparse(groups, groups, fit, cv, self.pop_size)
+            for _ in range(iterations):
+                mating = tournament_selection_multifit(self.pop_size, [-distance, rank.float()], tournament_size=2)
+                off_groups = self._binary_operator(groups[mating])
+                mask = (off_groups[:, :, None] & membership[None]).any(1)
+                off_fit, off_cv = _evaluate_sparse(self, reference[None] * mask)
+                combined = torch.cat([groups, off_groups])
+                _, groups, fit, cv, rank, distance = _select_sparse(
+                    combined, combined, torch.cat([fit, off_fit]), cat_violation(cv, off_cv), self.pop_size
+                )
+            mask = (groups[:, :, None] & membership[None]).any(1)
+            normalized = (self.pop - self.lb) / (self.ub - self.lb).clamp_min(torch.finfo(self.pop.dtype).tiny)
+            unit_dec = normalized / normalized.norm(dim=1, keepdim=True).clamp_min(torch.finfo(self.pop.dtype).tiny)
+            unit_mask = mask.to(self.pop.dtype) / mask.to(self.pop.dtype).norm(dim=1, keepdim=True).clamp_min(
+                torch.finfo(self.pop.dtype).tiny
+            )
+            decisions = self.pop[(unit_mask @ unit_dec.T).argmax(1)]
+            fit, cv = _evaluate_sparse(self, decisions * mask)
+            merged_cv = cat_violation(self.cv, cv, probe_cv)
+            self.pop, self.mask, self.fit, self.cv, self.rank, self.dis = _select_sparse(
+                torch.cat([self.pop, decisions, probe_dec]),
+                torch.cat([self.mask, mask, probe_mask]),
+                torch.cat([self.fit, fit, probe_fit]),
+                merged_cv,
+                self.pop_size,
+            )
+        self.is_initialized = torch.tensor(True, device=self.pop.device)
 
-        Invoke through ``workflow.init_step()`` before the first optimization step.
+    def _binary_operator(self, parents):
+        half, dim = len(parents) // 2, parents.shape[1]
+        first, second = parents[:half], parents[half : 2 * half]
+        point = torch.randint(dim, (half, 1), device=parents.device)
+        off = torch.where(torch.arange(dim, device=parents.device)[None] > point, second, first)
+        return off ^ (torch.rand(half, dim, device=parents.device) < 1 / dim)
 
-        :returns: ``None``; results are stored in algorithm state.
-        """
-        device = self.lb.device
-        D = self.dim
-
-        # 1. Variable Ranking via Stage 1 Warm-up
-        # Evaluate D individuals (one-hot masks)
-        warmup_pop = self.lb.repeat(D, 1)
-        # For ranking, we use the upper bound for the active variable
-        warmup_pop[torch.arange(D), torch.arange(D)] = self.ub[torch.arange(D)]
-        warmup_fit = self.evaluate(warmup_pop)
-
-        ranks = non_dominate_rank(warmup_fit)
-        rank_indices = torch.argsort(ranks)
-
-        # 2. Grouping (Bug #1 Compliance)
-        group_size = self.subcomponents.shape[1]
-        sentinel = torch.iinfo(torch.int32).max
-
-        # Fill subcomponents using vectorized scatter if possible, or simple slice fill
-        # Since JIT requires fixed shapes, we pad the rank_indices
-        padded_indices = torch.full((self.nGroup * group_size,), sentinel, dtype=torch.int64, device=device)
-        padded_indices[:D] = rank_indices
-        self.subcomponents = padded_indices.view(self.nGroup, group_size)
-
-        # Initial Evaluation
-        self.fit = self.evaluate(self.pop * self.mask.float())
-
-        # Initial Environmental Selection
-        self.pop, self.mask, self.fit, self.rank, self.dis = self._environmental_selection(
-            self.pop, self.mask, self.fit, self.pop_size
-        )
-        self.is_initialized = torch.tensor(True, device=device)
-
-    def _environmental_selection(self, pop, mask, fit, N):
-        # Unique Filter (Bug #3)
-        _, uni_idx = unique_rows_sorted(fit)
-        unique_mask = torch.zeros(fit.size(0), dtype=torch.bool, device=fit.device).scatter(0, uni_idx, True)
-        # Deduplication must not leave fewer than N candidates. In that case,
-        # retain the original candidates so every selected slot has real rank
-        # and crowding state instead of falling through to the -1 sentinel.
-        keep = unique_mask | (unique_mask.sum() < N)
-        fit, pop, mask = fit[keep], pop[keep], mask[keep]
-
-        ranks = non_dominate_rank(fit)
-
-        # JIT-Compliant Peeling (Bug #9, #28)
-        selected_indices = torch.full((N,), -1, dtype=torch.int64, device=pop.device)
-        final_rank = torch.zeros(N, dtype=torch.int32, device=pop.device)
-        final_dis = torch.zeros(N, device=pop.device)
-
-        num_selected = 0
-        current_front = 0
-
-        # Max fronts is N, but we use a fixed loop for JIT
-        for _ in range(N):
-            if num_selected >= N:
-                pass
-            else:
-                mask_front = ranks == current_front
-                num_in_front = torch.sum(mask_front.int())
-
-                # Crowding distance within front (Bug #21)
-                dist = crowding_distance(fit, mask_front)
-
-                if num_selected + num_in_front <= N:
-                    # Select all
-                    indices = torch.where(
-                        mask_front, torch.arange(len(fit), device=pop.device), torch.tensor(-1, device=pop.device)
-                    )
-                    # Filter out -1s using topk to get valid indices
-                    _, idx = torch.topk((indices != -1).long(), num_in_front.int())
-                    valid_indices = indices[idx]
-
-                    selected_indices[num_selected : num_selected + num_in_front] = valid_indices
-                    final_rank[num_selected : num_selected + num_in_front] = current_front
-                    final_dis[num_selected : num_selected + num_in_front] = dist[valid_indices]
-                    num_selected += num_in_front
-                else:
-                    # Select topk by distance
-                    needed = N - num_selected
-                    front_indices = torch.where(mask_front)[0]
-                    front_dists = dist[front_indices]
-                    _, top_k_idx = torch.topk(front_dists, needed)
-
-                    selected_indices[num_selected:N] = front_indices[top_k_idx]
-                    final_rank[num_selected:N] = current_front
-                    final_dis[num_selected:N] = front_dists[top_k_idx]
-                    num_selected = N
-
-                current_front += 1
-
-        # Final Sort (Bug #25)
-        # Primary key (Rank) last
-        sort_idx = lexsort(torch.stack([-final_dis, final_rank.float()]))
-        sel_idx = selected_indices[sort_idx]
-
-        return pop[sel_idx], mask[sel_idx], fit[sel_idx], final_rank[sort_idx], final_dis[sort_idx]
+    def _environmental_selection(self, pop, mask, fit, N, cv=None):
+        pop, mask, fit, self.cv, rank, distance = _select_sparse(pop, mask, fit, cv, N)
+        return pop, mask, fit, rank, distance
 
     def step(self) -> None:
         """Advance optimization and update population and fitness state in place.
@@ -184,42 +170,18 @@ class TSSparseEA(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        N = self.pop_size
-        D = self.dim
-        device = self.lb.device
-
-        # 1. Selection (Bug #27, #31)
-        mating_pool = tournament_selection_multifit(N, [-self.dis, self.rank], tournament_size=2)
-
-        # 2. Mask Variation (Stage 2 Logic)
-        parent_mask = self.mask[mating_pool]
-        # One-point crossover
-        off_mask = parent_mask.clone()
-        cp = randint(0, D, (N // 2,), device=device)
-        for i in range(N // 2):
-            idx1, idx2 = i, i + N // 2
-            mask_range = torch.arange(D, device=device) > cp[i]
-            off_mask[idx1] = torch.where(mask_range, parent_mask[idx2], parent_mask[idx1])
-            off_mask[idx2] = torch.where(mask_range, parent_mask[idx1], parent_mask[idx2])
-
-        # Bit-flip mutation (Bug #20)
-        prob = 1.0 / D
-        flip_mask = torch.rand(N, D, device=device) < prob
-        off_mask = torch.where(flip_mask, ~off_mask, off_mask)
-
-        # 3. Dec Variation (SBX + PM)
-        parent_pop = self.pop[mating_pool]
-        off_pop_dec = simulated_binary(parent_pop, pro_c=1.0, dis_c=20.0)
-        off_pop_dec = polynomial_mutation(off_pop_dec, self.lb, self.ub, dis_m=20.0)
-        off_pop_dec = clamp(off_pop_dec, self.lb, self.ub)
-
-        # 4. Match Operator (The Core Logic - Bug #29)
-        matched_pop = self._match_operator(off_mask, self.pop)
-        # Combine matched decision variables with new variations
-        off_pop = torch.where(torch.rand(N, D, device=device) < 0.5, off_pop_dec, matched_pop)
+        count = _sparse_offspring_count(self, half=True)
+        if not count:
+            return
+        n_parents = self.pop_size if count == self.pop_size // 2 else 2 * count
+        mating_pool = tournament_selection_multifit(n_parents, [-self.dis, self.rank], tournament_size=2)
+        off_mask = self._binary_operator(self.mask[mating_pool])
+        off_dec = simulated_binary_half(self.pop[mating_pool], pro_c=1.0, dis_c=20.0)
+        off_dec = clamp(polynomial_mutation(off_dec, self.lb, self.ub), self.lb, self.ub)
+        off_pop = self._match_operator(off_mask, off_dec)
 
         # 5. Evaluation
-        off_fit = self.evaluate(off_pop * off_mask.float())
+        off_fit, off_cv = _evaluate_sparse(self, off_pop * off_mask)
 
         # 6. Merge & Environmental Selection
         combined_pop = torch.cat([self.pop, off_pop], dim=0)
@@ -227,7 +189,7 @@ class TSSparseEA(Algorithm):
         combined_fit = torch.cat([self.fit, off_fit], dim=0)
 
         self.pop, self.mask, self.fit, self.rank, self.dis = self._environmental_selection(
-            combined_pop, combined_mask, combined_fit, N
+            combined_pop, combined_mask, combined_fit, self.pop_size, cat_violation(self.cv, off_cv)
         )
 
 

@@ -65,6 +65,34 @@ non-dominated sorting backend. See the [backend guide](../non_dominate_backends.
 
 ## Other public algorithms
 
+### Graph and archive algorithms
+
+`MaOEAHAP`, `NRVMOEA`, `HEA`, and `GCNMOEA` port the corresponding PlatEMO
+implementations (source commit `d25e65d1ffba58dbf4d7e1b5259786187d12968a`).
+They accept `max_evaluations=100000` for their internal schedules; the workflow
+caller controls termination. `device=None` preserves the bounds' device.
+
+- `MaOEAHAP` maintains two archives and evaluates `2*pop_size` children per step.
+- `NRVMOEA` uses vertical projection and Ward clustering. Its source can return
+  N+M members, so population storage has this capacity after initialization.
+- Both archive algorithms expose `valid` masks. Use `algorithm.fit[algorithm.valid]`
+  for occupied rows; padding is excluded from mating and selection.
+- `HEA` adjusts its hyper-dominance threshold using `max_t=.05` and the evaluation
+  horizon. HEA and GCNMOEA use the sampled reference count as `pop_size`.
+- `GCNMOEA` uses synchronous neighborhood and PSO updates, whereas PlatEMO updates
+  them sequentially. It is a tensorized variant, with potentially different
+  stochastic behavior. `graph_samples=50`, `particles=30`, and `pso_iterations=100`
+  match the source's computational constants. `evaluations` includes all probes
+  and fixed-shape padding evaluations; `search_evaluations` follows the outer
+  search schedule. Count probes when comparing evaluation budgets. Its inner
+  tensor loops require functional problem evaluation and monitoring; the default
+  monitor is supported. Exact local HV has exponential cost in neighborhood size.
+
+The first three algorithms accept objective-only real-valued problems and reject
+constraint tuples explicitly. GCNMOEA retains constraint tuples and applies the
+source's violation rule to neighborhood replacement; its other selectors and PSO
+objective remain objective-based. Call `workflow.init_step()` before compilation.
+
 The following table preserves the exact exported class names:
 
 | Group | Exported names |

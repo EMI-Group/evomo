@@ -27,6 +27,152 @@ from __future__ import annotations
 from typing import Tuple
 
 import torch
+from evox.utils import lexsort
+
+
+def minmax_normalize(
+    x: torch.Tensor,
+    mask: torch.Tensor | None = None,
+    *,
+    eps: float | None = None,
+    extrema: tuple[torch.Tensor, torch.Tensor] | None = None,
+) -> torch.Tensor:
+    """Normalize columns using the extrema of the selected rows.
+
+    :param x: Floating-point values of shape ``(N, M)``.
+    :param mask: Optional boolean mask of shape ``(N,)`` on the input device.
+        At least one row must be selected. ``None`` includes every row.
+    :param eps: Optional additive offset for the column ranges. ``None`` replaces
+        zero ranges by one; a supplied value uses ``range + eps`` instead.
+    :param extrema: Optional precomputed ``(minimum, maximum)`` column extrema.
+        These are used directly, avoiding extra reductions when callers already
+        computed their bounds. Do not combine with ``mask``.
+    :returns: A tensor of shape ``(N, M)`` with the input device and dtype.
+        With ``eps=None``, constant selected columns use a denominator of one. All rows are
+        transformed; excluded rows may lie outside ``[0, 1]``.
+
+    This is column-wise min-max scaling. Algorithms using ideal/nadir history
+    or hyperplane intercepts should retain their own normalization rules.
+    """
+    if extrema is not None:
+        if mask is not None:
+            raise ValueError("Supply either a mask or precomputed extrema")
+        low, high = extrema
+    elif mask is None:
+        if eps is None:
+            low, high = x.amin(0), x.amax(0)
+        else:
+            # Retain the additive-epsilon callers' original reduction operators
+            # so sharing the function does not change Inductor's lowering.
+            low = x.min(dim=0, keepdim=True).values
+            high = x.max(dim=0, keepdim=True).values
+    else:
+        low = torch.where(mask[:, None], x, torch.inf).amin(0)
+        high = torch.where(mask[:, None], x, -torch.inf).amax(0)
+    span = torch.where(high > low, high - low, 1) if eps is None else high - low + eps
+    return (x - low) / span
+
+
+def pairwise_cosine_similarity(
+    x: torch.Tensor,
+    y: torch.Tensor | None = None,
+    *,
+    eps: float | None = None,
+    mode: str = "normalize",
+    clamp: bool = True,
+    norms: tuple[torch.Tensor, torch.Tensor] | None = None,
+) -> torch.Tensor:
+    """Compute cosine similarities between every pair of row vectors.
+
+    :param x: Floating-point vectors of shape ``(N, D)``.
+    :param y: Floating-point vectors of shape ``(K, D)``, with the same device
+        and dtype as ``x``. ``None`` compares ``x`` with itself.
+    :param eps: Stability constant, defaulting to the input dtype's machine epsilon.
+    :param mode: ``"normalize"`` clamps each norm to ``eps`` before normalizing
+        the vectors and multiplying. ``"product"`` divides the dot products by
+        ``norm_x @ norm_y.T + eps``. ``"offset"`` instead divides by
+        ``(norm_x + eps) @ (norm_y + eps).T``. These preserve different algorithms'
+        original floating-point evaluation order.
+    :param clamp: Whether to clamp the result to ``[-1, 1]``.
+    :param norms: Optional precomputed raw row norms of shapes ``(N, 1)`` and
+        ``(K, 1)``, allowing algorithms to reuse norms needed elsewhere.
+    :returns: Similarities of shape ``(N, K)``. Zero vectors have zero similarity
+        with the default positive stability constant.
+
+    Matrix multiplication avoids an ``(N, K, D)`` intermediate.
+    """
+    if y is None:
+        y = x
+    if eps is None:
+        eps = torch.finfo(x.dtype).eps
+    if mode == "normalize":
+        if norms is None:
+            unit_x = x / x.norm(dim=-1, keepdim=True).clamp_min(eps)
+            unit_y = y / y.norm(dim=-1, keepdim=True).clamp_min(eps)
+        else:
+            unit_x = x / norms[0].clamp_min(eps)
+            unit_y = y / norms[1].clamp_min(eps)
+        result = unit_x @ unit_y.T
+    elif mode == "product":
+        if norms is None:
+            norm_x = torch.norm(x, dim=1, keepdim=True)
+            norm_y = norm_x if y is x else torch.norm(y, dim=1, keepdim=True)
+        else:
+            norm_x, norm_y = norms
+        result = (x @ y.T) / (norm_x @ norm_y.T + eps)
+    elif mode == "offset":
+        if norms is None:
+            norm_x = torch.norm(x, dim=1, keepdim=True) + eps
+            norm_y = norm_x if y is x else torch.norm(y, dim=1, keepdim=True) + eps
+        else:
+            norm_x, norm_y = norms[0] + eps, norms[1] + eps
+        result = (x @ y.T) / (norm_x @ norm_y.T)
+    else:
+        raise ValueError(f"Unknown cosine similarity mode: {mode}")
+    return result.clamp(-1, 1) if clamp else result
+
+
+def pairwise_max_difference(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    """Return ``max_d(x[i, d] - y[j, d])`` for all pairs of objective rows."""
+    difference = x.unsqueeze(1) - y.unsqueeze(0)
+    return torch.max(difference, dim=2)[0]
+
+
+def shifted_distance(x: torch.Tensor) -> torch.Tensor:
+    """Return directed shift-based Euclidean distances for minimization.
+
+    Row ``i`` compares ``x[i]`` with every row shifted up to ``x[i]`` in each
+    coordinate. Diagonal entries are zero; callers apply their own masks.
+    """
+    left = x.unsqueeze(1)
+    shifted = torch.maximum(left, x.unsqueeze(0))
+    return torch.norm(left - shifted, p=2, dim=2)
+
+
+def masked_select_indices(mask: torch.Tensor, capacity: int) -> tuple[torch.Tensor, torch.Tensor]:
+    """Stably pack true positions into a fixed capacity, returning indices and validity.
+
+    Require a positive mask length and ``0 <= capacity <= len(mask)``. Padding repeats the first selected
+    position; if the mask is empty of true entries, padding contains position zero.
+    """
+    order = torch.argsort((~mask).long(), stable=True)
+    slots = torch.arange(capacity, device=mask.device)
+    valid = slots < mask.sum()
+    return torch.where(valid, order[slots], order[0]), valid
+
+
+def sample_masked_indices(mask: torch.Tensor, count: int) -> torch.Tensor:
+    """Sample selected positions uniformly with replacement; require at least one true entry."""
+    order = torch.argsort((~mask).long(), stable=True)
+    slots = (torch.rand(count, device=mask.device) * mask.sum().clamp_min(1)).long()
+    return order[slots]
+
+
+def unique_row_mask(x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    """Mark the first selected occurrence of each finite objective row, without compaction."""
+    order = lexsort(torch.where(mask[:, None], x, torch.inf).T.flip(0).unbind(0))
+    first = torch.cat((mask.new_ones(1), (x[order[1:]] != x[order[:-1]]).any(1)))
+    return torch.zeros_like(mask).scatter(0, order, first & mask[order])
 
 
 def at_least_2d(X: torch.Tensor) -> Tuple[torch.Tensor, bool]:

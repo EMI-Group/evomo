@@ -5,7 +5,12 @@ from evox.operators.mutation import polynomial_mutation
 from evox.operators.selection import crowding_distance
 from evox.utils import clamp, lexsort
 
-from evomo.operators.selection import non_dominate_rank
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    rank_with_constraints,
+    take_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
 class SIBEA(Algorithm):
@@ -33,8 +38,8 @@ class SIBEA(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -51,6 +56,8 @@ class SIBEA(Algorithm):
         self.pop = Mutable(torch.rand(pop_size, D, device=device) * (ub - lb) + lb)  # [N,D]
         self.fit = Mutable(torch.full((pop_size, n_objs), torch.inf, device=device))  # [N,M]
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -58,7 +65,7 @@ class SIBEA(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
 
     def _cal_hv_contribution(self, fit: torch.Tensor, ref: torch.Tensor) -> torch.Tensor:
         """
@@ -108,14 +115,15 @@ class SIBEA(Algorithm):
         off_pop = clamp(off_pop, self.lb, self.ub)
 
         # 2. Evaluation
-        off_fit = self.evaluate(off_pop)
+        off_fit, off_cv = parse_evaluate(self.evaluate(off_pop))
 
         # 3. Merge
         merged_pop = torch.cat([self.pop, off_pop], dim=0)
         merged_fit = torch.cat([self.fit, off_fit], dim=0)
 
         # 4. Environmental Selection
-        front_no = non_dominate_rank(merged_fit)
+        merged_cv = cat_violation(self.cv, off_cv)
+        front_no = rank_with_constraints(merged_fit, merged_cv)
 
         # Identify fronts to keep
         # We use a safe way to find MaxFNo without Python loops
@@ -164,39 +172,4 @@ class SIBEA(Algorithm):
 
         self.pop = merged_pop[final_indices]
         self.fit = merged_fit[final_indices]
-
-
-# === FIXED DEMO BLOCK ===
-if __name__ == "__main__":
-    import time
-
-    import torch
-    from evox.metrics import igd
-    from evox.problems.numerical import DTLZ2
-    from evox.workflows import StdWorkflow
-
-    torch.set_default_device("cuda")
-
-    algo = SIBEA(pop_size=100, n_objs=3, lb=-torch.zeros(12), ub=torch.ones(12))
-    prob = DTLZ2(m=3)
-    pf = prob.pf()
-    workflow = StdWorkflow(algo, prob)
-    workflow.init_step()
-    jit_state_step = torch.compile(workflow.step)
-
-    jit_state_step()
-
-    torch.cuda.synchronize()
-    exec_start = time.perf_counter()
-
-    for i in range(1, 50):
-        jit_state_step()
-
-        if (i + 1) % 5 == 0:
-            fit = workflow.algorithm.fit
-            fit = fit[~torch.any(torch.isnan(fit), dim=1)]
-            print(f"Gen {i + 1} IGD: {igd(fit, pf)}")
-
-    torch.cuda.synchronize()
-    exec_time = time.perf_counter() - exec_start
-    print(f"Execution time for Gen 2-50 (49 steps): {exec_time:.4f}s (Avg: {exec_time / 49:.4f}s/gen)")
+        self.cv = take_violation(merged_cv, final_indices)

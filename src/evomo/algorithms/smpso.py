@@ -4,8 +4,13 @@ from evox.operators.mutation import polynomial_mutation
 from evox.operators.selection import crowding_distance, tournament_selection_multifit
 from evox.utils import lexsort
 
-from evomo.operators.selection import non_dominate_rank
-from evomo.utils import unique_rows_sorted
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    constrained_dominates,
+    rank_with_constraints,
+    take_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer, unique_rows_sorted
 
 
 class SMPSO(Algorithm):
@@ -33,8 +38,8 @@ class SMPSO(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -61,7 +66,11 @@ class SMPSO(Algorithm):
         self.archive_fit = Mutable(torch.full((pop_size, n_objs), torch.inf, device=device))
         self.archive_size = Mutable(torch.tensor(0, dtype=torch.int32, device=device))
 
-    def _update_archive(self, off_pop, off_fit) -> None:
+        register_lazy_buffer(self, "cv", device_like="pop")
+        register_lazy_buffer(self, "archive_cv", device_like="pop")
+        register_lazy_buffer(self, "pbest_cv", device_like="pop")
+
+    def _update_archive(self, off_pop, off_fit, off_cv=None) -> None:
         device = self.lb.device
         # Combine current archive and new candidates
         valid_archive_mask = torch.arange(self.pop_size, device=device) < self.archive_size
@@ -74,7 +83,8 @@ class SMPSO(Algorithm):
         u_fit = combined_fit[u_idx]
 
         # Non-dominated sort
-        rank = non_dominate_rank(u_fit)
+        u_cv = take_violation(cat_violation(take_violation(self.archive_cv, valid_archive_mask), off_cv), u_idx)
+        rank = rank_with_constraints(u_fit, u_cv)
         mask_rank1 = rank == 0
         rank1_fit = u_fit[mask_rank1]
         rank1_pop = u_pop[mask_rank1]
@@ -91,6 +101,7 @@ class SMPSO(Algorithm):
 
             self.archive_pop = rank1_pop[selected_indices]
             self.archive_fit = rank1_fit[selected_indices]
+            self.archive_cv = take_violation(take_violation(u_cv, mask_rank1), selected_indices)
             self.archive_size = torch.tensor(self.pop_size, dtype=torch.int32, device=device)
         else:
             # Fill archive and update size
@@ -100,6 +111,9 @@ class SMPSO(Algorithm):
             new_archive_pop[:num_rank1] = rank1_pop
             new_archive_fit[:num_rank1] = rank1_fit
 
+            if u_cv is not None:
+                self.archive_cv = torch.full_like(self.archive_cv, torch.inf)
+                self.archive_cv[:num_rank1] = u_cv[mask_rank1]
             self.archive_pop = new_archive_pop
             self.archive_fit = new_archive_fit
             self.archive_size = torch.tensor(num_rank1, dtype=torch.int32, device=device)
@@ -111,10 +125,19 @@ class SMPSO(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
         self.pbest_pop = self.pop.clone()
         self.pbest_fit = self.fit.clone()
-        self._update_archive(self.pop, self.fit)
+        self.pbest_cv = None if self.cv is None else self.cv.clone()
+        self.archive_cv = None if self.cv is None else torch.full_like(self.cv, torch.inf)
+        self._update_archive(self.pop, self.fit, self.cv)
+
+    def _select_leaders(self):
+        valid = torch.arange(self.pop_size, device=self.pop.device) < self.archive_size
+        fits = self.archive_fit[valid]
+        distance = crowding_distance(fits, torch.ones(fits.shape[0], dtype=torch.bool, device=fits.device))
+        selected = tournament_selection_multifit(self.pop_size, [-distance], tournament_size=2)
+        return self.archive_pop[valid][selected]
 
     def step(self) -> None:
         """Advance optimization and update population and fitness state in place.
@@ -128,27 +151,7 @@ class SMPSO(Algorithm):
         device = self.lb.device
 
         # 1. Leader Selection (Gbest)
-        valid_mask = torch.arange(N, device=device) < self.archive_size
-        # Extract valid archive members to compute CD safely
-        valid_fits = self.archive_fit[valid_mask]
-        num_valid = valid_fits.shape[0]
-
-        # Initialize CD with a very small value for tournament selection
-        cd = torch.full((N,), -1e6, device=device)
-
-        # Only compute if archive is not empty
-        if num_valid > 0:
-            inner_mask = torch.ones(num_valid, dtype=torch.bool, device=device)
-            cd_values = crowding_distance(valid_fits, inner_mask)
-            # Use scatter to place values back into the N-sized tensor
-            valid_indices = torch.arange(N, device=device)[valid_mask]
-            cd.scatter_(0, valid_indices, cd_values)
-
-        # Tournament selection to maximize CD (minimize -CD)
-        # Invalid archive slots have -1e6 CD, so they won't be picked if valid ones exist
-        adj_cd = -cd
-        selected_indices = tournament_selection_multifit(N, [adj_cd], tournament_size=2)
-        gbest_pop = self.archive_pop[selected_indices]
+        gbest_pop = self._select_leaders()
 
         # 2. Stochastic Parameters
         W = torch.rand((N, 1), device=device) * 0.4 + 0.1
@@ -175,26 +178,30 @@ class SMPSO(Algorithm):
 
         # 5. Polynomial Mutation
         ind_mask = torch.rand(N, device=device) < 0.15
-        dim_mask = torch.rand((N, D), device=device) < (1.0 / D)
-        final_mutation_mask = ind_mask.unsqueeze(1) & dim_mask
-        off_pop = polynomial_mutation(off_pop, self.lb, self.ub, final_mutation_mask)
+        # The operator already divides pro_m by D; gate particles only here.
+        off_pop = polynomial_mutation(off_pop, self.lb, self.ub, pro_m=ind_mask[:, None].to(off_pop.dtype))
 
         # 6. Evaluation
-        off_fit = self.evaluate(off_pop)
+        off_fit, off_cv = parse_evaluate(self.evaluate(off_pop))
 
         # 7. Pbest Update
         pbest_dom_off = (self.pbest_fit <= off_fit).all(dim=-1) & (self.pbest_fit < off_fit).any(dim=-1)
+        if off_cv is not None:
+            pbest_dom_off = constrained_dominates(self.pbest_fit, self.pbest_cv, off_fit, off_cv)
         replace_mask = ~pbest_dom_off
 
         self.pbest_pop = torch.where(replace_mask.unsqueeze(1), off_pop, self.pbest_pop)
         self.pbest_fit = torch.where(replace_mask.unsqueeze(1), off_fit, self.pbest_fit)
 
         # 8. Archive Update
-        self._update_archive(off_pop, off_fit)
+        if off_cv is not None:
+            self.pbest_cv = torch.where(replace_mask.reshape((-1,) + (1,) * (off_cv.ndim - 1)), off_cv, self.pbest_cv)
+        self._update_archive(off_pop, off_fit, off_cv)
 
         # Update current swarm state
         self.pop = off_pop
         self.fit = off_fit
+        self.cv = off_cv
         self.vel = new_vel
 
 

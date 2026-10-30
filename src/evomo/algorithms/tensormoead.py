@@ -8,6 +8,8 @@ from evox.operators.mutation import polynomial_mutation
 from evox.operators.sampling import uniform_sampling
 from evox.utils import clamp
 
+from evomo.utils import parse_evaluate, register_lazy_buffer
+
 
 def pbi(f, w, z, z_max=None):
     norm_w = torch.norm(w, dim=1)
@@ -123,9 +125,11 @@ class TensorMOEAD(Algorithm):
         .. note::
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
-            ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. Evaluation accepts an objective
+            tensor of shape ``(B, n_objs)`` or ``(fitness, constraint_violation)``. Violations of shape ``(B,)`` or
+            ``(B, C)`` are retained in ``self.cv``. Both update stages prioritize lower total positive violation;
+            equal violations are compared by their respective aggregation functions. The first stage retains the
+            existing strict improvement rule. Ideal-point and objective-range updates include all evaluated points.
 
             Reference-vector sampling can change the requested population size. Read ``self.pop.shape[0]`` for the actual size.
 
@@ -170,6 +174,7 @@ class TensorMOEAD(Algorithm):
 
         self.pop = Mutable(population)
         self.fit = Mutable(torch.full((self.pop_size, self.n_objs), torch.inf, device=device))
+        register_lazy_buffer(self, "cv", device_like="pop")
         self.z = Mutable(torch.zeros((self.n_objs,), device=device))
         self.z_max = Mutable(torch.zeros((self.n_objs,), device=device))
 
@@ -195,7 +200,7 @@ class TensorMOEAD(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
         self.z = torch.min(self.fit, dim=0)[0]
         self.z_max = torch.max(self.fit, dim=0)[0]
 
@@ -212,7 +217,11 @@ class TensorMOEAD(Algorithm):
         crossovered = self.crossover(selected_p)
         offspring = self.mutation(crossovered, self.lb, self.ub)
         offspring = clamp(offspring, self.lb, self.ub)
-        off_fit = self.evaluate(offspring)
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
+        if self.cv is not None:
+            positive_cv, positive_off_cv = self.cv.clamp_min(0), off_cv.clamp_min(0)
+            total_cv = positive_cv.sum(1) if self.cv.ndim == 2 else positive_cv
+            off_total_cv = positive_off_cv.sum(1) if off_cv.ndim == 2 else positive_off_cv
 
         self.z = torch.min(self.z, torch.min(off_fit, dim=0)[0])
         # Use a common objective range for all parent/offspring comparisons this generation.
@@ -221,19 +230,38 @@ class TensorMOEAD(Algorithm):
         sub_pop_indices = torch.arange(0, self.pop_size, device=self.pop.device)
         update_mask = torch.zeros((self.pop_size,), dtype=torch.bool, device=self.pop.device)
 
-        def body(ind_p, ind_obj):
+        def body(ind_p, ind_obj, ind_cv=None):
             g_old = self.aggregate_func1(self.fit[ind_p], self.w[ind_p], self.z, self.z_max)
             g_new = self.aggregate_func1(ind_obj, self.w[ind_p], self.z, self.z_max)
+            better = g_old > g_new
+            if self.cv is not None:
+                better = (ind_cv < total_cv[ind_p]) | ((ind_cv == total_cv[ind_p]) & better)
             temp_mask = update_mask.clone()
-            temp_mask = torch.scatter(temp_mask, 0, ind_p, g_old > g_new)
+            temp_mask = torch.scatter(temp_mask, 0, ind_p, better)
             return torch.where(temp_mask, -1, sub_pop_indices.clone())
 
-        replace_indices = vmap(body, in_dims=(0, 0))(self.neighbors, off_fit)
+        if self.cv is None:
+            replace_indices = vmap(body, in_dims=(0, 0))(self.neighbors, off_fit)
+        else:
+            replace_indices = vmap(body, in_dims=(0, 0, 0))(self.neighbors, off_fit, off_total_cv)
 
-        def update_population(sub_indices, population, pop_obj, w_ind):
+        def update_population(sub_indices, population, pop_obj, w_ind, pop_cv=None, pop_total=None):
             f = torch.where(sub_indices[:, None] == -1, off_fit, pop_obj)
             x = torch.where(sub_indices[:, None] == -1, offspring, population)
-            idx = torch.argmin(self.aggregate_func2(f, w_ind[None, :], self.z, self.z_max))
+            score = self.aggregate_func2(f, w_ind[None, :], self.z, self.z_max)
+            if self.cv is not None:
+                # The second stage must also prefer feasibility when several children compete.
+                candidate_cv = torch.where(sub_indices == -1, off_total_cv, pop_total)
+                score = torch.where(candidate_cv == candidate_cv.amin(), score, torch.inf)
+            idx = torch.argmin(score)
+            if self.cv is not None:
+                selected_cv = torch.where(sub_indices[idx] == -1, off_cv[idx], pop_cv)
+                return x[idx], f[idx], selected_cv
             return x[idx], f[idx]
 
-        self.pop, self.fit = vmap(update_population, in_dims=(1, 0, 0, 0))(replace_indices, self.pop, self.fit, self.w)
+        if self.cv is None:
+            self.pop, self.fit = vmap(update_population, in_dims=(1, 0, 0, 0))(replace_indices, self.pop, self.fit, self.w)
+        else:
+            self.pop, self.fit, self.cv = vmap(update_population, in_dims=(1, 0, 0, 0, 0, 0))(
+                replace_indices, self.pop, self.fit, self.w, self.cv, total_cv
+            )

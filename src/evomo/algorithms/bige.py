@@ -6,6 +6,13 @@ from evox.operators.selection import tournament_selection_multifit
 from evox.utils import clamp, lexsort
 
 from evomo.operators.selection import non_dominate_rank
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    constraint_keys,
+    rank_with_constraints,
+    take_violation,
+)
+from evomo.utils import minmax_normalize, parse_evaluate, register_lazy_buffer
 
 
 class BiGE(Algorithm):
@@ -33,8 +40,8 @@ class BiGE(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -51,12 +58,12 @@ class BiGE(Algorithm):
         self.pop = Mutable(torch.rand(pop_size, D, device=device) * (ub - lb) + lb)  # [N,D]
         self.fit = Mutable(torch.full((pop_size, n_objs), torch.inf, device=device))  # [N,M]
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def _calculate_bi_goal(self, fit: torch.Tensor) -> torch.Tensor:
         N, M = fit.shape
         # 1. Normalization (Bug #12)
-        f_min = fit.min(dim=0, keepdim=True)[0]
-        f_max = fit.max(dim=0, keepdim=True)[0]
-        norm_fit = (fit - f_min) / (f_max - f_min + 1e-6)
+        norm_fit = minmax_normalize(fit, eps=1e-6)
 
         # 2. Proximity (fpr)
         fpr = norm_fit.sum(dim=1)  # [N]
@@ -90,7 +97,7 @@ class BiGE(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
 
     def step(self) -> None:
         """Advance optimization and update population and fitness state in place.
@@ -105,7 +112,7 @@ class BiGE(Algorithm):
         # 1. Mating Selection
         bi_fit = self._calculate_bi_goal(self.fit)
         # bi_fit contains [fpr, fcd], both to be minimized
-        mating_idx = tournament_selection_multifit(N, [bi_fit[:, 0], bi_fit[:, 1]], tournament_size=2)
+        mating_idx = tournament_selection_multifit(N, constraint_keys([bi_fit[:, 0], bi_fit[:, 1]], self.cv), tournament_size=2)
 
         # 2. Variation
         offspring = simulated_binary(self.pop[mating_idx], pro_c=1.0, dis_c=20.0)
@@ -113,14 +120,15 @@ class BiGE(Algorithm):
         offspring = clamp(offspring, self.lb, self.ub)
 
         # 3. Evaluation
-        off_fit = self.evaluate(offspring)
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
 
         # 4. Environmental Selection
         total_pop = torch.cat([self.pop, offspring], dim=0)
         total_fit = torch.cat([self.fit, off_fit], dim=0)
 
         # Tier 1: Objective Space NDSort
-        ranks = non_dominate_rank(total_fit)
+        total_cv = cat_violation(self.cv, off_cv)
+        ranks = rank_with_constraints(total_fit, total_cv)
 
         # Identify fronts
         # We need to find the threshold rank that includes N individuals
@@ -153,44 +161,4 @@ class BiGE(Algorithm):
 
         self.pop = total_pop[selected_indices]
         self.fit = total_fit[selected_indices]
-
-
-# === FIXED DEMO BLOCK ===
-# This block MUST be appended at the end of the file.
-if __name__ == "__main__":
-    import time
-
-    import torch
-    from evox.metrics import igd
-    from evox.problems.numerical import DTLZ2
-    from evox.workflows import StdWorkflow
-
-    torch.set_default_device("cuda")
-
-    # BiGE must be replaced by your actual class name
-    algo = BiGE(pop_size=100, n_objs=3, lb=-torch.zeros(12), ub=torch.ones(12))
-    prob = DTLZ2(m=3)
-    pf = prob.pf()
-    workflow = StdWorkflow(algo, prob)
-    workflow.init_step()
-    jit_state_step = torch.compile(workflow.step)
-
-    # 1. Trigger JIT compilation (First step)
-    jit_state_step()
-
-    # 2. Pure execution (Remaining 49 steps)
-    torch.cuda.synchronize()
-    exec_start = time.perf_counter()
-
-    for i in range(1, 50):
-        jit_state_step()
-
-        if (i + 1) % 5 == 0:
-            fit = workflow.algorithm.fit
-            # Simple NaN filtering for metric calculation
-            fit = fit[~torch.any(torch.isnan(fit), dim=1)]
-            print(f"Gen {i + 1} IGD: {igd(fit, pf)}")
-
-    torch.cuda.synchronize()
-    exec_time = time.perf_counter() - exec_start
-    print(f"Execution time for Gen 2-50 (49 steps): {exec_time:.4f}s (Avg: {exec_time / 49:.4f}s/gen)")
+        self.cv = take_violation(total_cv, selected_indices)

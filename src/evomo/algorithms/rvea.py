@@ -8,6 +8,7 @@ from evox.operators.sampling import uniform_sampling
 from evox.utils import clamp, nanmax, nanmin, randint
 
 from evomo.operators.selection import ref_vec_guided
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
 class RVEA(Algorithm):
@@ -67,7 +68,8 @@ class RVEA(Algorithm):
         :param selection_op: Default: ``None``. Environmental selection callable ``selection_op(pop, fit, vectors,
             theta) -> (pop, fit)``. The input includes parents and offspring. Return matching decision and fitness
             tensors on the input device; preserve reference-vector slots, including NaN padding where required. ``None``
-            selects EvoMO's ``ref_vec_guided``.
+            selects EvoMO's ``ref_vec_guided``. For constrained evaluations the callable receives an additional
+            ``cv`` argument and must return ``(pop, fit, cv)`` with matching slots.
         :type selection_op: Callable or None
         :param mutation_op: Default: ``None``. Mutation callable ``mutation_op(offspring, lb, ub) ->
             mutated_offspring``. Input and output are decision tensors of shape ``(B, D)``; preserve device and return
@@ -85,9 +87,10 @@ class RVEA(Algorithm):
         .. note::
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
-            ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. Evaluation accepts an objective
+            tensor of shape ``(B, n_objs)`` or ``(fitness, constraint_violation)``. Violations of shape ``(B,)`` or
+            ``(B, C)`` are retained in ``self.cv``. Within each reference-vector partition, feasible solutions compete
+            by APD; if none are feasible, the solution with minimum total positive violation survives.
 
             Reference-vector sampling can change the requested population size. Read ``self.pop.shape[0]`` for the actual size.
         """
@@ -107,7 +110,7 @@ class RVEA(Algorithm):
         self.fr = Parameter(fr)
         self.max_gen = Parameter(max_gen)
 
-        self.rv_adapt_every = Mutable(torch.max(torch.round(1 / self.fr), torch.tensor(1.0)))
+        self.rv_adapt_every = Mutable(torch.round(1 / self.fr).clamp_min(1).to(device=device))
 
         self.selection = selection_op
         self.mutation = mutation_op
@@ -132,6 +135,7 @@ class RVEA(Algorithm):
 
         self.pop = Mutable(population)
         self.fit = Mutable(torch.full((self.pop_size, self.n_objs), torch.inf, device=device))
+        register_lazy_buffer(self, "cv", device_like="pop")
         self.reference_vector = Mutable(v)
         self.init_v = v0
         self.gen = Mutable(torch.tensor(0, dtype=int, device=device))
@@ -143,13 +147,16 @@ class RVEA(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.rv_adapt_every = torch.max(torch.round(1 / self.fr), torch.tensor(1.0))
-        self.fit = self.evaluate(self.pop)
+        self.rv_adapt_every = torch.round(1 / self.fr).clamp_min(1).to(device=self.pop.device)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
 
     def _rv_adaptation(self, pop_obj: torch.Tensor):
         max_vals = nanmax(pop_obj, dim=0)[0]
         min_vals = nanmin(pop_obj, dim=0)[0]
-        return self.init_v.clone() * (max_vals - min_vals)
+        span = max_vals - min_vals
+        # Keep reference directions usable when an objective is constant.
+        span = torch.where(span > 0, span, torch.ones_like(span))
+        return self.init_v.clone() * span
 
     def _no_rv_adaptation(self, pop_obj: torch.Tensor):
         return self.reference_vector.clone()
@@ -185,15 +192,15 @@ class RVEA(Algorithm):
         crossovered = self.crossover(pop)
         offspring = self.mutation(crossovered, self.lb, self.ub)
         offspring = clamp(offspring, self.lb, self.ub)
-        off_fit = self.evaluate(offspring)
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
         merge_pop = torch.cat([self.pop, offspring], dim=0)
         merge_fit = torch.cat([self.fit, off_fit], dim=0)
 
-        survivor, survivor_fit = self.selection(
-            merge_pop,
-            merge_fit,
-            self.reference_vector,
-            (self.gen / self.max_gen) ** self.alpha,
-        )
+        theta = (self.gen / self.max_gen) ** self.alpha
+        if self.cv is None:
+            survivor, survivor_fit = self.selection(merge_pop, merge_fit, self.reference_vector, theta)
+        else:
+            merge_cv = torch.cat([self.cv, off_cv], dim=0)
+            survivor, survivor_fit, self.cv = self.selection(merge_pop, merge_fit, self.reference_vector, theta, merge_cv)
 
         self._update_pop_and_rv(survivor, survivor_fit)

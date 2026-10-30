@@ -5,6 +5,14 @@ from evox.operators.mutation import polynomial_mutation
 from evox.operators.sampling import uniform_sampling
 from evox.utils import clamp
 
+from evomo.operators.selection.constraint_handling import (
+    prefer_by_constraint,
+    total_violation,
+    update_by_proposals,
+    update_last_proposals,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer
+
 
 class MOEAD_DCWV(Algorithm):
     def __init__(self, pop_size: int, n_objs: int, lb: torch.Tensor, ub: torch.Tensor, T: int = 20, p: float = -1.0, **kwargs):
@@ -38,8 +46,8 @@ class MOEAD_DCWV(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Reference-vector sampling can change the requested population size. Read ``self.pop.shape[0]`` for the actual size.
 
@@ -73,6 +81,8 @@ class MOEAD_DCWV(Algorithm):
         dist_matrix = torch.cdist(self.W, self.W)
         self.B = Mutable(torch.topk(dist_matrix, k=self.T, largest=False).indices)
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def _set_weight_transform(self, W: torch.Tensor, p: torch.Tensor, M: int) -> torch.Tensor:
         # Bug #12: Safe division
         mask = W < (1.0 / M)
@@ -87,7 +97,7 @@ class MOEAD_DCWV(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
         self.z_min = torch.min(self.fit, dim=0, keepdim=True)[0]
 
     def step(self) -> None:
@@ -131,7 +141,7 @@ class MOEAD_DCWV(Algorithm):
         offspring = polynomial_mutation(offspring, self.lb, self.ub)
         offspring = clamp(offspring, self.lb, self.ub)
 
-        off_fit = self.evaluate(offspring)
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
 
         # 3. Environmental Selection (Tchebycheff Update)
         self.z_min = torch.min(self.z_min, torch.min(off_fit, dim=0, keepdim=True)[0])
@@ -153,20 +163,16 @@ class MOEAD_DCWV(Algorithm):
         # Update Masking
         replace_mask = g_new < g_old  # [N, T]
 
-        # To handle sequential update emulation in batch:
-        # We use the indices from B and the mask to update pop and fit.
-        # Note: If multiple offspring update the same neighbor, the last one in the batch wins.
-        flat_B = self.B.reshape(-1)
-        flat_mask = replace_mask.reshape(-1)
+        if self.cv is not None:
+            replace_mask = prefer_by_constraint(
+                replace_mask, total_violation(off_cv)[:, None], total_violation(self.cv)[self.B]
+            )
+            self.pop, self.fit, self.cv = update_by_proposals(
+                self.pop, self.fit, self.cv, offspring, off_fit, off_cv, self.B, replace_mask, g_new, None
+            )
+            return
 
-        # Expand offspring to match [N, T, D] then flatten
-        off_pop_expanded = offspring.unsqueeze(1).expand(-1, T, -1).reshape(-1, offspring.shape[1])
-        off_fit_expanded_flat = off_fit.unsqueeze(1).expand(-1, T, -1).reshape(-1, M)
-
-        # Apply updates
-        update_indices = flat_B[flat_mask]
-        self.pop[update_indices] = off_pop_expanded[flat_mask]
-        self.fit[update_indices] = off_fit_expanded_flat[flat_mask]
+        self.pop, self.fit = update_last_proposals(self.pop, self.fit, offspring, off_fit, self.B, replace_mask)
 
 
 if __name__ == "__main__":

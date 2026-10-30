@@ -6,7 +6,12 @@ from evox.operators.crossover import simulated_binary
 from evox.operators.mutation import polynomial_mutation
 from evox.utils import clamp
 
-from evomo.operators.selection import non_dominate_rank
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    rank_with_constraints,
+    take_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
 class VaEA(Algorithm):
@@ -34,8 +39,8 @@ class VaEA(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -52,6 +57,8 @@ class VaEA(Algorithm):
         self.pop = Mutable(torch.rand(pop_size, D, device=device) * (ub - lb) + lb)  # [N,D]
         self.fit = Mutable(torch.full((pop_size, n_objs), torch.inf, device=device))  # [N,M]
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -59,7 +66,7 @@ class VaEA(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)  # [N,M]
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))  # [N,M]
 
     def _cosine_distance_matrix(self, x: torch.Tensor) -> torch.Tensor:
         # [Bug #12] Safe Division & [Bug #29] Vectorization
@@ -88,14 +95,15 @@ class VaEA(Algorithm):
         offspring = clamp(offspring, self.lb, self.ub)
 
         # 2. Evaluation
-        off_fit = self.evaluate(offspring)
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
 
         # 3. Environmental Selection
         C_pop = torch.cat([self.pop, offspring], dim=0)
         C_fit = torch.cat([self.fit, off_fit], dim=0)
 
         # Fronts before the last front F_k are kept; F_k is filled by niching
-        rank = non_dominate_rank(C_fit)
+        C_cv = cat_violation(self.cv, off_cv)
+        rank = rank_with_constraints(C_fit, C_cv)
         last_rank = torch.sort(rank).values[N - 1]
         kept = torch.where(rank < last_rank)[0]
         last = torch.where(rank == last_rank)[0]
@@ -132,46 +140,12 @@ class VaEA(Algorithm):
                 min_angles, nearest = torch.min(angle_mat[remain_idx][:, select_idx], dim=1)
                 mu = torch.argmin(min_angles)
                 r = select_idx[nearest[mu]]
-                if min_angles[mu] < threshold and conv[r] > conv[remain_idx[mu]]:
+                same_front = C_cv is None or rank[cand[r]] == rank[cand[remain_idx[mu]]]
+                if min_angles[mu] < threshold and conv[r] > conv[remain_idx[mu]] and same_front:
                     choose[r] = False
                     choose[remain_idx[mu]] = True
 
         final_idx = cand[choose]
         self.pop = C_pop[final_idx]
         self.fit = C_fit[final_idx]
-
-
-# === FIXED DEMO BLOCK ===
-if __name__ == "__main__":
-    import time
-
-    import torch
-    from evox.metrics import igd
-    from evox.problems.numerical import DTLZ2
-    from evox.workflows import StdWorkflow
-
-    torch.set_default_device("cuda")
-
-    algo = VaEA(pop_size=100, n_objs=3, lb=-torch.zeros(12), ub=torch.ones(12))
-    prob = DTLZ2(m=3)
-    pf = prob.pf()
-    workflow = StdWorkflow(algo, prob)
-    workflow.init_step()
-    jit_state_step = torch.compile(workflow.step)
-
-    jit_state_step()
-
-    torch.cuda.synchronize()
-    exec_start = time.perf_counter()
-
-    for i in range(1, 50):
-        jit_state_step()
-
-        if (i + 1) % 5 == 0:
-            fit = workflow.algorithm.fit
-            fit = fit[~torch.any(torch.isnan(fit), dim=1)]
-            print(f"Gen {i + 1} IGD: {igd(fit, pf)}")
-
-    torch.cuda.synchronize()
-    exec_time = time.perf_counter() - exec_start
-    print(f"Execution time for Gen 2-50 (49 steps): {exec_time:.4f}s (Avg: {exec_time / 49:.4f}s/gen)")
+        self.cv = take_violation(C_cv, final_idx)

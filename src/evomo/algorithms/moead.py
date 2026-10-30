@@ -8,6 +8,9 @@ from evox.operators.mutation import polynomial_mutation
 from evox.operators.sampling import uniform_sampling
 from evox.utils import clamp, minimum
 
+from evomo.operators.selection.constraint_handling import prefer_by_constraint, total_violation, update_by_proposals
+from evomo.utils import parse_evaluate, register_lazy_buffer
+
 
 def pbi(f: torch.Tensor, w: torch.Tensor, z: torch.Tensor):
     norm_w = torch.linalg.norm(w, dim=1)
@@ -76,8 +79,8 @@ class MOEAD(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Reference-vector sampling can change the requested population size. Read ``self.pop.shape[0]`` for the actual size.
 
@@ -124,6 +127,8 @@ class MOEAD(Algorithm):
         self.fit = Mutable(torch.empty((self.pop_size, self.n_objs), device=device).fill_(torch.inf))
         self.z = Mutable(torch.zeros((self.n_objs,), device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def init_step(self):
         """Evaluate the initial population and initialize algorithm state.
 
@@ -131,7 +136,7 @@ class MOEAD(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
         self.z = torch.min(self.fit, dim=0)[0]
 
     def step(self):
@@ -146,12 +151,18 @@ class MOEAD(Algorithm):
             crossovered = self.crossover(self.pop[parents[:2]])
             offspring = self.mutation(crossovered, self.lb, self.ub)
             offspring = clamp(offspring, self.lb, self.ub)
-            off_fit = self.evaluate(offspring)
+            off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
 
             self.z = minimum(self.z, off_fit)
 
             g_old = pbi(self.fit[parents], self.w[parents], self.z)
             g_new = pbi(off_fit, self.w[parents], self.z)
 
-            self.fit[parents[g_old >= g_new]] = off_fit
-            self.pop[parents[g_old >= g_new]] = offspring
+            if self.cv is not None:
+                better = prefer_by_constraint(g_new <= g_old, total_violation(off_cv), total_violation(self.cv)[parents])
+                self.pop, self.fit, self.cv = update_by_proposals(
+                    self.pop, self.fit, self.cv, offspring, off_fit, off_cv, parents[None], better[None], g_new[None]
+                )
+            else:
+                self.fit[parents[g_old >= g_new]] = off_fit
+                self.pop[parents[g_old >= g_new]] = offspring

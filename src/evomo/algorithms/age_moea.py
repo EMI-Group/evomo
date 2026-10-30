@@ -5,7 +5,13 @@ from evox.operators.mutation import polynomial_mutation
 from evox.operators.selection import tournament_selection_multifit
 from evox.utils import clamp, lexsort
 
-from evomo.operators.selection import non_dominate_rank
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    constraint_keys,
+    rank_with_constraints,
+    take_violation,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer
 
 
 class AGEMOEA(Algorithm):
@@ -33,8 +39,8 @@ class AGEMOEA(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -58,6 +64,8 @@ class AGEMOEA(Algorithm):
         self.p = Mutable(torch.ones(1, device=device))
         self.normalization = Mutable(torch.ones(n_objs, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -65,8 +73,8 @@ class AGEMOEA(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
-        self._environmental_selection(self.pop, self.fit)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
+        self._environmental_selection(self.pop, self.fit, self.cv)
 
     def step(self) -> None:
         # 1. Mating
@@ -77,21 +85,23 @@ class AGEMOEA(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        mating_pool = tournament_selection_multifit(self.pop_size, [-self.crowd_dis, self.front_no.float()], tournament_size=2)
+        mating_pool = tournament_selection_multifit(
+            self.pop_size, constraint_keys([-self.crowd_dis, self.front_no.float()], self.cv), tournament_size=2
+        )
 
         crossovered = simulated_binary(self.pop[mating_pool])
         offspring = polynomial_mutation(crossovered, self.lb, self.ub)
         offspring = clamp(offspring, self.lb, self.ub)
 
         # 2. Evaluation
-        off_fit = self.evaluate(offspring)
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
 
         # 3. Selection
         combined_pop = torch.cat([self.pop, offspring], dim=0)
         combined_fit = torch.cat([self.fit, off_fit], dim=0)
-        self._environmental_selection(combined_pop, combined_fit)
+        self._environmental_selection(combined_pop, combined_fit, cat_violation(self.cv, off_cv))
 
-    def _environmental_selection(self, pop, fit):
+    def _environmental_selection(self, pop, fit, cv=None):
         N, M = fit.shape
         device = fit.device
 
@@ -101,7 +111,7 @@ class AGEMOEA(Algorithm):
         f = objs - self.ideal_point
 
         # NDSort
-        front_no = non_dominate_rank(f)
+        front_no = rank_with_constraints(f, cv)
 
         # Corner Detection & Normalization (Front 1)
         mask_f1 = front_no == 0
@@ -166,6 +176,7 @@ class AGEMOEA(Algorithm):
 
         self.pop = pop[indices]
         self.fit = fit[indices]
+        self.cv = take_violation(cv, indices)
         self.front_no = front_no[indices]
         self.crowd_dis = crowd_dis[indices]
 

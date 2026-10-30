@@ -5,6 +5,15 @@ from evox.operators.sampling import uniform_sampling
 from evox.operators.selection import tournament_selection_multifit
 from evox.utils import clamp
 
+from evomo.operators.selection.constraint_handling import (
+    constraint_improvement,
+    prefer_by_constraint,
+    total_violation,
+    update_by_proposals,
+    update_last_proposals,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer
+
 
 class MOEADFRRMAB(Algorithm):
     def __init__(
@@ -57,8 +66,8 @@ class MOEADFRRMAB(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Reference-vector sampling can change the requested population size. Read ``self.pop.shape[0]`` for the actual size.
 
@@ -106,6 +115,9 @@ class MOEADFRRMAB(Algorithm):
         self.frr = Mutable(torch.zeros(4, device=device))
         self.gen_counter = Mutable(torch.tensor(0, dtype=torch.int32, device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+        register_lazy_buffer(self, "old_cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -113,12 +125,26 @@ class MOEADFRRMAB(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
         self.z = torch.min(self.fit, dim=0, keepdim=True).values
 
         # Initial Tchebycheff
         diff = torch.abs(self.fit - self.z)
         self.old_obj = torch.max(diff * self.weights, dim=1).values
+        self.old_cv = None if self.cv is None else total_violation(self.cv)
+
+    def _update_utility(self):
+        new_obj = torch.max(torch.abs(self.fit - self.z) * self.weights, dim=1).values
+        delta_obj = (self.old_obj - new_obj) / (self.old_obj + 1e-6)
+        if self.cv is not None:
+            new_cv = total_violation(self.cv)
+            delta_obj = constraint_improvement(delta_obj, new_cv if self.old_cv is None else self.old_cv, new_cv)
+            self.old_cv = new_cv
+        pi_mask = delta_obj < 0.001
+        self.pi = torch.where(pi_mask, (0.95 + 0.05 * delta_obj / 0.001) * self.pi, torch.ones_like(self.pi))
+        if self.cv is not None:
+            self.pi = self.pi.clamp(0, 1)
+        self.old_obj = new_obj
 
     def _apply_four_de(self, parents: torch.Tensor, op_indices: torch.Tensor, current_x: torch.Tensor) -> torch.Tensor:
         # parents shape: [I_size, 5, D]
@@ -199,7 +225,7 @@ class MOEADFRRMAB(Algorithm):
             offspring = polynomial_mutation(offspring, self.lb, self.ub)
             offspring = clamp(offspring, self.lb, self.ub)
 
-            off_fit = self.evaluate(offspring)
+            off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
             self.z = torch.min(self.z, torch.min(off_fit, dim=0, keepdim=True).values)
 
             # Update neighbors
@@ -212,19 +238,28 @@ class MOEADFRRMAB(Algorithm):
             g_new = torch.max(torch.abs(off_fit.unsqueeze(1) - self.z) * W_sub, dim=2).values
 
             replace_mask = g_new <= g_old
+            if self.cv is not None:
+                old_cv = total_violation(self.cv)[P_to_update]
+                new_cv = total_violation(off_cv)[:, None]
+                replace_mask = prefer_by_constraint(replace_mask, new_cv, old_cv)
             # Limit to nr replacements
             replace_counts = torch.cumsum(replace_mask.to(torch.int32), dim=1)
             replace_mask = torch.logical_and(replace_mask, replace_counts <= self.nr)
 
-            # Scatter updates
-            flat_P = P_to_update[replace_mask]
-            flat_off = torch.arange(I_size, device=device).view(-1, 1).expand(-1, self.T)[replace_mask]
-
-            self.pop[flat_P] = offspring[flat_off]
-            self.fit[flat_P] = off_fit[flat_off]
+            if self.cv is None:
+                self.pop, self.fit = update_last_proposals(self.pop, self.fit, offspring, off_fit, P_to_update, replace_mask)
+            else:
+                # Resolve collisions once for decisions, objectives and constraints.
+                self.pop, self.fit, self.cv = update_by_proposals(
+                    self.pop, self.fit, self.cv, offspring, off_fit, off_cv, P_to_update, replace_mask, g_new
+                )
 
             # FIR and Sliding Window
-            fir_val = torch.sum((g_old[replace_mask] - g_new[replace_mask]) / (g_old[replace_mask] + 1e-6))
+            if self.cv is None:
+                fir_val = torch.sum((g_old[replace_mask] - g_new[replace_mask]) / (g_old[replace_mask] + 1e-6))
+            else:
+                gains = constraint_improvement((g_old - g_new) / g_old.abs().clamp_min(1e-6), old_cv, new_cv)
+                fir_val = torch.where(replace_mask, gains.clamp_min(0), 0).sum()
             self._update_sliding_window(selected_op_idx + 1, fir_val)
 
             # Credit Assignment
@@ -240,11 +275,7 @@ class MOEADFRRMAB(Algorithm):
 
         # Utility Update
         if self.gen_counter % 10 == 0:
-            new_obj = torch.max(torch.abs(self.fit - self.z) * self.weights, dim=1).values
-            delta_obj = (self.old_obj - new_obj) / (self.old_obj + 1e-6)
-            pi_mask = delta_obj < 0.001
-            self.pi = torch.where(pi_mask, (0.95 + 0.05 * delta_obj / 0.001) * self.pi, torch.ones_like(self.pi))
-            self.old_obj = new_obj
+            self._update_utility()
 
 
 if __name__ == "__main__":

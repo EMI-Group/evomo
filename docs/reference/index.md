@@ -2,7 +2,7 @@
 
 These pages are generated from the current source, including constructor signatures, methods,
 and existing docstrings. Generated API documentation is shared in English by both language
-guides. All 57 public algorithm constructors include parameter descriptions, types, defaults,
+guides. All 61 public algorithm constructors include parameter descriptions, types, defaults,
 and implementation notes. Prefer public module exports for imports; internal helpers are not stable interfaces.
 
 ```{toctree}

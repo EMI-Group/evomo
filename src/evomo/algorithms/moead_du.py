@@ -5,7 +5,8 @@ from evox.operators.mutation import polynomial_mutation
 from evox.operators.sampling import uniform_sampling
 from evox.utils import clamp
 
-from evomo.utils import unique_rows_sorted
+from evomo.operators.selection.constraint_handling import prefer_by_constraint, total_violation, update_by_proposals
+from evomo.utils import parse_evaluate, register_lazy_buffer, unique_rows_sorted
 
 
 class MOEADDU(Algorithm):
@@ -54,8 +55,8 @@ class MOEADDU(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Reference-vector sampling can change the requested population size. Read ``self.pop.shape[0]`` for the actual size.
 
@@ -89,6 +90,8 @@ class MOEADDU(Algorithm):
         self.z = Mutable(torch.zeros((1, n_objs), device=device))
         self.znad = Mutable(torch.ones((1, n_objs), device=device))
 
+        register_lazy_buffer(self, "cv", device_like="pop")
+
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
 
@@ -96,7 +99,7 @@ class MOEADDU(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
         self.z = torch.min(self.fit, dim=0, keepdim=True).values
         self.znad = torch.max(self.fit, dim=0, keepdim=True).values
 
@@ -152,7 +155,7 @@ class MOEADDU(Algorithm):
         offspring = polynomial_mutation(offspring, self.lb, self.ub)
         offspring = clamp(offspring, self.lb, self.ub)
 
-        off_fit = self.evaluate(offspring)
+        off_fit, off_cv = parse_evaluate(self.evaluate(offspring))
 
         # 3. Update Ideal and Nadir Points
         self.z = torch.min(torch.cat([self.z, off_fit], dim=0), dim=0, keepdim=True).values
@@ -183,6 +186,15 @@ class MOEADDU(Algorithm):
 
         better_mask = g_new < g_old  # [N, K]
 
+        if self.cv is not None:
+            better_mask = prefer_by_constraint(
+                better_mask, total_violation(off_cv)[:, None], total_violation(self.cv)[P_indices]
+            )
+            self.pop, self.fit, self.cv = update_by_proposals(
+                self.pop, self.fit, self.cv, offspring, off_fit, off_cv, P_indices, better_mask, g_new, None
+            )
+            return
+
         # Sequential Update Emulation:
         # For each subproblem (column in cos_sim), find the best offspring that improves it.
         # We transpose the problem: for each weight vector j, which offspring i is best?
@@ -208,41 +220,3 @@ class MOEADDU(Algorithm):
             # Update population
             self.pop[target_subproblems] = offspring[best_offspring_idx]
             self.fit[target_subproblems] = off_fit[best_offspring_idx]
-
-
-# === FIXED DEMO BLOCK ===
-if __name__ == "__main__":
-    import time
-
-    from evox.metrics import igd
-    from evox.problems.numerical import DTLZ2
-    from evox.workflows import StdWorkflow
-
-    torch.set_default_device("cuda")
-
-    algo = MOEADDU(pop_size=100, n_objs=3, lb=-torch.zeros(12), ub=torch.ones(12))
-    prob = DTLZ2(m=3)
-    pf = prob.pf()
-    workflow = StdWorkflow(algo, prob)
-    workflow.init_step()
-    jit_state_step = torch.compile(workflow.step)
-
-    # 1. Trigger JIT compilation (First step)
-    jit_state_step()
-
-    # 2. Pure execution (Remaining 49 steps)
-    torch.cuda.synchronize()
-    exec_start = time.perf_counter()
-
-    for i in range(1, 50):
-        jit_state_step()
-
-        if (i + 1) % 5 == 0:
-            fit = workflow.algorithm.fit
-            # Simple NaN filtering for metric calculation
-            fit = fit[~torch.any(torch.isnan(fit), dim=1)]
-            print(f"Gen {i + 1} IGD: {igd(fit, pf)}")
-
-    torch.cuda.synchronize()
-    exec_time = time.perf_counter() - exec_start
-    print(f"Execution time for Gen 2-50 (49 steps): {exec_time:.4f}s (Avg: {exec_time / 49:.4f}s/gen)")

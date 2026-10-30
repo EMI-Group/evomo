@@ -5,7 +5,14 @@ from evox.operators.mutation import polynomial_mutation
 from evox.utils import clamp, randint
 
 from evomo.operators.selection import nd_environmental_selection, non_dominate_rank
-from evomo.utils import unique_rows_sorted
+from evomo.operators.selection.constraint_handling import (
+    cat_violation,
+    constrained_crowding_selection,
+    rank_with_constraints,
+    take_violation,
+    worst_constraint_index,
+)
+from evomo.utils import parse_evaluate, register_lazy_buffer, unique_rows_sorted
 
 
 class BCE_IBEA(Algorithm):
@@ -37,8 +44,8 @@ class BCE_IBEA(Algorithm):
 
             Use this algorithm through a workflow that connects the problem's evaluation method. Call
             ``workflow.init_step()`` before ``workflow.step()`` or compiling the step. The current evaluation path
-            expects an objective tensor of shape ``(B, n_objs)``. It does not consume a ``(fitness,
-            constraint_violation)`` tuple.
+            accepts an objective tensor or a ``(fitness, constraint_violation)`` tuple.
+            Constrained evaluations retain violations through selection and state updates.
 
             Tensor allocation uses ``lb.device``. There is no explicit device parameter; prepare both bounds on the intended
             device.
@@ -61,6 +68,8 @@ class BCE_IBEA(Algorithm):
         self.npc_fit = Mutable(torch.full((pop_size, n_objs), torch.inf, device=device))
         # Number of non-dominated PC solutions before truncation (nND), which scales the exploration radius.
         self.n_nd = Mutable(torch.tensor(pop_size, device=device))
+        register_lazy_buffer(self, "cv", device_like="pop")
+        register_lazy_buffer(self, "npc_cv", device_like="pop")
 
     def init_step(self) -> None:
         """Evaluate the initial population and initialize algorithm state.
@@ -69,9 +78,9 @@ class BCE_IBEA(Algorithm):
 
         :returns: ``None``; results are stored in algorithm state.
         """
-        self.fit = self.evaluate(self.pop)
-        self.npc_fit = self.evaluate(self.npc_pop)
-        self.n_nd = torch.sum(non_dominate_rank(self.fit) == 0)
+        self.fit, self.cv = parse_evaluate(self.evaluate(self.pop))
+        self.npc_fit, self.npc_cv = parse_evaluate(self.evaluate(self.npc_pop))
+        self.n_nd = torch.sum(rank_with_constraints(self.fit, self.cv) == 0)
 
     def step(self) -> None:
         """Advance optimization and update population and fitness state in place.
@@ -103,26 +112,32 @@ class BCE_IBEA(Algorithm):
         # Tournament selection for mating pool
         mating_idx = pc_indices[randint(0, pc_indices.numel(), (N,), device=device)]
         off_pc = self.mutation(self.crossover(self.pop[mating_idx]), self.lb, self.ub)
-        off_pc_fit = self.evaluate(off_pc)
+        off_pc_fit, off_pc_cv = parse_evaluate(self.evaluate(off_pc))
 
         # 3. NPC Mating (Standard IBEA style selection)
         npc_mating_idx = randint(0, N, (N,), device=device)
         off_npc = self.mutation(self.crossover(self.npc_pop[npc_mating_idx]), self.lb, self.ub)
-        off_npc_fit = self.evaluate(off_npc)
+        off_npc_fit, off_npc_cv = parse_evaluate(self.evaluate(off_npc))
 
         # 4. Environmental Selection for PC
         merged_pc_pop = torch.cat([self.pop, off_pc, off_npc], dim=0)
         merged_pc_fit = torch.cat([self.fit, off_pc_fit, off_npc_fit], dim=0)
         u_pc_pop, u_pc_idx = unique_rows_sorted(merged_pc_pop)
         u_pc_fit = merged_pc_fit[u_pc_idx]
-        self.pop, self.fit, self.n_nd = _pc_selection(u_pc_pop, u_pc_fit, N)
+        u_pc_cv = take_violation(cat_violation(self.cv, off_pc_cv, off_npc_cv), u_pc_idx)
+        pc_indices, self.fit, self.n_nd = _pc_selection(torch.arange(u_pc_fit.shape[0], device=device), u_pc_fit, N, u_pc_cv)
+        self.pop, self.cv = u_pc_pop[pc_indices], take_violation(u_pc_cv, pc_indices)
 
         # 5. Environmental Selection for NPC
         merged_npc_pop = torch.cat([self.npc_pop, off_pc, off_npc], dim=0)
         merged_npc_fit = torch.cat([self.npc_fit, off_pc_fit, off_npc_fit], dim=0)
         u_npc_pop, u_npc_idx = unique_rows_sorted(merged_npc_pop)
         u_npc_fit = merged_npc_fit[u_npc_idx]
-        self.npc_pop, self.npc_fit = _ibea_selection(u_npc_pop, u_npc_fit, N, self.kappa)
+        u_npc_cv = take_violation(cat_violation(self.npc_cv, off_pc_cv, off_npc_cv), u_npc_idx)
+        npc_indices, self.npc_fit = _ibea_selection(
+            torch.arange(u_npc_fit.shape[0], device=device), u_npc_fit, N, self.kappa, u_npc_cv
+        )
+        self.npc_pop, self.npc_cv = u_npc_pop[npc_indices], take_violation(u_npc_cv, npc_indices)
 
     def crossover(self, x):
         return simulated_binary(x)
@@ -131,7 +146,7 @@ class BCE_IBEA(Algorithm):
         return clamp(polynomial_mutation(x, lb, ub), lb, ub)
 
 
-def _ibea_selection(pop, fit, K, kappa):
+def _ibea_selection(pop, fit, K, kappa, cv=None):
     N = pop.shape[0]
     f_min = torch.min(fit, dim=0)[0]
     f_max = torch.max(fit, dim=0)[0]
@@ -152,7 +167,7 @@ def _ibea_selection(pop, fit, K, kappa):
     for _ in range(N - K):
         # Find worst among active
         temp_fit = torch.where(mask, fitness, sentinel)
-        worst = torch.argmin(temp_fit)
+        worst = torch.argmin(temp_fit) if cv is None else worst_constraint_index(fitness, mask, cv)
         mask[worst] = False
         # Update fitness of remaining
         fitness += torch.exp(-indicator[worst, :] / (C * kappa + 1e-6))
@@ -168,16 +183,19 @@ def _niche_radius(obj):
     return torch.mean(sorted_dist[:, min(2, obj.shape[0] - 1)])
 
 
-def _pc_selection(pop, fit, K):
+def _pc_selection(pop, fit, K, cv=None):
     """Select K PC solutions and return them with the number of non-dominated solutions (nND)."""
     # 1. Non-dominated Filtering
-    rank = non_dominate_rank(fit)
+    rank = non_dominate_rank(fit) if cv is None else rank_with_constraints(fit, cv)
     mask_rank1 = rank == 0
     n_nd = torch.sum(mask_rank1)
 
     # If rank 1 is not enough, take more from subsequent ranks
     if n_nd <= K:
         # Standard ND selection if rank 1 is small
+        if cv is not None:
+            indices, _, _ = constrained_crowding_selection(fit, cv, K)
+            return pop[indices], fit[indices], n_nd
         new_pop, new_fit, _, _, _ = nd_environmental_selection(pop, fit, K)
         return new_pop, new_fit, n_nd
 
@@ -203,41 +221,3 @@ def _pc_selection(pop, fit, K):
         active_mask[worst] = False
 
     return p_pop[active_mask], p_fit[active_mask], n_nd
-
-
-# === FIXED DEMO BLOCK ===
-if __name__ == "__main__":
-    import time
-
-    from evox.metrics import igd
-    from evox.problems.numerical import DTLZ2
-    from evox.workflows import StdWorkflow
-
-    torch.set_default_device("cuda")
-
-    algo = BCE_IBEA(pop_size=100, n_objs=3, lb=-torch.zeros(12), ub=torch.ones(12))
-    prob = DTLZ2(m=3)
-    pf = prob.pf()
-    workflow = StdWorkflow(algo, prob)
-    workflow.init_step()
-    jit_state_step = torch.compile(workflow.step)
-
-    # 1. Trigger JIT compilation (First step)
-    jit_state_step()
-
-    # 2. Pure execution (Remaining 49 steps)
-    torch.cuda.synchronize()
-    exec_start = time.perf_counter()
-
-    for i in range(1, 50):
-        jit_state_step()
-
-        if (i + 1) % 5 == 0:
-            fit = workflow.algorithm.fit
-            # Simple NaN filtering for metric calculation
-            fit = fit[~torch.any(torch.isnan(fit), dim=1)]
-            print(f"Gen {i + 1} IGD: {igd(fit, pf)}")
-
-    torch.cuda.synchronize()
-    exec_time = time.perf_counter() - exec_start
-    print(f"Execution time for Gen 2-50 (49 steps): {exec_time:.4f}s (Avg: {exec_time / 49:.4f}s/gen)")
