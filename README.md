@@ -233,9 +233,7 @@ def setup_workflow(model, pop_size, max_episode_length, num_episodes, device):
         obs_norm=torch.tensor([5.0, 1e-6, 1e6], device=device),
     )
 
-    algorithm = TensorMOEAD(
-        pop_size=pop_size, lb=lower_bound, ub=upper_bound, n_objs=2, device=device
-    )
+    algorithm = TensorMOEAD(pop_size=pop_size, lb=lower_bound, ub=upper_bound, n_objs=2, device=device)
     monitor = EvalMonitor(device=device)
 
     workflow = StdWorkflow(
@@ -266,7 +264,6 @@ if __name__ == "__main__":
     model = SimpleMLP().to(device)
     workflow = setup_workflow(model, 12, 100, 2, device)
     run_workflow(workflow)
-
 ```
 
 ## Publications on EvoMO
